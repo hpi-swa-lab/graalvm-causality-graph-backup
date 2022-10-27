@@ -25,10 +25,13 @@
  */
 package com.oracle.graal.pointsto.reports;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.BigBang;
@@ -51,6 +54,14 @@ public class AnalysisReporter {
             if (AnalysisReportsOptions.PrintImageObjectTree.getValue(options)) {
                 ObjectTreePrinter.print(bb, reportsPath, ReportUtils.extractImageName(imageName));
                 AnalysisHeapHistogramPrinter.print(bb, reportsPath, ReportUtils.extractImageName(imageName));
+            }
+
+            if(bb instanceof PointsToAnalysis && AnalysisReportsOptions.PrintCausalityGraph.getValue(options)) {
+                try {
+                    CausalityExport.instance.dump((PointsToAnalysis) bb);
+                } catch (IOException ex) {
+                    System.err.println(ex);
+                }
             }
 
             if (PointstoOptions.PrintPointsToStatistics.getValue(options)) {

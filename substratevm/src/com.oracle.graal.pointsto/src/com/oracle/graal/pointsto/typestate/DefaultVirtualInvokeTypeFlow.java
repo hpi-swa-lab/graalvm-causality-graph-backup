@@ -30,6 +30,7 @@ import java.util.Collection;
 import java.util.List;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
@@ -117,6 +118,7 @@ final class DefaultVirtualInvokeTypeFlow extends AbstractVirtualInvokeTypeFlow {
                 linkCallee(bb, false, calleeFlows);
             }
 
+            CausalityExport.instance.addVirtualInvoke(bb, this.getReceiver(), calleeFlows.getMethod(), TypeState.forExactType(bb, type, false));
             updateReceiver(bb, calleeFlows, TypeState.forExactType(bb, type, false));
         }
 

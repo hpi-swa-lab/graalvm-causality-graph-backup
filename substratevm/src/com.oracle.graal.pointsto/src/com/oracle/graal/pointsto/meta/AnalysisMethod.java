@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.java.BytecodeParser.BytecodeParserError;
 import org.graalvm.compiler.nodes.EncodedGraph;
@@ -129,6 +130,8 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
         this.wrapped = wrapped;
         this.id = universe.nextMethodId.getAndIncrement();
         declaringClass = universe.lookup(wrapped.getDeclaringClass());
+
+        CausalityExport.instance.addMethod(this);
 
         hasNeverInlineDirective = universe.hostVM().hasNeverInlineDirective(wrapped);
 

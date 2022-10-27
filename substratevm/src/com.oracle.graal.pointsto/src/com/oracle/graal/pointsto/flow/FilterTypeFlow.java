@@ -105,6 +105,7 @@ public class FilterTypeFlow extends TypeFlow<BytecodePosition> {
             /* Swap this flow out at its uses/observers with its declared type flow. */
             setSaturated();
             swapOut(bb, declaredType.getTypeFlow(bb, includeNull));
+            // Christoph-TODO: export the fact that these types are originally still coming from this node!
         } else {
             super.onInputSaturated(bb, input);
         }

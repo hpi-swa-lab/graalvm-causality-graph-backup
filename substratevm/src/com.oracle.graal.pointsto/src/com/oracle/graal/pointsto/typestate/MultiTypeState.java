@@ -213,4 +213,9 @@ public class MultiTypeState extends TypeState {
     public String toString() {
         return "MType<" + typesCount + ":" + (canBeNull ? "null," : "") + "TODO" + ">";
     }
+
+    public byte[] getRawData()
+    {
+        return typesBitSet.toByteArray();
+    }
 }

@@ -28,6 +28,7 @@ import java.util.Collection;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.PointstoOptions;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
@@ -160,12 +161,14 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
         FormalReceiverTypeFlow formalReceiverFlow = calleeFlows.getFormalReceiver();
         if (formalReceiverFlow != null) {
             formalReceiverFlow.addReceiverState(bb, receiverTypeState);
+            CausalityExport.instance.addFlowingTypes(bb, getReceiver(), formalReceiverFlow, receiverTypeState);
         }
 
         if (PointstoOptions.DivertParameterReturningMethod.getValue(bb.getOptions())) {
             int paramIndex = calleeFlows.getMethod().getTypeFlow().getReturnedParameterIndex();
             if (actualReturn != null && paramIndex == 0) {
                 actualReturn.addState(bb, receiverTypeState);
+                CausalityExport.instance.addFlowingTypes(bb, getReceiver(), actualReturn, receiverTypeState);
             }
         }
 

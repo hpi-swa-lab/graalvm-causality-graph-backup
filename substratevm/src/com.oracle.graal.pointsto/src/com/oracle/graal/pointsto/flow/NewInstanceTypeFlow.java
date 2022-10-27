@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
@@ -70,7 +71,9 @@ public class NewInstanceTypeFlow extends TypeFlow<BytecodePosition> {
              * context sensitivity is enabled the default graph is kept clean and used as a template
              * for clones. For clones the state is provided by createCloneState(), on creation.
              */
-            addState(bb, TypeState.forExactType(bb, declaredType, false));
+            TypeState exactTypeState = TypeState.forExactType(bb, declaredType, false);
+            addState(bb, exactTypeState);
+            CausalityExport.instance.addFlowingTypes(bb, null, this, exactTypeState);
         }
     }
 

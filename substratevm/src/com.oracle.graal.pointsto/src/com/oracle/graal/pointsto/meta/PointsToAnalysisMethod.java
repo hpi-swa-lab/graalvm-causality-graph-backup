@@ -88,6 +88,7 @@ public class PointsToAnalysisMethod extends AnalysisMethod {
         if (implementationInvokedBy != null && invoke != null) {
             implementationInvokedBy.put(invoke, Boolean.TRUE);
         }
+
         return super.registerAsImplementationInvoked();
     }
 

@@ -25,6 +25,7 @@
 package com.oracle.graal.pointsto.flow;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.typestate.TypeState;
@@ -76,6 +77,7 @@ public final class DynamicNewInstanceTypeFlow extends TypeFlow<BytecodePosition>
         TypeState newTypeState = newTypeFlow.getState();
         TypeState updateState = bb.analysisPolicy().dynamicNewInstanceState(bb, state, newTypeState, source, allocationContext);
         addState(bb, updateState);
+        CausalityExport.instance.addFlowingTypes(bb, newTypeFlow, this, updateState);
     }
 
     public AnalysisContext allocationContext() {

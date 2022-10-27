@@ -42,6 +42,9 @@ public class AnalysisReportsOptions {
     @Option(help = "Print analysis call tree, a breadth-first tree reduction of the call graph.")//
     public static final OptionKey<Boolean> PrintAnalysisCallTree = new OptionKey<>(false);
 
+    @Option(help = "Causality Graph for Offline-Analysis of reachability.")
+    public static final OptionKey<Boolean> PrintCausalityGraph = new OptionKey<>(false);
+
     @Option(help = "Print call edges with other analysis results statistics.")//
     public static final OptionKey<Boolean> PrintCallEdges = new OptionKey<>(false) {
         @Override

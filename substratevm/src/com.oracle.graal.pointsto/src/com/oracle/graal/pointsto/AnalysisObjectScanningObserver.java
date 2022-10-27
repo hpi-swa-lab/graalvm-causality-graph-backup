@@ -25,6 +25,7 @@
 package com.oracle.graal.pointsto;
 
 import com.oracle.graal.pointsto.ObjectScanner.ScanReason;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
@@ -55,6 +56,8 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         if (!fieldTypeFlow.getState().canBeNull()) {
             /* Signal that the field can contain null. */
+            // Is currently a NO-op, because CausalityExport doesn't care for nulls
+            CausalityExport.instance.addFlowingTypes(getAnalysis(), null, fieldTypeFlow, TypeState.forNull());
             return fieldTypeFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -68,7 +71,10 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         /* Add the constant value object to the field's type flow. */
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         /* Add the new constant to the field's flow state. */
-        return fieldTypeFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType));
+        TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType);
+        // TODO: Find out what causes this to happen in order to make the analysis more complete!
+        CausalityExport.instance.addFlowingTypes(analysis, null, fieldTypeFlow, constantTypeState);
+        return fieldTypeFlow.addState(analysis, constantTypeState);
     }
 
     /**
@@ -96,6 +102,8 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         ArrayElementsTypeFlow arrayObjElementsFlow = getArrayElementsFlow(array, arrayType);
         if (!arrayObjElementsFlow.getState().canBeNull()) {
             /* Signal that the constant array can contain null. */
+            // Is currently a NO-op, because CausalityExport doesn't care for nulls
+            CausalityExport.instance.addFlowingTypes(getAnalysis(), null, arrayObjElementsFlow, TypeState.forNull());
             return arrayObjElementsFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -106,7 +114,9 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         ArrayElementsTypeFlow arrayObjElementsFlow = getArrayElementsFlow(array, arrayType);
         PointsToAnalysis analysis = getAnalysis();
         /* Add the constant element to the constant's array type flow. */
-        return arrayObjElementsFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType));
+        TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType);
+        CausalityExport.instance.addFlowingTypes(analysis, null, arrayObjElementsFlow, constantTypeState);
+        return arrayObjElementsFlow.addState(analysis, constantTypeState);
     }
 
     /**

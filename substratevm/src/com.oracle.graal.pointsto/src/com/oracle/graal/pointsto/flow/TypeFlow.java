@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.compiler.graph.Node;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
@@ -124,6 +125,8 @@ public abstract class TypeFlow<T> {
         this.state = typeState;
         this.usedAsAParameter = false;
         this.usedAsAReceiver = false;
+
+        CausalityExport.instance.addTypeFlow(this);
 
         assert !(source instanceof Node) : "must not reference Graal node from TypeFlow: " + source;
     }
@@ -388,6 +391,7 @@ public abstract class TypeFlow<T> {
                     removeUse(use);
                     return false;
                 } else {
+                    CausalityExport.instance.addFlowingTypes(bb, this, use, getState());
                     use.addState(bb, getState());
                 }
             }
@@ -551,8 +555,11 @@ public abstract class TypeFlow<T> {
     public void update(PointsToAnalysis bb) {
         TypeState curState = getState();
         for (TypeFlow<?> use : getUses()) {
+            CausalityExport.instance.addFlowingTypes(bb, this, use, curState);
+
             if (use.isSaturated()) {
-                removeUse(use);
+                // Christoph: Don't do this, since it loses information about types that would flow to that direction
+                // removeUse(use);
             } else {
                 use.addState(bb, curState);
             }
@@ -655,6 +662,10 @@ public abstract class TypeFlow<T> {
             /* This type flow needs to track all its individual types. */
             return;
         }
+
+        // TODO: Handle saturation in CausalityExport
+        // System.err.println("F" + input.id() + "->F" + id());
+
         /*
          * By default when a type flow is notified that one of its inputs is saturated it will just
          * pass this information to its uses and observers and unlink them. Subclases should

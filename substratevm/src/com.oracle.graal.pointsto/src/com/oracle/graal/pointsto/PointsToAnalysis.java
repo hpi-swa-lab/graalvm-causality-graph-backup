@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
 import org.graalvm.compiler.debug.DebugContext;
@@ -316,6 +317,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
                 postTask(() -> {
                     pointsToMethod.registerAsDirectRootMethod();
                     pointsToMethod.registerAsImplementationInvoked(null);
+                    CausalityExport.instance.addDirectInvoke(null, pointsToMethod);
                     MethodFlowsGraph methodFlowsGraph = analysisPolicy.staticRootMethodGraph(this, pointsToMethod);
                     for (int idx = 0; idx < paramCount; idx++) {
                         AnalysisType declaredParamType = (AnalysisType) signature.getParameterType(idx, declaringClass);
@@ -569,7 +571,9 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         /* Register the instantiated type with its super types. */
         type.forAllSuperTypes(t -> {
             t.instantiatedTypes.addState(this, typeState);
+            CausalityExport.instance.addFlowingTypes(this, null, t.instantiatedTypes, typeState);
             t.instantiatedTypesNonNull.addState(this, typeStateNonNull);
+            CausalityExport.instance.addFlowingTypes(this, null, t.instantiatedTypesNonNull, typeStateNonNull);
         });
     }
 

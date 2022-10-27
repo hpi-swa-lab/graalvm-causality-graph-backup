@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.nodes.ParameterNode;
 import org.graalvm.compiler.nodes.ReturnNode;
@@ -107,6 +108,8 @@ public class MethodTypeFlow extends TypeFlow<AnalysisMethod> {
                 /* Wrap all other errors as parsing errors. */
                 throw AnalysisError.parsingError(method, t);
             }
+
+            CausalityExport.instance.registerMethodFlow(this);
         }
     }
 

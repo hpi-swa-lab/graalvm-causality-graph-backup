@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.Collections;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.AbstractSpecialInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
@@ -60,6 +61,7 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
         if (calleeFlows == null) {
             calleeFlows = callee.getOrCreateMethodFlowsGraph(bb, this);
             linkCallee(bb, false, calleeFlows);
+            CausalityExport.instance.addDirectInvoke(this.method(), calleeFlows.getMethod());
         }
 
         /*

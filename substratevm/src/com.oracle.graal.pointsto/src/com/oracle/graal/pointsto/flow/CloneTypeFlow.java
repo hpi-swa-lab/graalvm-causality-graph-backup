@@ -25,6 +25,7 @@
 package com.oracle.graal.pointsto.flow;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.causality.CausalityExport;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.typestate.TypeState;
@@ -77,6 +78,7 @@ public class CloneTypeFlow extends TypeFlow<BytecodePosition> {
 
         /* Update the clone flow state. */
         addState(bb, resultState);
+        CausalityExport.instance.addFlowingTypes(bb, input, this, resultState);
     }
 
     @Override
