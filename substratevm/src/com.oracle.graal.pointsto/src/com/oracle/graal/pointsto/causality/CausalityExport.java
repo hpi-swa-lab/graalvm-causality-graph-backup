@@ -145,6 +145,17 @@ public class CausalityExport {
         }
     }
 
+    public synchronized void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type)
+    {
+        TypeState typeState = TypeState.forExactType(bb, type, true);
+        TypeState typeStateNonNull = TypeState.forExactType(bb, type, false);
+
+        type.forAllSuperTypes(t -> {
+            addFlowingTypes(bb, cause, t.instantiatedTypes, typeState);
+            addFlowingTypes(bb, cause, t.instantiatedTypesNonNull, typeStateNonNull);
+        });
+    }
+
     public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException
     {
         AnalysisType[] types;

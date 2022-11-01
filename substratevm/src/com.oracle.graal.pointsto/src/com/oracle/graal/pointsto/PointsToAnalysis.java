@@ -571,9 +571,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         /* Register the instantiated type with its super types. */
         type.forAllSuperTypes(t -> {
             t.instantiatedTypes.addState(this, typeState);
-            CausalityExport.instance.addFlowingTypes(this, null, t.instantiatedTypes, typeState);
             t.instantiatedTypesNonNull.addState(this, typeStateNonNull);
-            CausalityExport.instance.addFlowingTypes(this, null, t.instantiatedTypesNonNull, typeStateNonNull);
         });
     }
 
