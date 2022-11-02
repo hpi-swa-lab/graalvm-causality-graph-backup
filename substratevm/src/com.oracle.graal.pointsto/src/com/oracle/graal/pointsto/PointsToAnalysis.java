@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.purge.PurgeMethods;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
 import org.graalvm.compiler.debug.DebugContext;
@@ -102,6 +103,8 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
     private final boolean strengthenGraalGraphs;
 
+    private final PurgeMethods purgeInfo;
+
     public PointsToAnalysis(OptionValues options, AnalysisUniverse universe, HostedProviders providers, HostVM hostVM, ForkJoinPool executorService, Runnable heartbeatCallback,
                     UnsupportedFeatures unsupportedFeatures, TimerCollection timerCollection, boolean strengthenGraalGraphs) {
         super(options, universe, providers, hostVM, executorService, heartbeatCallback, unsupportedFeatures, timerCollection);
@@ -128,6 +131,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
         timing = PointstoOptions.ProfileAnalysisOperations.getValue(options) ? new AnalysisTiming() : null;
         executor.init(timing);
+        purgeInfo = new PurgeMethods(this);
     }
 
     @Override
@@ -143,6 +147,10 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         StatisticsPrinter.print(out, "total_analysis_time_ms", analysisTimer.getTotalTime());
 
         StatisticsPrinter.printLast(out, "total_memory_bytes", analysisTimer.getTotalMemory());
+    }
+
+    public PurgeMethods getPurgeInfo() {
+        return purgeInfo;
     }
 
     @Override
@@ -298,6 +306,10 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     @Override
     @SuppressWarnings("try")
     public AnalysisMethod addRootMethod(AnalysisMethod aMethod, boolean invokeSpecial) {
+
+        if(purgeInfo.purgeRequested(aMethod))
+            return aMethod;
+
         assert !universe.sealed() : "Cannot register root methods after analysis universe is sealed.";
         try (Indent indent = debug.logAndIndent("add root method %s", aMethod.getName())) {
 

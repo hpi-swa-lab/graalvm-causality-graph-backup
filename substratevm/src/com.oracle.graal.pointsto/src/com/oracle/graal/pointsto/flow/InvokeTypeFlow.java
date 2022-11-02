@@ -24,8 +24,6 @@
  */
 package com.oracle.graal.pointsto.flow;
 
-import java.util.Collection;
-
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
@@ -33,9 +31,11 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.InvokeInfo;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
+import com.oracle.graal.pointsto.purge.PurgeMethods;
 import com.oracle.graal.pointsto.typestate.TypeState;
-
 import jdk.vm.ci.code.BytecodePosition;
+
+import java.util.Collection;
 
 public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implements InvokeInfo {
 
@@ -172,6 +172,9 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
     }
 
     protected void linkCallee(PointsToAnalysis bb, boolean isStatic, MethodFlowsGraph calleeFlows) {
+
+        if(bb.getPurgeInfo().purgeRequested(calleeFlows.getMethod()))
+            return;
 
         // iterate over the actual parameters in caller context
         for (int i = 0; i < actualParameters.length; i++) {

@@ -31,6 +31,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import com.oracle.graal.pointsto.purge.PurgeMethods;
+import com.oracle.graal.pointsto.purge.PurgedMethodTypeFlowBuilder;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.nodes.ParameterNode;
 import org.graalvm.compiler.nodes.ReturnNode;
@@ -93,7 +95,7 @@ public class MethodTypeFlow extends TypeFlow<AnalysisMethod> {
 
             parsingReason = reason;
             try {
-                MethodTypeFlowBuilder builder = bb.createMethodTypeFlowBuilder(bb, method);
+                MethodTypeFlowBuilder builder = bb.getPurgeInfo().purgeRequested(method) ? new PurgedMethodTypeFlowBuilder(bb, method) : bb.createMethodTypeFlowBuilder(bb, method);
                 builder.apply();
 
                 returnedParameterIndex = computeReturnedParameterIndex(builder.graph);
