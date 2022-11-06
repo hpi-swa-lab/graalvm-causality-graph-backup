@@ -57,6 +57,10 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
          * the callee will be unreachable from this call site.
          */
         initCallee();
+
+        if(bb.getPurgeInfo().purgeRequested(callee.getMethod()))
+            return;
+
         if (calleeFlows == null) {
             calleeFlows = callee.getOrCreateMethodFlowsGraph(bb, this);
             linkCallee(bb, false, calleeFlows);
