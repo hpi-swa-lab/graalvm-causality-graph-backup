@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.causality;
 
+import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.NullCheckTypeFlow;
@@ -22,7 +23,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Stack;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class CausalityExport {
 
@@ -158,17 +161,15 @@ public class CausalityExport {
 
     public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException
     {
+        Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
+
         AnalysisType[] types;
 
         {
-            int maxTypeId = -1;
-            for (AnalysisType t : bb.getAllInstantiatedTypes())
-                maxTypeId = Math.max(maxTypeId, t.getId());
+            types = new AnalysisType[typeIdMap.size()];
 
-            types = new AnalysisType[maxTypeId + 1];
-
-            for (AnalysisType t : bb.getAllInstantiatedTypes())
-                types[t.getId()] = t;
+            for(AnalysisType t : bb.getAllInstantiatedTypes())
+                types[typeIdMap.get(t.getId())] = t;
         }
 
         while(typeflow_methods.size() < typeflows.size())
@@ -281,43 +282,25 @@ public class CausalityExport {
             ByteBuffer b = ByteBuffer.allocate(bytesPerTypestate);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
-            int stateIndex = 0;
             for(TypeState state : typestate_by_id)
             {
                 b.clear();
                 zero.clear();
 
-                int typesCount = state.typesCount();
+                b.put(zero);
 
-                if(typesCount == 0)
+                for(AnalysisType t : state.types(bb))
                 {
-                    assert zero.remaining() == bytesPerTypestate;
-                    c.write(zero);
-                }
-                else if(typesCount == 1)
-                {
-                    int typeIndex = state.exactType().getId();
-
-                    b.put(zero);
-                    b.put(typeIndex / 8, (byte)(1 << (typeIndex % 8)));
-                    b.flip();
-                    assert b.remaining() == bytesPerTypestate;
-                    c.write(b);
-                }
-                else
-                {
-                    MultiTypeState multiState = (MultiTypeState)state;
-                    byte[] rawData = multiState.getRawData();
-                    b.put(rawData);
-                    zero.limit(b.remaining());
-                    b.flip();
-                    assert (b.remaining() + zero.remaining()) == bytesPerTypestate;
-                    c.write(b);
-                    c.write(zero);
+                    int id = typeIdMap.get(t.getId());
+                    int byte_index = id / 8;
+                    int bit_index = id % 8;
+                    byte old = b.get(byte_index);
+                    old |= (byte)(1 << bit_index);
+                    b.put(byte_index, old);
                 }
 
-                assert c.position() == stateIndex * bytesPerTypestate;
-                stateIndex++;
+                b.flip();
+                c.write(b);
             }
         }
 
@@ -374,5 +357,48 @@ public class CausalityExport {
                 b.flip();
             }
         }
+    }
+
+    static Map<Integer, Integer> makeDenseTypeIdMap(BigBang bb, Predicate<AnalysisType> shouldBeIncluded)
+    {
+        ArrayList<AnalysisType> typesInPreorder = new ArrayList<>();
+
+        Stack<AnalysisType> worklist = new Stack<>();
+        worklist.add(bb.getUniverse().objectType());
+
+        while(!worklist.empty())
+        {
+            AnalysisType u = worklist.pop();
+
+            if(shouldBeIncluded.test(u))
+                typesInPreorder.add(u);
+
+            for(AnalysisType v : u.getSubTypes())
+            {
+                if(v != u && !v.isInterface())
+                {
+                    worklist.push(v);
+                }
+            }
+        }
+
+        for(AnalysisType t : bb.getAllInstantiatedTypes())
+        {
+            if(shouldBeIncluded.test(t) && t.isInterface())
+            {
+                typesInPreorder.add(t);
+            }
+        }
+
+        HashMap<Integer, Integer> idMap = new HashMap<>(typesInPreorder.size());
+
+        int newId = 0;
+        for(AnalysisType t : typesInPreorder)
+        {
+            idMap.put(t.getId(), newId);
+            newId++;
+        }
+
+        return idMap;
     }
 }
