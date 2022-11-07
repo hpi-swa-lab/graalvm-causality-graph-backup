@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
@@ -208,6 +209,13 @@ public class JNIAccessFeature implements Feature {
         @Override
         public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
             abortIfSealed();
+
+            if(ConfigurationCondition.alwaysTrue().equals(condition))
+            {
+                for(Executable m : methods)
+                    CausalityExport.instance.registerAnonymousRegistration(m);
+            }
+
             registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
         }
 

@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 
 import com.oracle.graal.pointsto.util.AnalysisFuture;
@@ -53,6 +54,7 @@ public abstract class AnalysisElement {
 
     public void registerReachabilityNotification(ElementNotification notification) {
         ConcurrentLightHashSet.addElement(this, reachableNotificationsUpdater, notification);
+        CausalityExport.instance.registerReachabilityNotification(this, notification.callback);
     }
 
     public void notifyReachabilityCallback(AnalysisUniverse universe, ElementNotification notification) {
@@ -99,7 +101,9 @@ public abstract class AnalysisElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
+                CausalityExport.instance.registerNotificationStart(callback);
                 callback.accept(universe.getConcurrentAnalysisAccess());
+                CausalityExport.instance.registerNotificationEnd(callback);
                 return null;
             });
 

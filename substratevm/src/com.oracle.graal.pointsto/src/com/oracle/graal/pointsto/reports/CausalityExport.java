@@ -4,21 +4,29 @@ import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
+import com.oracle.graal.pointsto.meta.AnalysisElement;
+import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.meta.PointsToAnalysisType;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import org.graalvm.collections.Pair;
+import org.graalvm.nativeimage.hosted.Feature;
 
 import java.io.FileOutputStream;
 import java.io.PrintStream;
+import java.lang.reflect.Executable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Stack;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -113,6 +121,12 @@ public class CausalityExport {
 
     public synchronized void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee)
     {
+        if(caller == null && callee.getQualifiedName().contains("FactoryMethodHolder"))
+        {
+            System.err.println("Ignored " + callee.getQualifiedName());
+            return;
+        }
+
         Edge e = new Edge(caller == null ? 0 : caller.getId(), callee.getId());
         boolean alreadyExisting = !direct_invokes.add(e);
         assert !alreadyExisting : "Redundant adding of direct invoke";
@@ -154,6 +168,75 @@ public class CausalityExport {
         });
     }
 
+    Map<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> callbackReasons = new HashMap<>();
+
+    static boolean indirectlyImplementsFeature(Class<?> clazz)
+    {
+        if(clazz.equals(Feature.class))
+            return true;
+
+        for(Class<?> interfaces : clazz.getInterfaces())
+            if(indirectlyImplementsFeature(interfaces))
+                return true;
+
+        return false;
+    }
+
+    public synchronized void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback)
+    {
+        try {
+            Class<?> callbackClass = Class.forName(callback.getClass().getName().split("\\$")[0]);
+
+            if(!indirectlyImplementsFeature(callbackClass))
+            {
+                System.err.println(callbackClass.toString() + " is not a Feature!");
+            }
+
+        } catch (ReflectiveOperationException ex) {
+            System.err.println(ex);
+        }
+
+        callbackReasons.computeIfAbsent(callback, k -> new ArrayList<>()).add(e);
+    }
+
+    ThreadLocal<Consumer<Feature.DuringAnalysisAccess>> runningNotification = new ThreadLocal<>();
+
+    public void registerNotificationStart(Consumer<Feature.DuringAnalysisAccess> notification)
+    {
+        if(runningNotification.get() != null)
+            throw new RuntimeException("Notification already running!");
+
+        runningNotification.set(notification);
+    }
+
+    public void registerNotificationEnd(Consumer<Feature.DuringAnalysisAccess> notification)
+    {
+        if(runningNotification.get() == null)
+            throw new RuntimeException("Notification was not running!");
+
+        runningNotification.remove();
+    }
+
+    List<Pair<AnalysisElement, Executable>> unrootRegistered = new ArrayList<>();
+
+    public synchronized void registerAnonymousRegistration(Executable e)
+    {
+        Consumer<Feature.DuringAnalysisAccess> running = runningNotification.get();
+
+        if(running != null)
+        {
+            List<AnalysisElement> causes = callbackReasons.get(running);
+
+            if(causes != null)
+            {
+                for(AnalysisElement cause : causes)
+                {
+                    unrootRegistered.add(Pair.create(cause, e));
+                }
+            }
+        }
+    }
+
     public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException
     {
         Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
@@ -169,6 +252,61 @@ public class CausalityExport {
 
         while(typeflow_methods.size() < typeflows.size())
             typeflow_methods.add(null);
+
+
+        HashSet<Integer> unrootedMethods = new HashSet<>();
+
+        for(Pair<AnalysisElement, Executable> p : unrootRegistered)
+        {
+            AnalysisMethod m = bb.getMetaAccess().lookupJavaMethod(p.getRight());
+            unrootedMethods.add(m.getId());
+
+            if(p.getLeft() instanceof AnalysisMethod)
+            {
+                //addDirectInvoke(p.getLeft(), m);
+            }
+            else if(p.getLeft() instanceof AnalysisType)
+            {
+                //AnalysisType t = (AnalysisType)p.getLeft();
+                //this.addVirtualInvoke(bb, t.instantiatedTypes, m, TypeState.forExactType(bb, t));
+            }
+            else if(p.getLeft() instanceof AnalysisField)
+            {
+                //AnalysisType t = ((AnalysisField)p.getLeft()).getType();
+                //this.addVirtualInvoke(bb, t.instantiatedTypes, m, TypeState.forExactType(bb, t));
+            }
+        }
+
+        HashSet<Integer> classInitializers = new HashSet<>();
+        HashSet<Integer> classInitializedClasses = new HashSet<>();
+        TypeState classInitializedClassesState = TypeState.forEmpty();
+
+        HashSet<Integer> allInstantiatedTypeFlows = new HashSet<>();
+
+        for(AnalysisType t : bb.getUniverse().getTypes())
+        {
+            PointsToAnalysisType t2 = (PointsToAnalysisType)t;
+            allInstantiatedTypeFlows.add(t2.instantiatedTypes.id());
+            allInstantiatedTypeFlows.add(t2.instantiatedTypesNonNull.id());
+        }
+
+        // --- Class-Initializer rechnen wir der reachability des Types an:
+        for(AnalysisMethod m : methods)
+        {
+            if(m.isClassInitializer() && m.isImplementationInvoked() && m.getDeclaringClass().isReachable())
+            {
+                classInitializers.add(m.getId());
+                addVirtualInvoke(bb, m.getDeclaringClass().getTypeFlow(bb, false), m, m.getDeclaringClass().getTypeFlow(bb, false).getState());
+                classInitializedClasses.add(m.getDeclaringClass().getId());
+                classInitializedClassesState = TypeState.forUnion(bb, classInitializedClassesState, TypeState.forExactType(bb, m.getDeclaringClass(), false));
+            }
+        }
+
+        for(Edge e : interflows.keySet())
+        {
+            if(e.src == 0 && allInstantiatedTypeFlows.contains(e.dst))
+                interflows.put(e, TypeState.forSubtraction(bb, interflows.get(e), classInitializedClassesState));
+        }
 
         try(FileOutputStream out = new FileOutputStream("types.txt"))
         {
@@ -223,25 +361,17 @@ public class CausalityExport {
 
             for(Edge e : direct_invokes)
             {
+                if(e.src == 0 && unrootedMethods.contains(e.dst))
+                    continue;
+
+                if(e.src == 0 && classInitializers.contains(e.dst))
+                    continue;
+
                 b.putInt(e.src);
                 b.putInt(e.dst);
                 b.flip();
                 c.write(b);
                 b.flip();
-            }
-        }
-
-        try(FileOutputStream out = new FileOutputStream("direct_invokes.txt"))
-        {
-            try(PrintStream w = new PrintStream(out))
-            {
-                for(Edge e : direct_invokes)
-                {
-                    w.print('M');
-                    w.print(e.src);
-                    w.print("->M");
-                    w.println(e.dst);
-                }
             }
         }
 
