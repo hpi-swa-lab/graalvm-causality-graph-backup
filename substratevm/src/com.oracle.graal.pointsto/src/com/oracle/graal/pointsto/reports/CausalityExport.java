@@ -2,6 +2,7 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
@@ -24,7 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
 import java.util.Stack;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -34,47 +35,12 @@ public class CausalityExport {
 
     public static final CausalityExport instance = new CausalityExport();
 
-    private static class Edge {
-        int src, dst;
-
-        public Edge(int src, int dst)
-        {
-            this.src = src;
-            this.dst = dst;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Edge)) return false;
-            Edge edge = (Edge) o;
-            return src == edge.src && dst == edge.dst;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(src, dst);
-        }
-    }
-
-    private static class IntTriple
-    {
-        int a, b, c;
-
-        public IntTriple(int a, int b, int c)
-        {
-            this.a = a;
-            this.b = b;
-            this.c = c;
-        }
-    }
-
+    // All typeflows ever constructed
     private final ArrayList<TypeFlow<?>> typeflows = new ArrayList<>();
-    private final ArrayList<AnalysisMethod> methods = new ArrayList<>();
-    private final HashMap<Edge, TypeState> interflows = new HashMap<>();
-    private final HashSet<Edge> direct_invokes = new HashSet<>();
-    private final HashMap<Edge, TypeState> virtual_invokes = new HashMap<>();
-    private final ArrayList<AnalysisMethod> typeflow_methods = new ArrayList<>();
+    private final HashMap<Pair<TypeFlow<?>, TypeFlow<?>>, TypeState> interflows = new HashMap<>();
+    private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
+    private final HashMap<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
+    private final ArrayList<AnalysisMethod> typeflowGateMethods = new ArrayList<>();
 
     private static <T> void addIncreasing(ArrayList<T> list, int idx, T elem)
     {
@@ -98,26 +64,13 @@ public class CausalityExport {
         addIncreasing(typeflows, flow.id() - 1, flow);
     }
 
-    public void addType(AnalysisType type)
-    {
-    }
-
-    public synchronized void addMethod(AnalysisMethod method)
-    {
-        addIncreasing(methods, method.getId() - 1, method);
-    }
-
     public synchronized void addFlowingTypes(PointsToAnalysis bb, TypeFlow<?> from, TypeFlow<?> to, TypeState addTypes)
     {
-        Edge e = new Edge(from == null ? 0 : from.id(), to.id());
-        TypeState cur = interflows.getOrDefault(e, TypeState.forEmpty());
-        TypeState next = TypeState.forUnion(bb, cur, to.filter(bb, addTypes));
-        if(next != cur)
-            interflows.put(e, next);
-
-        if(e.src > typeflows.size() || e.dst > typeflows.size())
-            throw new RuntimeException();
+        TypeState newTypes = to.filter(bb, addTypes);
+        interflows.compute(Pair.create(from, to), (edge, state) -> state == null ? newTypes : TypeState.forUnion(bb, state, newTypes));
     }
+
+    private final HashMap<Integer, Integer> rootMethod_registerCount = new HashMap<>();
 
     public synchronized void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee)
     {
@@ -127,23 +80,19 @@ public class CausalityExport {
             return;
         }
 
-        Edge e = new Edge(caller == null ? 0 : caller.getId(), callee.getId());
-        boolean alreadyExisting = !direct_invokes.add(e);
+        if(caller == null)
+        {
+            rootMethod_registerCount.compute(callee.getId(), (id, count) -> (count == null ? 0 : count) + 1);
+        }
+
+        boolean alreadyExisting = !direct_invokes.add(Pair.create(caller, callee));
         assert !alreadyExisting : "Redundant adding of direct invoke";
     }
 
     public synchronized void addVirtualInvoke(PointsToAnalysis bb, TypeFlow<?> actualReceiver, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes)
     {
-        Edge e = new Edge(actualReceiver.id(), concreteTargetMethod.getId());
-        TypeState cur = virtual_invokes.getOrDefault(e, TypeState.forEmpty());
-        TypeState next = TypeState.forUnion(bb, cur, concreteTargetMethodCallingTypes);
-        if(next != cur)
-            virtual_invokes.put(e, next);
-    }
-
-    private void setContainingMethod(TypeFlow<?> flow, AnalysisMethod method)
-    {
-        addIncreasing(typeflow_methods, flow.id() - 1, method);
+        Pair<TypeFlow<?>, AnalysisMethod> e = Pair.create(actualReceiver, concreteTargetMethod);
+        virtual_invokes.compute(e, (edge, state) -> state == null ? concreteTargetMethodCallingTypes : TypeState.forUnion(bb, state, concreteTargetMethodCallingTypes));
     }
 
     public synchronized void registerMethodFlow(MethodTypeFlow method)
@@ -153,7 +102,7 @@ public class CausalityExport {
             if(method.getMethod() == null)
                 throw new RuntimeException("Null method registered");
             if(flow.method() != null)
-                setContainingMethod(flow, method.getMethod());
+                addIncreasing(typeflowGateMethods, flow.id() - 1, method.getMethod());
         }
     }
 
@@ -189,7 +138,7 @@ public class CausalityExport {
 
             if(!indirectlyImplementsFeature(callbackClass))
             {
-                System.err.println(callbackClass.toString() + " is not a Feature!");
+                System.err.println(callbackClass + " is not a Feature!");
             }
 
         } catch (ReflectiveOperationException ex) {
@@ -211,7 +160,7 @@ public class CausalityExport {
 
     public void registerNotificationEnd(Consumer<Feature.DuringAnalysisAccess> notification)
     {
-        if(runningNotification.get() == null)
+        if(runningNotification.get() != notification)
             throw new RuntimeException("Notification was not running!");
 
         runningNotification.remove();
@@ -237,29 +186,48 @@ public class CausalityExport {
         }
     }
 
-    public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException
+    private HashSet<AnalysisMethod> accountClassInitializersToTypeInstantiation(PointsToAnalysis bb)
     {
-        Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
+        HashSet<AnalysisMethod> classInitializers = new HashSet<>();
+        TypeState classInitializedClassesState = TypeState.forEmpty();
 
-        AnalysisType[] types;
+        HashSet<AllInstantiatedTypeFlow> allInstantiatedTypeFlows = new HashSet<>();
 
+        for(AnalysisType t : bb.getUniverse().getTypes())
         {
-            types = new AnalysisType[typeIdMap.size()];
-
-            for(AnalysisType t : bb.getAllInstantiatedTypes())
-                types[typeIdMap.get(t.getId())] = t;
+            PointsToAnalysisType t2 = (PointsToAnalysisType)t;
+            allInstantiatedTypeFlows.add(t2.instantiatedTypes);
+            allInstantiatedTypeFlows.add(t2.instantiatedTypesNonNull);
         }
 
-        while(typeflow_methods.size() < typeflows.size())
-            typeflow_methods.add(null);
+        // --- Class-Initializer rechnen wir der reachability des Types an:
+        for(AnalysisMethod m : bb.getUniverse().getMethods())
+        {
+            if(m.isClassInitializer() && m.isImplementationInvoked() && m.getDeclaringClass().isReachable())
+            {
+                classInitializers.add(m);
+                addVirtualInvoke(bb, m.getDeclaringClass().getTypeFlow(bb, false), m, m.getDeclaringClass().getTypeFlow(bb, false).getState());
+                classInitializedClassesState = TypeState.forUnion(bb, classInitializedClassesState, TypeState.forExactType(bb, m.getDeclaringClass(), false));
+            }
+        }
 
+        for(Pair<TypeFlow<?>, TypeFlow<?>> e : interflows.keySet())
+        {
+            if(e.getLeft() == null && allInstantiatedTypeFlows.contains(e.getRight()))
+                interflows.put(e, TypeState.forSubtraction(bb, interflows.get(e), classInitializedClassesState));
+        }
 
-        HashSet<Integer> unrootedMethods = new HashSet<>();
+        return classInitializers;
+    }
+
+    private Set<AnalysisMethod> calcUnrootedMethods(PointsToAnalysis bb)
+    {
+        HashSet<AnalysisMethod> unrootedMethods = new HashSet<>();
 
         for(Pair<AnalysisElement, Executable> p : unrootRegistered)
         {
             AnalysisMethod m = bb.getMetaAccess().lookupJavaMethod(p.getRight());
-            unrootedMethods.add(m.getId());
+            unrootedMethods.add(m);
 
             if(p.getLeft() instanceof AnalysisMethod)
             {
@@ -277,36 +245,20 @@ public class CausalityExport {
             }
         }
 
-        HashSet<Integer> classInitializers = new HashSet<>();
-        HashSet<Integer> classInitializedClasses = new HashSet<>();
-        TypeState classInitializedClassesState = TypeState.forEmpty();
+        return unrootedMethods;
+    }
 
-        HashSet<Integer> allInstantiatedTypeFlows = new HashSet<>();
+    public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException
+    {
+        Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
+        AnalysisType[] types = getRelevantTypes(bb, typeIdMap);
+        fillTypeflowGateMethods();
+        Set<AnalysisMethod> unrootedMethods = calcUnrootedMethods(bb);
+        Map<AnalysisMethod, Integer> methodIdMap = makeDenseMethodMap(bb, AnalysisMethod::isReachable);
+        AnalysisMethod[] methods = getRelevantMethods(bb, methodIdMap);
 
-        for(AnalysisType t : bb.getUniverse().getTypes())
-        {
-            PointsToAnalysisType t2 = (PointsToAnalysisType)t;
-            allInstantiatedTypeFlows.add(t2.instantiatedTypes.id());
-            allInstantiatedTypeFlows.add(t2.instantiatedTypesNonNull.id());
-        }
 
-        // --- Class-Initializer rechnen wir der reachability des Types an:
-        for(AnalysisMethod m : methods)
-        {
-            if(m.isClassInitializer() && m.isImplementationInvoked() && m.getDeclaringClass().isReachable())
-            {
-                classInitializers.add(m.getId());
-                addVirtualInvoke(bb, m.getDeclaringClass().getTypeFlow(bb, false), m, m.getDeclaringClass().getTypeFlow(bb, false).getState());
-                classInitializedClasses.add(m.getDeclaringClass().getId());
-                classInitializedClassesState = TypeState.forUnion(bb, classInitializedClassesState, TypeState.forExactType(bb, m.getDeclaringClass(), false));
-            }
-        }
-
-        for(Edge e : interflows.keySet())
-        {
-            if(e.src == 0 && allInstantiatedTypeFlows.contains(e.dst))
-                interflows.put(e, TypeState.forSubtraction(bb, interflows.get(e), classInitializedClassesState));
-        }
+        HashSet<AnalysisMethod> classInitializers = accountClassInitializersToTypeInstantiation(bb);
 
         try(FileOutputStream out = new FileOutputStream("types.txt"))
         {
@@ -359,19 +311,34 @@ public class CausalityExport {
             ByteBuffer b = ByteBuffer.allocate(8);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
-            for(Edge e : direct_invokes)
+            for(Pair<AnalysisMethod, AnalysisMethod> e : direct_invokes)
             {
-                if(e.src == 0 && unrootedMethods.contains(e.dst))
+                if(e.getLeft() == null && unrootedMethods.contains(e.getRight()))
                     continue;
 
-                if(e.src == 0 && classInitializers.contains(e.dst))
+                if(e.getLeft() == null && classInitializers.contains(e.getRight()))
                     continue;
 
-                b.putInt(e.src);
-                b.putInt(e.dst);
+                int src = e.getLeft() == null ? 0 : methodIdMap.get(e.getLeft());
+                int dst = methodIdMap.get(e.getRight());
+
+                b.putInt(src);
+                b.putInt(dst);
                 b.flip();
                 c.write(b);
                 b.flip();
+            }
+        }
+
+        class IntTriple
+        {
+            final int a, b, c;
+
+            public IntTriple(int a, int b, int c)
+            {
+                this.a = a;
+                this.b = b;
+                this.c = c;
             }
         }
 
@@ -386,16 +353,16 @@ public class CausalityExport {
             return size;
         };
 
-        for(Map.Entry<Edge, TypeState> entry : interflows.entrySet())
+        for(Map.Entry<Pair<TypeFlow<?>, TypeFlow<?>>, TypeState> entry : interflows.entrySet())
         {
             int typestate_id = typestate_to_id.computeIfAbsent(entry.getValue(), assignId);
-            interflows_compact.add(new IntTriple(entry.getKey().src, entry.getKey().dst, typestate_id));
+            interflows_compact.add(new IntTriple(entry.getKey().getLeft() == null ? 0 : entry.getKey().getLeft().id(), entry.getKey().getRight().id(), typestate_id));
         }
 
-        for(Map.Entry<Edge, TypeState> entry : virtual_invokes.entrySet())
+        for(Map.Entry<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> entry : virtual_invokes.entrySet())
         {
             int typestate_id = typestate_to_id.computeIfAbsent(entry.getValue(), assignId);
-            virtual_invokes_compact.add(new IntTriple(entry.getKey().src, entry.getKey().dst, typestate_id));
+            virtual_invokes_compact.add(new IntTriple(entry.getKey().getLeft().id(), methodIdMap.get(entry.getKey().getRight()), typestate_id));
         }
 
         try(FileOutputStream out = new FileOutputStream("typestates.bin"))
@@ -472,9 +439,9 @@ public class CausalityExport {
             ByteBuffer b = ByteBuffer.allocate(4);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
-            for(AnalysisMethod method : typeflow_methods)
+            for(AnalysisMethod method : typeflowGateMethods)
             {
-                int mid = method == null ? 0 : method.getId();
+                int mid = method == null ? 0 : methodIdMap.get(method);
 
                 b.putInt(mid);
                 b.flip();
@@ -484,10 +451,11 @@ public class CausalityExport {
         }
     }
 
-    static Map<Integer, Integer> makeDenseTypeIdMap(BigBang bb, Predicate<AnalysisType> shouldBeIncluded)
+    private static Map<Integer, Integer> makeDenseTypeIdMap(BigBang bb, Predicate<AnalysisType> shouldBeIncluded)
     {
         ArrayList<AnalysisType> typesInPreorder = new ArrayList<>();
 
+        // Execute inorder-tree-traversal on subclass hierarchy in order to have hierarchy subtrees in one contiguous id range
         Stack<AnalysisType> worklist = new Stack<>();
         worklist.add(bb.getUniverse().objectType());
 
@@ -507,6 +475,7 @@ public class CausalityExport {
             }
         }
 
+        // Add interfaces at the end
         for(AnalysisType t : bb.getAllInstantiatedTypes())
         {
             if(shouldBeIncluded.test(t) && t.isInterface())
@@ -525,5 +494,49 @@ public class CausalityExport {
         }
 
         return idMap;
+    }
+
+    private static AnalysisType[] getRelevantTypes(PointsToAnalysis bb, Map<Integer, Integer> typeIdMap)
+    {
+        AnalysisType[] types = new AnalysisType[typeIdMap.size()];
+
+        for(AnalysisType t : bb.getAllInstantiatedTypes())
+            types[typeIdMap.get(t.getId())] = t;
+
+        return types;
+    }
+
+    private static Map<AnalysisMethod, Integer> makeDenseMethodMap(BigBang bb, Predicate<AnalysisMethod> shouldBeIncluded)
+    {
+        HashMap<AnalysisMethod, Integer> idMap = new HashMap<>();
+
+        var ref = new Object() {
+            int newId = 1; // Method 0 is logical <root>
+        };
+
+        for(AnalysisMethod m : bb.getUniverse().getMethods())
+            if(shouldBeIncluded.test(m))
+                idMap.computeIfAbsent(m, key -> ref.newId++);
+
+        return idMap;
+    }
+
+    private static AnalysisMethod[] getRelevantMethods(PointsToAnalysis bb, Map<AnalysisMethod, Integer> methodIdMap)
+    {
+        AnalysisMethod[] methods = new AnalysisMethod[methodIdMap.size()];
+
+        for(Map.Entry<AnalysisMethod, Integer> e : methodIdMap.entrySet())
+        {
+            methods[e.getValue() - 1] = e.getKey();
+        }
+
+        return methods;
+    }
+
+    private void fillTypeflowGateMethods()
+    {
+        // Damit die Datei so groß wird wie es Typeflows gibt
+        while(typeflowGateMethods.size() < typeflows.size())
+            typeflowGateMethods.add(null);
     }
 }

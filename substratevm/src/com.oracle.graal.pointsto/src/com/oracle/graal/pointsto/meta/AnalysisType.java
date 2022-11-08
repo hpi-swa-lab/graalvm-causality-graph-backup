@@ -294,8 +294,6 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
             AnalysisError.guarantee(universe.getHeapScanner() != null, "Heap scanner is not available.");
             return universe.getHeapScanner().computeTypeData(this);
         });
-
-        CausalityExport.instance.addType(this);
     }
 
     private AnalysisType[] convertTypes(ResolvedJavaType[] originalTypes) {

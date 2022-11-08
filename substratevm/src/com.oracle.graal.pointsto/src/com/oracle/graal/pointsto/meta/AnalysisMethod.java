@@ -131,8 +131,6 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
         this.id = universe.nextMethodId.getAndIncrement();
         declaringClass = universe.lookup(wrapped.getDeclaringClass());
 
-        CausalityExport.instance.addMethod(this);
-
         hasNeverInlineDirective = universe.hostVM().hasNeverInlineDirective(wrapped);
 
         if (PointstoOptions.TrackAccessChain.getValue(universe.hostVM().options())) {
