@@ -62,6 +62,9 @@ final class DefaultStaticInvokeTypeFlow extends AbstractStaticInvokeTypeFlow {
          */
         callee = targetMethod.getTypeFlow();
 
+        if(bb.getPurgeInfo().purgeRequested(targetMethod))
+            return;
+
         MethodFlowsGraph calleeFlows = callee.getOrCreateMethodFlowsGraph(bb, this);
         linkCallee(bb, true, calleeFlows);
         CausalityExport.instance.addDirectInvoke(this.method(), calleeFlows.getMethod());
