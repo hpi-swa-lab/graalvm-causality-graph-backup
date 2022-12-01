@@ -1038,6 +1038,7 @@ public class NativeImage {
 
         /* Perform option consolidation of imageBuilderArgs */
 
+        imageBuilderJavaArgs.add("-agentpath:/home/christoph/MPWS2022RH1/subuniverse-reachability/heap-assignment-tracing-agent/build/libheap_assignment_tracing_agent.so");
         imageBuilderJavaArgs.addAll(getAgentArguments());
 
         mainClass = getHostedOptionFinalArgumentValue(imageBuilderArgs, oHClass);

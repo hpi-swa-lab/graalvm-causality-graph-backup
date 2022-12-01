@@ -169,7 +169,15 @@ public abstract class ClassInitializationSupport implements RuntimeClassInitiali
      */
     InitKind ensureClassInitialized(Class<?> clazz, boolean allowErrors) {
         try {
-            Unsafe.getUnsafe().ensureClassInitialized(clazz);
+            if(Unsafe.getUnsafe().shouldBeInitialized(clazz)) {
+                onInit(clazz, true);
+                try {
+                    Unsafe.getUnsafe().ensureClassInitialized(clazz);
+                } finally {
+                    onInit(clazz, false);
+                }
+            }
+
             loader.watchdog.recordActivity();
             return InitKind.BUILD_TIME;
         } catch (NoClassDefFoundError ex) {
@@ -319,4 +327,6 @@ public abstract class ClassInitializationSupport implements RuntimeClassInitiali
     abstract boolean checkDelayedInitialization();
 
     abstract void doLateInitialization(AnalysisUniverse universe, AnalysisMetaAccess aMetaAccess);
+
+    protected native void onInit(Class<?> clazz, boolean start);
 }

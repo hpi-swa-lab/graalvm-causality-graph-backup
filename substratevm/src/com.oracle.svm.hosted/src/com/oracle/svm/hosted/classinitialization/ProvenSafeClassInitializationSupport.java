@@ -159,7 +159,14 @@ class ProvenSafeClassInitializationSupport extends ClassInitializationSupport {
         checkEagerInitialization(clazz);
 
         try {
-            Unsafe.getUnsafe().ensureClassInitialized(clazz);
+            if(Unsafe.getUnsafe().shouldBeInitialized(clazz)) {
+                onInit(clazz, true);
+                try {
+                    Unsafe.getUnsafe().ensureClassInitialized(clazz);
+                } finally {
+                    onInit(clazz, false);
+                }
+            }
         } catch (Throwable ex) {
             throw UserError.abort(ex, "Class initialization failed for %s. The class is requested for re-running (reason: %s)", clazz.getTypeName(), reason);
         }
