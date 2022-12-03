@@ -199,9 +199,30 @@ public class SubstrateGraphBuilderPlugins {
         registerSizeOfPlugins(snippetReflection, plugins);
         registerReferencePlugins(plugins, parsingReason);
         registerReferenceAccessPlugins(plugins);
+
+        // Such that ClassInitializationTracing.onClinitStart() does not appear in every run-time <clinit>
+        registerClassInitializationTracingIgnorationPlugin(plugins);
+
         if (supportsStubBasedPlugins) {
             registerAESPlugins(plugins, replacements, architecture);
         }
+    }
+
+    public static void registerClassInitializationTracingIgnorationPlugin(InvocationPlugins plugins)
+    {
+        Registration r;
+        try {
+            r = new Registration(plugins, Class.forName("ClassInitializationTracing"));
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+        r.register(new RequiredInvocationPlugin("onClinitStart") {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                return true;
+            }
+        });
     }
 
     private static void registerSystemPlugins(MetaAccessProvider metaAccess, InvocationPlugins plugins) {
