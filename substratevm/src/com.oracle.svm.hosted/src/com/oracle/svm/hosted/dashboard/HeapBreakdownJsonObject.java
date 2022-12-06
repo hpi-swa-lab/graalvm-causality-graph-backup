@@ -104,6 +104,8 @@ class HeapBreakdownJsonObject extends JsonObject {
         long count = 0;
     }
 
+    private static native Class<?> getResponsibleClass(Object imageHeapObject);
+
     @Override
     protected void build() {
         if (built) {
@@ -112,7 +114,9 @@ class HeapBreakdownJsonObject extends JsonObject {
         FeatureImpl.AfterHeapLayoutAccessImpl config = (FeatureImpl.AfterHeapLayoutAccessImpl) access;
         NativeImageHeap heap = config.getHeap();
         for (NativeImageHeap.ObjectInfo info : heap.getObjects()) {
-            final String className = info.getClazz().getName();
+
+            Class<?> responsible = getResponsibleClass(info.getObject());
+            final String className = responsible == null ? "<unknown>" : responsible.getName();
             Statistics stats = sizes.get(className);
             if (stats == null) {
                 stats = new Statistics();
