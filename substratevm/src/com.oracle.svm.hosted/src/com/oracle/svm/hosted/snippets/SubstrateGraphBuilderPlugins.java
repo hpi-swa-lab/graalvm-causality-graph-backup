@@ -231,6 +231,13 @@ public class SubstrateGraphBuilderPlugins {
                 return true;
             }
         });
+
+        r.register(new RequiredInvocationPlugin("onThreadStart", Thread.class) {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode newThread) {
+                return true;
+            }
+        });
     }
 
     private static void registerSystemPlugins(MetaAccessProvider metaAccess, InvocationPlugins plugins) {
