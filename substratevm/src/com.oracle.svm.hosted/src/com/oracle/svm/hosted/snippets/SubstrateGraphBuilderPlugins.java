@@ -223,6 +223,14 @@ public class SubstrateGraphBuilderPlugins {
                 return true;
             }
         });
+
+        r.register(new RequiredInvocationPlugin("onArrayWrite", Object[].class, int.class, Object.class) {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode arr, ValueNode index, ValueNode val) {
+                b.add(new StoreIndexedNode(arr, index, null, null, JavaKind.Object, val));
+                return true;
+            }
+        });
     }
 
     private static void registerSystemPlugins(MetaAccessProvider metaAccess, InvocationPlugins plugins) {
