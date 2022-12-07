@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import org.graalvm.nativeimage.impl.clinit.ClassInitializationTracking;
 
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
@@ -160,11 +161,11 @@ class ProvenSafeClassInitializationSupport extends ClassInitializationSupport {
 
         try {
             if(Unsafe.getUnsafe().shouldBeInitialized(clazz)) {
-                onInit(clazz, true);
+                ClassInitializationTracing.onClinitRequested(clazz, true);
                 try {
                     Unsafe.getUnsafe().ensureClassInitialized(clazz);
                 } finally {
-                    onInit(clazz, false);
+                    ClassInitializationTracing.onClinitRequested(clazz, false);
                 }
             }
         } catch (Throwable ex) {

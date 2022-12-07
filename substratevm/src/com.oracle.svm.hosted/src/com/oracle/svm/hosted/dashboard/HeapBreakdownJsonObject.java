@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.hosted.dashboard;
 
+import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonObject;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonString;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonNumber;
@@ -104,8 +105,6 @@ class HeapBreakdownJsonObject extends JsonObject {
         long count = 0;
     }
 
-    private static native Class<?> getResponsibleClass(Object imageHeapObject);
-
     @Override
     protected void build() {
         if (built) {
@@ -115,8 +114,8 @@ class HeapBreakdownJsonObject extends JsonObject {
         NativeImageHeap heap = config.getHeap();
         for (NativeImageHeap.ObjectInfo info : heap.getObjects()) {
 
-            Class<?> responsible = getResponsibleClass(info.getObject());
-            final String className = responsible == null ? "<unknown>" : responsible.getName();
+            Class<?> responsible = ClassInitializationTracing.getResponsibleClass(info.getObject());
+            final String className = responsible == null ? "unknown." + info.getObjectClass().getTypeName() : responsible.getTypeName();
             Statistics stats = sizes.get(className);
             if (stats == null) {
                 stats = new Statistics();
