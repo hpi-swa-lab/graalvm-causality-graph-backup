@@ -164,7 +164,7 @@ final class EarlyClassInitializerAnalysis {
         Plugins plugins = new Plugins(invocationPlugins);
 
         // This has to be used here in order for the EarlyClassInitializerAnalysis to ignore custom tracing hooks
-        SubstrateGraphBuilderPlugins.registerClassInitializationTracingIgnorationPlugin(invocationPlugins);
+        SubstrateGraphBuilderPlugins.registerHeapAssignmentTracingHooksIgnorationPlugin(invocationPlugins);
 
         plugins.appendInlineInvokePlugin(new AbortOnRecursiveInliningPlugin());
         AbortOnUnitializedClassPlugin classInitializationPlugin = new AbortOnUnitializedClassPlugin(analyzedClasses);

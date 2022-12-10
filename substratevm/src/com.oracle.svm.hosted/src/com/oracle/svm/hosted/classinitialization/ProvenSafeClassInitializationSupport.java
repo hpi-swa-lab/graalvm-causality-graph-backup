@@ -34,7 +34,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import org.graalvm.nativeimage.impl.clinit.ClassInitializationTracking;
 
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
@@ -160,14 +159,7 @@ class ProvenSafeClassInitializationSupport extends ClassInitializationSupport {
         checkEagerInitialization(clazz);
 
         try {
-            if(Unsafe.getUnsafe().shouldBeInitialized(clazz)) {
-                ClassInitializationTracing.onClinitRequested(clazz, true);
-                try {
-                    Unsafe.getUnsafe().ensureClassInitialized(clazz);
-                } finally {
-                    ClassInitializationTracing.onClinitRequested(clazz, false);
-                }
-            }
+            Unsafe.getUnsafe().ensureClassInitialized(clazz);
         } catch (Throwable ex) {
             throw UserError.abort(ex, "Class initialization failed for %s. The class is requested for re-running (reason: %s)", clazz.getTypeName(), reason);
         }

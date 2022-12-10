@@ -35,7 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
-import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import com.oracle.svm.core.option.LocatableMultiOptionValue;
 import com.oracle.svm.core.option.OptionUtils;
 import org.graalvm.nativeimage.impl.RuntimeClassInitializationSupport;
@@ -170,15 +169,7 @@ public abstract class ClassInitializationSupport implements RuntimeClassInitiali
      */
     InitKind ensureClassInitialized(Class<?> clazz, boolean allowErrors) {
         try {
-            if(Unsafe.getUnsafe().shouldBeInitialized(clazz)) {
-                ClassInitializationTracing.onClinitRequested(clazz, true);
-                try {
-                    Unsafe.getUnsafe().ensureClassInitialized(clazz);
-                } finally {
-                    ClassInitializationTracing.onClinitRequested(clazz, false);
-                }
-            }
-
+            Unsafe.getUnsafe().ensureClassInitialized(clazz);
             loader.watchdog.recordActivity();
             return InitKind.BUILD_TIME;
         } catch (NoClassDefFoundError ex) {

@@ -24,7 +24,6 @@
  */
 package com.oracle.svm.hosted.dashboard;
 
-import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonObject;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonString;
 import com.oracle.svm.hosted.dashboard.ToJson.JsonNumber;
@@ -113,9 +112,7 @@ class HeapBreakdownJsonObject extends JsonObject {
         FeatureImpl.AfterHeapLayoutAccessImpl config = (FeatureImpl.AfterHeapLayoutAccessImpl) access;
         NativeImageHeap heap = config.getHeap();
         for (NativeImageHeap.ObjectInfo info : heap.getObjects()) {
-
-            Class<?> responsible = ClassInitializationTracing.getResponsibleClass(info.getObject());
-            final String className = responsible == null ? "unknown." + info.getObjectClass().getTypeName() : responsible.getTypeName();
+            final String className = info.getClazz().getName();
             Statistics stats = sizes.get(className);
             if (stats == null) {
                 stats = new Statistics();

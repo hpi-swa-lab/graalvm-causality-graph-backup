@@ -201,20 +201,19 @@ public class SubstrateGraphBuilderPlugins {
         registerReferenceAccessPlugins(plugins);
 
         // Such that ClassInitializationTracing.onClinitStart() does not appear in every run-time <clinit>
-        registerClassInitializationTracingIgnorationPlugin(plugins);
+        registerHeapAssignmentTracingHooksIgnorationPlugin(plugins);
 
         if (supportsStubBasedPlugins) {
             registerAESPlugins(plugins, replacements, architecture);
         }
     }
 
-    public static void registerClassInitializationTracingIgnorationPlugin(InvocationPlugins plugins)
-    {
+    public static void registerHeapAssignmentTracingHooksIgnorationPlugin(InvocationPlugins plugins) {
         Registration r;
         try {
-            r = new Registration(plugins, Class.forName("ClassInitializationTracing"));
+            r = new Registration(plugins, Class.forName("HeapAssignmentTracingHooks"));
         } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
+            return; // Heap assignemnt tracing agent is not attached
         }
 
         r.register(new RequiredInvocationPlugin("onClinitStart") {
