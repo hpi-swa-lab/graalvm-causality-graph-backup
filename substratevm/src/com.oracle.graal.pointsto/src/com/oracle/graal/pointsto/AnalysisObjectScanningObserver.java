@@ -28,8 +28,10 @@ import com.oracle.graal.pointsto.ObjectScanner.ScanReason;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
+import com.oracle.graal.pointsto.heap.ImageHeapConstant;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.reports.ClassInitializationTracing;
 import com.oracle.graal.pointsto.typestate.TypeState;
 
 import jdk.vm.ci.meta.JavaConstant;
@@ -60,10 +62,28 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         return false;
     }
 
+    private JavaConstant normalize(JavaConstant c)
+    {
+        if(c instanceof ImageHeapConstant)
+            c = ((ImageHeapConstant)c).getHostedObject();
+        return c;
+    }
+
     @Override
     public boolean forNonNullFieldValue(JavaConstant receiver, AnalysisField field, JavaConstant fieldValue, ScanReason reason) {
         PointsToAnalysis analysis = getAnalysis();
         AnalysisType fieldType = analysis.getMetaAccess().lookupJavaType(fieldValue);
+
+        receiver = normalize(receiver);
+        fieldValue = normalize(fieldValue);
+
+        Class<?> creason;
+
+        if(field.isStatic()) {
+            creason = ClassInitializationTracing.getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
+        } else {
+            creason = ClassInitializationTracing.getClassResponsibleForNonstaticFieldWrite(analysis.getSnippetReflectionProvider().asObject(Object.class, receiver), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
+        }
 
         /* Add the constant value object to the field's type flow. */
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
@@ -105,6 +125,12 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
     public boolean forNonNullArrayElement(JavaConstant array, AnalysisType arrayType, JavaConstant elementConstant, AnalysisType elementType, int elementIndex, ScanReason reason) {
         ArrayElementsTypeFlow arrayObjElementsFlow = getArrayElementsFlow(array, arrayType);
         PointsToAnalysis analysis = getAnalysis();
+
+        array = normalize(array);
+        elementConstant = normalize(elementConstant);
+
+        Class<?> creason = ClassInitializationTracing.getClassResponsibleForArrayWrite(analysis.getSnippetReflectionProvider().asObject(Object[].class, array), elementIndex, analysis.getSnippetReflectionProvider().asObject(Object.class, elementConstant));
+
         /* Add the constant element to the constant's array type flow. */
         return arrayObjElementsFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType));
     }
