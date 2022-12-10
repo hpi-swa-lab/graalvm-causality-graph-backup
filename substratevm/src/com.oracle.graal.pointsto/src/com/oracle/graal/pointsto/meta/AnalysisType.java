@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import com.oracle.graal.pointsto.causality.CausalityExport;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;

@@ -31,9 +31,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import com.oracle.graal.pointsto.purge.PurgeMethods;
 import com.oracle.graal.pointsto.purge.PurgedMethodTypeFlowBuilder;
-import com.oracle.graal.pointsto.causality.CausalityExport;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.nodes.ParameterNode;
 import org.graalvm.compiler.nodes.ReturnNode;

@@ -28,7 +28,7 @@ import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-import com.oracle.graal.pointsto.causality.CausalityExport;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.graph.Node;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;

@@ -25,7 +25,7 @@
 package com.oracle.graal.pointsto;
 
 import com.oracle.graal.pointsto.ObjectScanner.ScanReason;
-import com.oracle.graal.pointsto.causality.CausalityExport;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;

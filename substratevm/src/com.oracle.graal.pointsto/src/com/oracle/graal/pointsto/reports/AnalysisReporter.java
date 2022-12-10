@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.causality.CausalityExport;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.BigBang;
