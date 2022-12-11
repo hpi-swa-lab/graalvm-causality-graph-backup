@@ -27,7 +27,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.Stack;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -43,6 +42,7 @@ public class CausalityExport {
     private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
     private final HashMap<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
     private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
+    private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
 
     public synchronized void addTypeFlow(TypeFlow<?> flow) {
         typeflows.add(flow);
@@ -53,16 +53,17 @@ public class CausalityExport {
         interflows.compute(Pair.create(from, to), (edge, state) -> state == null ? newTypes : TypeState.forUnion(bb, state, newTypes));
     }
 
-    private final HashMap<Integer, Integer> rootMethod_registerCount = new HashMap<>();
-
     public synchronized void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
-        if (caller == null && callee.getQualifiedName().contains("FactoryMethodHolder")) {
-            System.err.println("Ignored " + callee.getQualifiedName());
-            return;
+        if (caller == null) {
+            String qualifiedName = callee.getDeclaringClass().toJavaName();
+            if(qualifiedName.startsWith("com.oracle.svm.core.") && qualifiedName.endsWith("Holder")) {
+                System.err.println("Ignored Method Entry point: " + callee.getQualifiedName());
+                return;
+            }
         }
 
         if (caller == null) {
-            rootMethod_registerCount.compute(callee.getId(), (id, count) -> (count == null ? 0 : count) + 1);
+            rootCount.compute(callee, (id, count) -> (count == null ? 0 : count) + 1);
         }
 
         boolean alreadyExisting = !direct_invokes.add(Pair.create(caller, callee));
@@ -137,64 +138,33 @@ public class CausalityExport {
         runningNotification.remove();
     }
 
-    List<Pair<AnalysisElement, Executable>> unrootRegisteredMethods = new ArrayList<>();
-    List<Pair<AnalysisElement, Field>> unrootRegisteredFields = new ArrayList<>();
-    List<Pair<AnalysisElement, Class<?>>> unrootRegisteredClasses = new ArrayList<>();
+    HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
 
-    public synchronized void registerAnonymousRegistration(Executable e) {
+    private synchronized void registerAnonymousRegistration(Object unresolvedElement)
+    {
         Consumer<Feature.DuringAnalysisAccess> running = runningNotification.get();
 
         if (running != null) {
-            List<AnalysisElement> causes = callbackReasons.get(running);
-
-            if (causes != null) {
-                for (AnalysisElement cause : causes) {
-                    unrootRegisteredMethods.add(Pair.create(cause, e));
-                }
-            }
+            reachableThroughFeatureCallback.add(Pair.create(running, unresolvedElement));
         }
     }
 
-    public synchronized void registerAnonymousRegistration(Field f) {
-        Consumer<Feature.DuringAnalysisAccess> running = runningNotification.get();
-
-        if (running != null) {
-            List<AnalysisElement> causes = callbackReasons.get(running);
-
-            if (causes != null) {
-                for (AnalysisElement cause : causes) {
-                    unrootRegisteredFields.add(Pair.create(cause, f));
-                }
-            }
-        }
+    public void registerAnonymousRegistration(Executable e) {
+        registerAnonymousRegistration((Object)e);
     }
 
-    public synchronized void registerAnonymousRegistration(Class<?> c) {
-        Consumer<Feature.DuringAnalysisAccess> running = runningNotification.get();
+    public void registerAnonymousRegistration(Field f) {
+        registerAnonymousRegistration((Object)f);
+    }
 
-        if (running != null) {
-            List<AnalysisElement> causes = callbackReasons.get(running);
-
-            if (causes != null) {
-                for (AnalysisElement cause : causes) {
-                    unrootRegisteredClasses.add(Pair.create(cause, c));
-                }
-            }
-        }
+    public void registerAnonymousRegistration(Class<?> c) {
+        registerAnonymousRegistration((Object)c);
     }
 
 
     private HashSet<AnalysisMethod> accountClassInitializersToTypeInstantiation(PointsToAnalysis bb) {
         HashSet<AnalysisMethod> classInitializers = new HashSet<>();
         TypeState classInitializedClassesState = TypeState.forEmpty();
-
-        HashSet<AllInstantiatedTypeFlow> allInstantiatedTypeFlows = new HashSet<>();
-
-        for (AnalysisType t : bb.getUniverse().getTypes()) {
-            PointsToAnalysisType t2 = (PointsToAnalysisType) t;
-            allInstantiatedTypeFlows.add(t2.instantiatedTypes);
-            allInstantiatedTypeFlows.add(t2.instantiatedTypesNonNull);
-        }
 
         // --- Class-Initializer rechnen wir der reachability des Types an:
         for (AnalysisMethod m : bb.getUniverse().getMethods()) {
@@ -206,8 +176,10 @@ public class CausalityExport {
         }
 
         for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows.keySet()) {
-            if (e.getLeft() == null && allInstantiatedTypeFlows.contains(e.getRight()))
-                interflows.put(e, TypeState.forSubtraction(bb, interflows.get(e), classInitializedClassesState));
+            if (e.getLeft() == null && e.getRight() instanceof AllInstantiatedTypeFlow) {
+                final TypeState finalClassInitializedClassesState = classInitializedClassesState;
+                interflows.compute(e, (key, state) -> TypeState.forSubtraction(bb, state, finalClassInitializedClassesState));
+            }
         }
 
         return classInitializers;
@@ -249,6 +221,9 @@ public class CausalityExport {
             public final MethodNode from, to;
 
             DirectCallEdge(MethodNode from, MethodNode to) {
+                if(to == null)
+                    throw new NullPointerException();
+
                 this.from = from;
                 this.to = to;
             }
@@ -272,6 +247,11 @@ public class CausalityExport {
             public final MethodNode to;
 
             VirtualCallEdge(FlowNode from, MethodNode to) {
+                if(from == null)
+                    throw new NullPointerException();
+                if(to == null)
+                    throw new NullPointerException();
+
                 this.from = from;
                 this.to = to;
             }
@@ -294,6 +274,9 @@ public class CausalityExport {
             public final FlowNode from, to;
 
             FlowEdge(FlowNode from, FlowNode to) {
+                if(to == null)
+                    throw new NullPointerException();
+
                 this.from = from;
                 this.to = to;
             }
@@ -566,29 +549,86 @@ public class CausalityExport {
         }
     }
 
-    private Set<AnalysisMethod> calcUnrootedMethods(PointsToAnalysis bb) {
-        HashSet<AnalysisMethod> unrootedMethods = new HashSet<>();
+    private void addFeatureCallbackCausality(Graph g, PointsToAnalysis bb, HashMap<AnalysisMethod, Graph.RealMethodNode> methodMapping, HashMap<TypeFlow<?>, Graph.RealFlowNode> flowMapping) {
 
-        for (Pair<AnalysisElement, Executable> p : unrootRegisteredMethods) {
-            AnalysisMethod m = bb.getMetaAccess().lookupJavaMethod(p.getRight());
-            unrootedMethods.add(m);
+        HashMap<Consumer<Feature.DuringAnalysisAccess>, Graph.FeatureCallbackNode> callbackMapping = new HashMap<>();
 
-            if (p.getLeft() instanceof AnalysisMethod) {
-                addDirectInvoke((AnalysisMethod) p.getLeft(), m);
-            } else if (p.getLeft() instanceof AnalysisType) {
-                AnalysisType t = (AnalysisType) p.getLeft();
-                this.addVirtualInvoke(bb, t.instantiatedTypes, m, TypeState.forExactType(bb, t, false));
-            } else if (p.getLeft() instanceof AnalysisField) {
-                AnalysisField f = (AnalysisField) p.getLeft();
-                TypeFlow<?> flow = f.isStatic() ? f.getStaticFieldFlow() : f.getInstanceFieldFlow();
-                this.addVirtualInvoke(bb, flow, m, f.getType().getAssignableTypes(true));
+        for(Map.Entry<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> e : callbackReasons.entrySet()) {
+            Graph.FeatureCallbackNode featureNode = callbackMapping.computeIfAbsent(e.getKey(), Graph.FeatureCallbackNode::new);
+
+            for(AnalysisElement element : e.getValue())
+            {
+                if(!element.isReachable())
+                    continue;
+
+                if(element instanceof AnalysisMethod)
+                {
+                    g.directInvokes.add(new Graph.DirectCallEdge(methodMapping.get((AnalysisMethod)element), featureNode));
+                } else if(element instanceof AnalysisType) {
+                    AnalysisType t = (AnalysisType) element;
+                    g.virtualInvokes.put(new Graph.VirtualCallEdge(flowMapping.get(t.instantiatedTypes), featureNode), TypeState.forExactType(bb, t, false));
+                } else if(element instanceof AnalysisField) {
+                    AnalysisField f = (AnalysisField) element;
+                    TypeFlow<?> flow = f.isStatic() ? f.getStaticFieldFlow() : f.getInstanceFieldFlow();
+                    g.virtualInvokes.put(new Graph.VirtualCallEdge(flowMapping.get(flow), featureNode), f.getType().getAssignableTypes(true));
+                }
             }
         }
 
-        return unrootedMethods;
+        for(Pair<Consumer<Feature.DuringAnalysisAccess>, Object> p : reachableThroughFeatureCallback) {
+            Graph.FeatureCallbackNode featureCallbackNode = callbackMapping.get(p.getLeft());
+            Object reached = p.getRight();
+
+            AnalysisElement element = null;
+
+            if(reached instanceof Executable)
+            {
+                AnalysisMethod m = bb.getMetaAccess().lookupJavaMethod((Executable) reached);
+                element = m;
+                g.directInvokes.add(new Graph.DirectCallEdge(featureCallbackNode, methodMapping.get(m)));
+            } else if(reached instanceof Field) {
+                AnalysisField f = bb.getMetaAccess().lookupJavaField((Field) reached);
+                element = f;
+                TypeFlow<?> flow = f.isStatic() ? f.getStaticFieldFlow() : f.getInstanceFieldFlow();
+                Graph.FlowNode logicalFeatureNodeFlow = new Graph.FlowNode(featureCallbackNode);
+                g.interflows.put(new Graph.FlowEdge(flowMapping.get(f.getType().instantiatedTypes), logicalFeatureNodeFlow), f.getType().getAssignableTypes(false));
+                g.interflows.put(new Graph.FlowEdge(logicalFeatureNodeFlow, flowMapping.get(flow)), f.getType().getAssignableTypes(false));
+            } else if(reached instanceof Class<?>) {
+                AnalysisType t = bb.getMetaAccess().lookupJavaType((Class<?>) reached);
+                element = t;
+                Graph.FlowNode logicalFeatureNodeFlow = new Graph.FlowNode(featureCallbackNode);
+                g.interflows.put(new Graph.FlowEdge(flowMapping.get(t.instantiatedTypes), logicalFeatureNodeFlow), TypeState.forExactType(bb, t, false));
+
+                TypeState typeState = TypeState.forExactType(bb, t, true);
+                TypeState typeStateNonNull = TypeState.forExactType(bb, t, false);
+
+                t.forAllSuperTypes(_t -> {
+                    g.interflows.put(new Graph.FlowEdge(logicalFeatureNodeFlow, flowMapping.get(_t.instantiatedTypes)), typeState);
+                    g.interflows.put(new Graph.FlowEdge(logicalFeatureNodeFlow, flowMapping.get(_t.instantiatedTypesNonNull)), typeStateNonNull);
+                });
+            }
+
+            rootCount.computeIfPresent(element, (key, count) -> count - 1);
+        }
+
+        for(Map.Entry<AnalysisElement, Integer> root : rootCount.entrySet())
+        {
+            if(root.getValue() < 0)
+                throw new RuntimeException("Negative root reference count!");
+
+            if(root.getValue() == 0)
+            {
+                if(root.getKey() instanceof AnalysisMethod)
+                {
+                    AnalysisMethod m = (AnalysisMethod)root.getKey();
+                    System.err.println("Unrooted: " + m.getQualifiedName());
+                    g.directInvokes.remove(new Graph.DirectCallEdge(null, methodMapping.get(m)));
+                }
+            }
+        }
     }
 
-    /*/
+    /*
     private Set<AnalysisField> calcUnrootedFields(PointsToAnalysis bb)
     {
         HashSet<AnalysisField> unrootedFields = new HashSet<>();
@@ -620,7 +660,7 @@ public class CausalityExport {
 
     public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException {
         HashSet<AnalysisMethod> classInitializers = accountClassInitializersToTypeInstantiation(bb);
-        direct_invokes.removeIf(call -> call.getLeft() == null && classInitializers.contains(call.getRight()));
+        //direct_invokes.removeIf(call -> call.getLeft() == null && classInitializers.contains(call.getRight()));
 
         Graph g = new Graph();
 
@@ -668,6 +708,9 @@ public class CausalityExport {
             g.interflows.put(new Graph.FlowEdge(e.getKey().getLeft() == null ? null : flowMapping.get(e.getKey().getLeft()), flowMapping.get(e.getKey().getRight())), e.getValue());
         }
 
+        //addFeatureCallbackCausality(g, bb, methodMapping, flowMapping);
+
         g.export(bb);
     }
 }
+
