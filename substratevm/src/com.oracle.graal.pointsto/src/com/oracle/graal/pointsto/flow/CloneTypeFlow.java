@@ -78,7 +78,7 @@ public class CloneTypeFlow extends TypeFlow<BytecodePosition> {
 
         /* Update the clone flow state. */
         addState(bb, resultState);
-        CausalityExport.instance.addFlowingTypes(bb, input, this, resultState);
+        CausalityExport.getInstance().addFlowingTypes(bb, input, this, resultState);
     }
 
     @Override

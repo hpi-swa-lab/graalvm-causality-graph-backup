@@ -413,7 +413,7 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            CausalityExport.instance.registerTypeReachableThroughHeap(type, entry.constant);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, entry.constant);
             type.registerAsReachable();
 
             if (type.isInstanceClass()) {

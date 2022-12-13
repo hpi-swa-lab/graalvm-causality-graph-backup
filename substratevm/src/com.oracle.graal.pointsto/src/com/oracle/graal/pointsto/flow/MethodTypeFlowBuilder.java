@@ -232,7 +232,7 @@ public class MethodTypeFlowBuilder {
                 InstanceOfNode node = (InstanceOfNode) n;
                 AnalysisType type = (AnalysisType) node.type().getType();
                 if (!ignoreInstanceOfType(type)) {
-                    CausalityExport.instance.registerTypeReachableByMethod(type, method);
+                    CausalityExport.getInstance().registerTypeReachableByMethod(type, method);
                     type.registerAsReachable(); // TODO: Make this method accountable for reachability
                 }
 
@@ -313,7 +313,7 @@ public class MethodTypeFlowBuilder {
                      * metadata is only constructed after AOT compilation, so the image heap
                      * scanning during static analysis does not see these classes.
                      */
-                    CausalityExport.instance.registerTypeReachableByMethod(frameStateMethod.getDeclaringClass(), method);
+                    CausalityExport.getInstance().registerTypeReachableByMethod(frameStateMethod.getDeclaringClass(), method);
                     frameStateMethod.getDeclaringClass().registerAsReachable(); // TODO: Make this method accountable for reachability
                 }
 
@@ -388,7 +388,7 @@ public class MethodTypeFlowBuilder {
         if (bb.scanningPolicy().trackConstant(bb, root)) {
             AnalysisType t = bb.getMetaAccess().lookupJavaType(root);
             if(t != null)
-                CausalityExport.instance.registerTypeReachableByMethod(t, method);
+                CausalityExport.getInstance().registerTypeReachableByMethod(t, method);
             bb.getUniverse().registerEmbeddedRoot(root, AbstractAnalysisEngine.sourcePosition(cn));
         }
     }

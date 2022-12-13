@@ -110,7 +110,7 @@ public class MethodTypeFlow extends TypeFlow<AnalysisMethod> {
                 throw AnalysisError.parsingError(method, t);
             }
 
-            CausalityExport.instance.registerMethodFlow(this);
+            CausalityExport.getInstance().registerMethodFlow(this);
         }
     }
 

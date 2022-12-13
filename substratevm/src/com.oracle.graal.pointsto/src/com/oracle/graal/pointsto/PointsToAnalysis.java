@@ -329,7 +329,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
                 postTask(() -> {
                     pointsToMethod.registerAsDirectRootMethod();
                     pointsToMethod.registerAsImplementationInvoked(null);
-                    CausalityExport.instance.addDirectInvoke(null, pointsToMethod);
+                    CausalityExport.getInstance().addDirectInvoke(null, pointsToMethod);
                     MethodFlowsGraph methodFlowsGraph = analysisPolicy.staticRootMethodGraph(this, pointsToMethod);
                     for (int idx = 0; idx < paramCount; idx++) {
                         AnalysisType declaredParamType = (AnalysisType) signature.getParameterType(idx, declaringClass);
@@ -404,7 +404,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     @Override
     public AnalysisType addRootClass(Class<?> clazz, boolean addFields, boolean addArrayClass) {
         AnalysisType type = metaAccess.lookupJavaType(clazz);
-        CausalityExport.instance.registerTypeReachableRoot(type);
+        CausalityExport.getInstance().registerTypeReachableRoot(type);
         type.registerAsReachable();
         return addRootClass(type, addFields, addArrayClass);
     }

@@ -126,7 +126,7 @@ public abstract class TypeFlow<T> {
         this.usedAsAParameter = false;
         this.usedAsAReceiver = false;
 
-        CausalityExport.instance.addTypeFlow(this);
+        CausalityExport.getInstance().addTypeFlow(this);
 
         assert !(source instanceof Node) : "must not reference Graal node from TypeFlow: " + source;
     }
@@ -391,7 +391,7 @@ public abstract class TypeFlow<T> {
                     removeUse(use);
                     return false;
                 } else {
-                    CausalityExport.instance.addFlowingTypes(bb, this, use, getState());
+                    CausalityExport.getInstance().addFlowingTypes(bb, this, use, getState());
                     use.addState(bb, getState());
                 }
             }
@@ -555,7 +555,7 @@ public abstract class TypeFlow<T> {
     public void update(PointsToAnalysis bb) {
         TypeState curState = getState();
         for (TypeFlow<?> use : getUses()) {
-            CausalityExport.instance.addFlowingTypes(bb, this, use, curState);
+            CausalityExport.getInstance().addFlowingTypes(bb, this, use, curState);
 
             if (use.isSaturated()) {
                 // Christoph: Don't do this, since it loses information about types that would flow to that direction

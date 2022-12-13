@@ -216,7 +216,7 @@ public class FieldsOffsetsFeature implements Feature {
 
         for (int i = 0; i < fields.getCount(); i++) {
             AnalysisField aField = config.getMetaAccess().lookupJavaField(findField(fields, i));
-            CausalityExport.instance.registerTypeReachableRoot(aField.getType());
+            CausalityExport.getInstance().registerTypeReachableRoot(aField.getType());
             aField.getType().registerAsReachable();
             config.registerAsUnsafeAccessed(aField, partitionKind);
         }

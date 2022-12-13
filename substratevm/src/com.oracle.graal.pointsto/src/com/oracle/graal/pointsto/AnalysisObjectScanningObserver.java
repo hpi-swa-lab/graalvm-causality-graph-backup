@@ -57,7 +57,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         if (!fieldTypeFlow.getState().canBeNull()) {
             /* Signal that the field can contain null. */
             // Is currently a NO-op, because CausalityExport doesn't care for nulls
-            CausalityExport.instance.addFlowingTypes(getAnalysis(), null, fieldTypeFlow, TypeState.forNull());
+            CausalityExport.getInstance().addFlowingTypes(getAnalysis(), null, fieldTypeFlow, TypeState.forNull());
             return fieldTypeFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -73,7 +73,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         /* Add the new constant to the field's flow state. */
         TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType);
         // TODO: Find out what causes this to happen in order to make the analysis more complete!
-        CausalityExport.instance.addFlowingTypes(analysis, null, fieldTypeFlow, constantTypeState);
+        CausalityExport.getInstance().addFlowingTypes(analysis, null, fieldTypeFlow, constantTypeState);
         return fieldTypeFlow.addState(analysis, constantTypeState);
     }
 
@@ -103,7 +103,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         if (!arrayObjElementsFlow.getState().canBeNull()) {
             /* Signal that the constant array can contain null. */
             // Is currently a NO-op, because CausalityExport doesn't care for nulls
-            CausalityExport.instance.addFlowingTypes(getAnalysis(), null, arrayObjElementsFlow, TypeState.forNull());
+            CausalityExport.getInstance().addFlowingTypes(getAnalysis(), null, arrayObjElementsFlow, TypeState.forNull());
             return arrayObjElementsFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -115,7 +115,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         PointsToAnalysis analysis = getAnalysis();
         /* Add the constant element to the constant's array type flow. */
         TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType);
-        CausalityExport.instance.addFlowingTypes(analysis, null, arrayObjElementsFlow, constantTypeState);
+        CausalityExport.getInstance().addFlowingTypes(analysis, null, arrayObjElementsFlow, constantTypeState);
         return arrayObjElementsFlow.addState(analysis, constantTypeState);
     }
 

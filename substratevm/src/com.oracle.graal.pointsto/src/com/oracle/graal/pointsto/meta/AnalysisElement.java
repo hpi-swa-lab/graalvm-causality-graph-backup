@@ -54,7 +54,7 @@ public abstract class AnalysisElement {
 
     public void registerReachabilityNotification(ElementNotification notification) {
         ConcurrentLightHashSet.addElement(this, reachableNotificationsUpdater, notification);
-        CausalityExport.instance.registerReachabilityNotification(this, notification.callback);
+        CausalityExport.getInstance().registerReachabilityNotification(this, notification.callback);
     }
 
     public void notifyReachabilityCallback(AnalysisUniverse universe, ElementNotification notification) {
@@ -101,9 +101,9 @@ public abstract class AnalysisElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                CausalityExport.instance.registerNotificationStart(callback);
+                CausalityExport.getInstance().registerNotificationStart(callback);
                 callback.accept(universe.getConcurrentAnalysisAccess());
-                CausalityExport.instance.registerNotificationEnd(callback);
+                CausalityExport.getInstance().registerNotificationEnd(callback);
                 return null;
             });
 

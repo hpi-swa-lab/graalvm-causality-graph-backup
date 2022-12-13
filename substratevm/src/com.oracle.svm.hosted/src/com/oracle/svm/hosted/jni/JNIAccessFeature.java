@@ -203,7 +203,7 @@ public class JNIAccessFeature implements Feature {
         public void register(ConfigurationCondition condition, boolean unsafeAllocated, Class<?> clazz) {
             assert !unsafeAllocated : "unsafeAllocated can be only set via Unsafe.allocateInstance, not via JNI.";
             abortIfSealed();
-            CausalityExport.instance.registerTypeReachableRoot(clazz);
+            CausalityExport.getInstance().registerTypeReachableRoot(clazz);
             registerConditionalConfiguration(condition, () -> newClasses.add(clazz));
         }
 
@@ -212,8 +212,8 @@ public class JNIAccessFeature implements Feature {
             abortIfSealed();
 
             for(Executable m : methods) {
-                CausalityExport.instance.registerAnonymousRegistration(m);
-                CausalityExport.instance.registerTypeReachableRoot(m.getDeclaringClass());
+                CausalityExport.getInstance().registerAnonymousRegistration(m);
+                CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass());
             }
 
             registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
@@ -224,7 +224,7 @@ public class JNIAccessFeature implements Feature {
             abortIfSealed();
 
             for (Field field : fields) {
-                CausalityExport.instance.registerTypeReachableRoot(field.getDeclaringClass());
+                CausalityExport.getInstance().registerTypeReachableRoot(field.getDeclaringClass());
             }
 
             registerConditionalConfiguration(condition, () -> registerFields(finalIsWritable, fields));
@@ -267,7 +267,7 @@ public class JNIAccessFeature implements Feature {
         MetaAccessProvider originalMetaAccess = access.getMetaAccess().getWrapped();
         ResolvedJavaField field = JNIAccessibleMethod.getCallVariantWrapperField(originalMetaAccess, variant, nonVirtual);
         AnalysisType fieldDeclaringType = access.getUniverse().lookup(field.getDeclaringClass());
-        CausalityExport.instance.registerTypeReachableRoot(fieldDeclaringType);
+        CausalityExport.getInstance().registerTypeReachableRoot(fieldDeclaringType);
         fieldDeclaringType.registerAsReachable();
         access.registerAsAccessed(access.getUniverse().lookup(field));
         String name = JNIJavaCallTrampolineHolder.getTrampolineName(variant, nonVirtual);

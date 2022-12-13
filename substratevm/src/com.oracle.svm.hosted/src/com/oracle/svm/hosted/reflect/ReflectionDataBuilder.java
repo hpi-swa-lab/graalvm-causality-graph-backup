@@ -131,7 +131,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean unsafeInstantiated, Class<?> clazz) {
         checkNotSealed();
-        CausalityExport.instance.registerTypeReachableRoot(clazz);
+        CausalityExport.getInstance().registerTypeReachableRoot(clazz);
         registerConditionalConfiguration(condition, () -> {
             if (unsafeInstantiated) {
                 unsafeInstantiatedClasses.add(clazz);
@@ -155,7 +155,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
 
         for(Executable m : methods) {
-            CausalityExport.instance.registerTypeReachableRoot(m.getDeclaringClass());
+            CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass());
         }
 
         registerConditionalConfiguration(condition, () -> registerMethods(queriedOnly, methods));
@@ -183,7 +183,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
 
         for(Field f : fields) {
-            CausalityExport.instance.registerTypeReachableRoot(f.getDeclaringClass());
+            CausalityExport.getInstance().registerTypeReachableRoot(f.getDeclaringClass());
         }
 
         registerConditionalConfiguration(condition, () -> registerFields(fields));
@@ -221,7 +221,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
                 ResolvedJavaType annotationType = ((AnnotationSubstitutionType) type.getWrappedWithoutResolve()).getAnnotationInterfaceType();
                 Class<?> annotationClass = access.getUniverse().lookup(annotationType).getJavaClass();
                 if (!annotationMembers.containsKey(annotationClass)) {
-                    CausalityExport.instance.registerTypeReachableRoot(annotationClass);
+                    CausalityExport.getInstance().registerTypeReachableRoot(annotationClass);
                     processClass(access, annotationClass);
                 }
                 for (Member member : annotationMembers.get(annotationClass)) {

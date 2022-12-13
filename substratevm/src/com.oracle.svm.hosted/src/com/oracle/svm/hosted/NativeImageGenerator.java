@@ -57,6 +57,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.AnalysisReportsOptions;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
@@ -834,6 +835,9 @@ public class NativeImageGenerator {
                 Providers originalProviders = GraalAccess.getOriginalProviders();
                 MetaAccessProvider originalMetaAccess = originalProviders.getMetaAccess();
 
+                if(AnalysisReportsOptions.PrintCausalityGraph.getValue(options))
+                    CausalityExport.activate();
+
                 ClassLoaderSupportImpl classLoaderSupport = new ClassLoaderSupportImpl(loader.classLoaderSupport);
                 ImageSingletons.add(ClassLoaderSupport.class, classLoaderSupport);
                 ImageSingletons.add(LinkAtBuildTimeSupport.class, new LinkAtBuildTimeSupport(loader, classLoaderSupport));
@@ -1051,17 +1055,17 @@ public class NativeImageGenerator {
                      */
                     Class<?>[] innerClasses = kind.toBoxedJavaClass().getDeclaredClasses();
                     if (innerClasses != null && innerClasses.length > 0) {
-                        CausalityExport.instance.registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(innerClasses[0]));
+                        CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(innerClasses[0]));
                         bb.getMetaAccess().lookupJavaType(innerClasses[0]).registerAsReachable();
                     }
                 }
             }
             /* SubstrateTemplates#toLocationIdentity accesses the Counter.value field. */
-            CausalityExport.instance.registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()));
+            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()));
             bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()).registerAsReachable();
-            CausalityExport.instance.registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class));
+            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class));
             bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class).registerAsReachable();
-            CausalityExport.instance.registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class));
+            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class));
             bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class).registerAsReachable();
 
             NativeImageGenerator.registerGraphBuilderPlugins(featureHandler, null, aProviders, aMetaAccess, aUniverse, null, null, nativeLibraries, loader, ParsingReason.PointsToAnalysis,
@@ -1090,14 +1094,14 @@ public class NativeImageGenerator {
                     SnippetReflectionProvider aSnippetReflection, AnnotationSubstitutionProcessor annotationSubstitutionProcessor, ForeignCallsProvider aForeignCalls,
                     ClassInitializationSupport classInitializationSupport, Providers originalProviders, SubstratePlatformConfigurationProvider platformConfig) {
         assert aUniverse != null : "Analysis universe must be initialized.";
-        CausalityExport.instance.registerTypeReachableRoot(aMetaAccess.lookupJavaType(String.class));
+        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(String.class));
         aMetaAccess.lookupJavaType(String.class).registerAsReachable();
         AnalysisConstantFieldProvider aConstantFieldProvider = new AnalysisConstantFieldProvider(aUniverse, aMetaAccess, aConstantReflection, classInitializationSupport);
         /*
          * Install all snippets so that the types, methods, and fields used in the snippets get
          * added to the universe.
          */
-        CausalityExport.instance.registerTypeReachableRoot(aMetaAccess.lookupJavaType(Reference.class));
+        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(Reference.class));
         aMetaAccess.lookupJavaType(Reference.class).registerAsReachable();
         MetaAccessExtensionProvider aMetaAccessExtensionProvider = HostedConfiguration.instance().createAnalysisMetaAccessExtensionProvider();
         LoweringProvider aLoweringProvider = SubstrateLoweringProvider.createForHosted(aMetaAccess, null, platformConfig, aMetaAccessExtensionProvider);
@@ -1250,7 +1254,7 @@ public class NativeImageGenerator {
         plugins.appendNodePlugin(new InjectedAccessorsPlugin());
         ResolvedJavaType resolvedJavaType = providers.getMetaAccess().lookupJavaType(ClassInitializationTracking.class);
         if (resolvedJavaType instanceof AnalysisType) {
-            CausalityExport.instance.registerTypeReachableRoot((AnalysisType) resolvedJavaType);
+            CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) resolvedJavaType);
             ((AnalysisType) resolvedJavaType).registerAsReachable();
         }
         plugins.appendNodePlugin(new EarlyConstantFoldLoadFieldPlugin(providers.getMetaAccess(), providers.getSnippetReflection()));

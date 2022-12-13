@@ -322,7 +322,7 @@ public class AnnotationSubstitutionProcessor extends SubstitutionProcessor {
                 switch (cvField.getRecomputeValueKind()) {
                     case FieldOffset:
                         AnalysisType targetFieldDeclaringType = bb.getMetaAccess().lookupJavaType(cvField.getTargetField().getDeclaringClass());
-                        CausalityExport.instance.registerTypeReachableRoot(targetFieldDeclaringType);
+                        CausalityExport.getInstance().registerTypeReachableRoot(targetFieldDeclaringType);
                         targetFieldDeclaringType.registerAsReachable();
                         AnalysisField targetField = bb.getMetaAccess().lookupJavaField(cvField.getTargetField());
                         targetField.registerAsAccessed();

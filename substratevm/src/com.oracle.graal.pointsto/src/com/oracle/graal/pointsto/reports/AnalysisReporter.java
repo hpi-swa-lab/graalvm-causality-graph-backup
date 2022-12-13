@@ -57,7 +57,7 @@ public class AnalysisReporter {
 
             if(bb instanceof PointsToAnalysis && AnalysisReportsOptions.PrintCausalityGraph.getValue(options)) {
                 try {
-                    CausalityExport.instance.dump((PointsToAnalysis) bb);
+                    CausalityExport.getInstance().dump((PointsToAnalysis) bb);
                 } catch (IOException ex) {
                     System.err.println(ex);
                 }

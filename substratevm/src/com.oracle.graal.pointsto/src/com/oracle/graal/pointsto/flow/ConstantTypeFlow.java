@@ -65,9 +65,9 @@ public class ConstantTypeFlow extends TypeFlow<BytecodePosition> {
          * sensitivity is enabled the default graph is kept clean and used as a template for clones.
          */
         addState(bb, constantState);
-        CausalityExport.instance.addFlowingTypes(bb, null, this, constantState);
+        CausalityExport.getInstance().addFlowingTypes(bb, null, this, constantState);
         if(declaredType != null)
-            CausalityExport.instance.registerTypeInstantiated(bb, this, declaredType);
+            CausalityExport.getInstance().registerTypeInstantiated(bb, this, declaredType);
     }
 
     @Override
