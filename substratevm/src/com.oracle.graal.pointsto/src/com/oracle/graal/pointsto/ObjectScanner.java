@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.word.WordBase;
 
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -412,6 +413,7 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
+            CausalityExport.instance.registerTypeReachableThroughHeap(type, entry.constant);
             type.registerAsReachable();
 
             if (type.isInstanceClass()) {

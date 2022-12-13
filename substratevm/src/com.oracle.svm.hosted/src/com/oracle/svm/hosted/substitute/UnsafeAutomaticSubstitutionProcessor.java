@@ -42,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.DebugContext.Builder;
@@ -298,7 +299,9 @@ public class UnsafeAutomaticSubstitutionProcessor extends SubstitutionProcessor 
                 switch (cvField.getRecomputeValueKind()) {
                     case FieldOffset:
                         Field targetField = cvField.getTargetField();
-                        access.getMetaAccess().lookupJavaType(targetField.getDeclaringClass()).registerAsReachable();
+                        AnalysisType fieldDeclaringType = access.getMetaAccess().lookupJavaType(targetField.getDeclaringClass());
+                        CausalityExport.instance.registerTypeReachableRoot(fieldDeclaringType); // TODO: Make original field's reachability accountable
+                        fieldDeclaringType.registerAsReachable();
                         if (access.registerAsUnsafeAccessed(access.getMetaAccess().lookupJavaField(targetField))) {
                             access.requireAnalysisIteration();
                         }

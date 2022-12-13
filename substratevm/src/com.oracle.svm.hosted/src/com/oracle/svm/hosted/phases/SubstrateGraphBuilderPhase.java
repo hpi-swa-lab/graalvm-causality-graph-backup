@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.hosted.phases;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.java.BytecodeParser;
 import org.graalvm.compiler.java.GraphBuilderPhase;
 import org.graalvm.compiler.nodes.StructuredGraph;
@@ -68,6 +69,7 @@ public class SubstrateGraphBuilderPhase extends SharedGraphBuilderPhase {
                  * InvocationPlugins.resolvedRegistrations map reachable from
                  * SubstrateReplacements.snippetInvocationPlugins.
                  */
+                CausalityExport.instance.registerTypeReachableRoot((AnalysisType) targetMethod.getDeclaringClass());
                 ((AnalysisType) targetMethod.getDeclaringClass()).registerAsReachable();
             }
             return inlineInfo;

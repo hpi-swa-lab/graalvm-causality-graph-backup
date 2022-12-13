@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.api.runtime.GraalRuntime;
 import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
@@ -315,6 +316,7 @@ public class GraalGraphObjectReplacer implements Function<Object, Object> {
 
         if (sType == null) {
             assert !(original instanceof HostedType) : "too late to create new type";
+            CausalityExport.instance.registerTypeReachableRoot(aType);
             aType.registerAsReachable();
             DynamicHub hub = ((SVMHost) aUniverse.hostVM()).dynamicHub(aType);
             sType = new SubstrateType(aType.getJavaKind(), hub);

@@ -460,6 +460,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
         registerAsReachable();
         if (AtomicUtils.atomicMark(this, isInHeapUpdater)) {
             onInstantiated(UsageKind.InHeap);
+            CausalityExport.instance.registerTypeReachableRoot(this);
             CausalityExport.instance.registerTypeInstantiated((PointsToAnalysis)universe.getBigbang(), null, this);
             return true;
         }
@@ -475,7 +476,10 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
             onInstantiated(UsageKind.Allocated);
 
             if(node == null) // Means this does not happen as part of a new() etc. that would be handled precisely in its respective flow
+            {
+                CausalityExport.instance.registerTypeReachableRoot(this); // TODO: Try to not account if node != null, instead add to registerTypeInstantiated...
                 CausalityExport.instance.registerTypeInstantiated((PointsToAnalysis)universe.getBigbang(), null, this);
+            }
 
             return true;
         }
@@ -1133,7 +1137,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     @Override
     public AnalysisField[] getStaticFields() {
-        registerAsReachable();
+        registerAsReachable(); // TODO: Versuchen, zu ignorieren
         return convertFields(wrapped.getStaticFields(), new ArrayList<>(), false);
     }
 

@@ -203,6 +203,7 @@ public class JNIAccessFeature implements Feature {
         public void register(ConfigurationCondition condition, boolean unsafeAllocated, Class<?> clazz) {
             assert !unsafeAllocated : "unsafeAllocated can be only set via Unsafe.allocateInstance, not via JNI.";
             abortIfSealed();
+            CausalityExport.instance.registerTypeReachableRoot(clazz);
             registerConditionalConfiguration(condition, () -> newClasses.add(clazz));
         }
 
@@ -210,10 +211,9 @@ public class JNIAccessFeature implements Feature {
         public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
             abortIfSealed();
 
-            if(ConfigurationCondition.alwaysTrue().equals(condition))
-            {
-                for(Executable m : methods)
-                    CausalityExport.instance.registerAnonymousRegistration(m);
+            for(Executable m : methods) {
+                CausalityExport.instance.registerAnonymousRegistration(m);
+                CausalityExport.instance.registerTypeReachableRoot(m.getDeclaringClass());
             }
 
             registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
@@ -222,6 +222,11 @@ public class JNIAccessFeature implements Feature {
         @Override
         public void register(ConfigurationCondition condition, boolean finalIsWritable, Field... fields) {
             abortIfSealed();
+
+            for (Field field : fields) {
+                CausalityExport.instance.registerTypeReachableRoot(field.getDeclaringClass());
+            }
+
             registerConditionalConfiguration(condition, () -> registerFields(finalIsWritable, fields));
         }
 
@@ -261,7 +266,9 @@ public class JNIAccessFeature implements Feature {
     private static void registerJavaCallTrampoline(BeforeAnalysisAccessImpl access, CallVariant variant, boolean nonVirtual) {
         MetaAccessProvider originalMetaAccess = access.getMetaAccess().getWrapped();
         ResolvedJavaField field = JNIAccessibleMethod.getCallVariantWrapperField(originalMetaAccess, variant, nonVirtual);
-        access.getUniverse().lookup(field.getDeclaringClass()).registerAsReachable();
+        AnalysisType fieldDeclaringType = access.getUniverse().lookup(field.getDeclaringClass());
+        CausalityExport.instance.registerTypeReachableRoot(fieldDeclaringType);
+        fieldDeclaringType.registerAsReachable();
         access.registerAsAccessed(access.getUniverse().lookup(field));
         String name = JNIJavaCallTrampolineHolder.getTrampolineName(variant, nonVirtual);
         Method method = ReflectionUtil.lookupMethod(JNIJavaCallTrampolineHolder.class, name);
@@ -350,7 +357,7 @@ public class JNIAccessFeature implements Feature {
         return JNIReflectionDictionary.singleton().addClassIfAbsent(classObj, c -> {
             AnalysisType analysisClass = access.getMetaAccess().lookupJavaType(classObj);
             if (analysisClass.isInterface() || (analysisClass.isInstanceClass() && analysisClass.isAbstract())) {
-                analysisClass.registerAsReachable();
+                analysisClass.registerAsReachable(); // TODO: Ignorieren, und stattdessen .register(...) tracken
             } else {
                 access.getBigBang().markTypeInstantiated(analysisClass);
             }
@@ -418,7 +425,7 @@ public class JNIAccessFeature implements Feature {
     }
 
     private static void addField(Field reflField, boolean writable, DuringAnalysisAccessImpl access) {
-        access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass()).registerAsReachable();
+        access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass()).registerAsReachable(); // TODO: Ignorieren, und stattdessen .register(...) tracken
         if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess(), access.getUniverse())) {
             return;
         }

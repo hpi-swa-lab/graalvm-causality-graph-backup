@@ -31,6 +31,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.MapCursor;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
@@ -110,6 +113,8 @@ public abstract class ImageHeapScanner {
     public void scanEmbeddedRoot(JavaConstant root, BytecodePosition position) {
         if (isNonNullObjectConstant(root)) {
             AnalysisType type = metaAccess.lookupJavaType(root);
+            // Already registered in MethodTypeFlowBuilder.registerEmbeddedRoot():
+            // CausalityExport.instance.registerTypeReachableByMethod(type, position.getMethod());
             type.registerAsReachable();
             getOrCreateConstantReachableTask(root, new EmbeddedRootScan(position, root), null);
         }

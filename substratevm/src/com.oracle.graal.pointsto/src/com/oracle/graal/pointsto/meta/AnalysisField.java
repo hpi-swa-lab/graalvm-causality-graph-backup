@@ -315,7 +315,7 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
 
     public void markFolded() {
         if (AtomicUtils.atomicMark(this, isFoldedUpdater)) {
-            getDeclaringClass().registerAsReachable();
+            getDeclaringClass().registerAsReachable(); // TODO: Ignorieren. Wenn constant folding versucht wird, macht die entsprechende Methode diesen Typen sowieso reachable.
             onReachable();
         }
     }

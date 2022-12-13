@@ -345,7 +345,7 @@ public class FeatureImpl {
         }
 
         public void registerAsUsed(AnalysisType aType) {
-            bb.markTypeReachable(aType);
+            bb.markTypeReachable(aType); // TODO: Try to hold specific feature accountable
         }
 
         @Override
@@ -368,7 +368,7 @@ public class FeatureImpl {
         }
 
         public void registerAsRead(Field field, Object reason) {
-            getMetaAccess().lookupJavaType(field.getDeclaringClass()).registerAsReachable();
+            getMetaAccess().lookupJavaType(field.getDeclaringClass()).registerAsReachable(); // TODO: Try to make feature accountable
             registerAsRead(getMetaAccess().lookupJavaField(field), reason);
         }
 

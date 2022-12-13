@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.core.common.type.ObjectStamp;
 import org.graalvm.compiler.core.common.type.TypeReference;
@@ -231,7 +232,8 @@ public class MethodTypeFlowBuilder {
                 InstanceOfNode node = (InstanceOfNode) n;
                 AnalysisType type = (AnalysisType) node.type().getType();
                 if (!ignoreInstanceOfType(type)) {
-                    type.registerAsReachable();
+                    CausalityExport.instance.registerTypeReachableByMethod(type, method);
+                    type.registerAsReachable(); // TODO: Make this method accountable for reachability
                 }
 
             } else if (n instanceof NewInstanceNode) {
@@ -311,7 +313,8 @@ public class MethodTypeFlowBuilder {
                      * metadata is only constructed after AOT compilation, so the image heap
                      * scanning during static analysis does not see these classes.
                      */
-                    frameStateMethod.getDeclaringClass().registerAsReachable();
+                    CausalityExport.instance.registerTypeReachableByMethod(frameStateMethod.getDeclaringClass(), method);
+                    frameStateMethod.getDeclaringClass().registerAsReachable(); // TODO: Make this method accountable for reachability
                 }
 
             } else if (n instanceof ForeignCall) {
@@ -383,6 +386,9 @@ public class MethodTypeFlowBuilder {
     private void registerEmbeddedRoot(ConstantNode cn) {
         JavaConstant root = cn.asJavaConstant();
         if (bb.scanningPolicy().trackConstant(bb, root)) {
+            AnalysisType t = bb.getMetaAccess().lookupJavaType(root);
+            if(t != null)
+                CausalityExport.instance.registerTypeReachableByMethod(t, method);
             bb.getUniverse().registerEmbeddedRoot(root, AbstractAnalysisEngine.sourcePosition(cn));
         }
     }

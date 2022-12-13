@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.memory.MemoryOrderMode;
 import org.graalvm.compiler.core.common.type.IntegerStamp;
@@ -142,6 +143,7 @@ public class CGlobalDataFeature implements InternalFeature {
 
                     ResolvedJavaType infoType = b.getMetaAccess().lookupJavaType(CGlobalDataInfo.class);
                     if (infoType instanceof AnalysisType) {
+                        CausalityExport.instance.registerTypeReachableRoot((AnalysisType) infoType);
                         ((AnalysisType) infoType).registerAsReachable();
                     }
 

@@ -315,7 +315,8 @@ public class AnalysisConstantReflectionProvider extends SharedConstantReflection
         if (!valueType.isReachable() && BuildPhaseProvider.isAnalysisFinished()) {
             throw VMError.shouldNotReachHere("Registering type as reachable after analysis: " + valueType);
         }
-        valueType.registerAsReachable();
+        boolean added = valueType.registerAsReachable(); // TODO: Ignorieren... Oder hinnehmen, falls true zurückgegeben wird
+        int a = 5;
     }
 
     private SVMHost getHostVM() {

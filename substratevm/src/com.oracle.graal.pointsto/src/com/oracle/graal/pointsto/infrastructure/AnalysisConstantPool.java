@@ -27,6 +27,7 @@ package com.oracle.graal.pointsto.infrastructure;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import jdk.vm.ci.meta.ConstantPool;
 import jdk.vm.ci.meta.JavaField;
 import jdk.vm.ci.meta.JavaType;
@@ -46,7 +47,8 @@ public class AnalysisConstantPool extends WrappedConstantPool {
         JavaType declaringClass = field.getDeclaringClass();
         if (declaringClass instanceof ResolvedJavaType) {
             AnalysisType fieldDeclaringType = ((AnalysisUniverse) universe).lookup(declaringClass);
-            fieldDeclaringType.registerAsReachable();
+            CausalityExport.instance.registerTypeReachableByMethod(fieldDeclaringType, ((AnalysisUniverse)universe).lookup(substMethod));
+            fieldDeclaringType.registerAsReachable(); // TODO: Make method accountable for reachability
         }
         return universe.lookupAllowUnresolved(field);
     }

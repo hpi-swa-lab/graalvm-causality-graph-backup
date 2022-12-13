@@ -50,6 +50,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.AnnotationAccess;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
@@ -130,6 +131,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean unsafeInstantiated, Class<?> clazz) {
         checkNotSealed();
+        CausalityExport.instance.registerTypeReachableRoot(clazz);
         registerConditionalConfiguration(condition, () -> {
             if (unsafeInstantiated) {
                 unsafeInstantiatedClasses.add(clazz);
@@ -151,6 +153,11 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
         checkNotSealed();
+
+        for(Executable m : methods) {
+            CausalityExport.instance.registerTypeReachableRoot(m.getDeclaringClass());
+        }
+
         registerConditionalConfiguration(condition, () -> registerMethods(queriedOnly, methods));
     }
 
@@ -174,6 +181,11 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean finalIsWritable, Field... fields) {
         checkNotSealed();
+
+        for(Field f : fields) {
+            CausalityExport.instance.registerTypeReachableRoot(f.getDeclaringClass());
+        }
+
         registerConditionalConfiguration(condition, () -> registerFields(fields));
     }
 
@@ -209,6 +221,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
                 ResolvedJavaType annotationType = ((AnnotationSubstitutionType) type.getWrappedWithoutResolve()).getAnnotationInterfaceType();
                 Class<?> annotationClass = access.getUniverse().lookup(annotationType).getJavaClass();
                 if (!annotationMembers.containsKey(annotationClass)) {
+                    CausalityExport.instance.registerTypeReachableRoot(annotationClass);
                     processClass(access, annotationClass);
                 }
                 for (Member member : annotationMembers.get(annotationClass)) {
@@ -680,7 +693,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     }
 
     private static void makeAnalysisTypeReachable(DuringAnalysisAccessImpl access, AnalysisType type) {
-        if (type.registerAsReachable()) {
+        // CausalityExport.instance.registerTypeReachableRoot(type); // TODO: Durch welche Registration wurde das hier hervorgerufen???
+        if (type.registerAsReachable()) { // TODO: Wenn durch register(...) hervorgerufen, dann ignorieren
             access.requireAnalysisIteration();
         }
     }
@@ -718,7 +732,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
          * Make sure the class is registered as reachable before its fields are accessed below to
          * build the reflection metadata.
          */
-        type.registerAsReachable();
+        type.registerAsReachable(); // TODO: Wenn durch register(...), dann ignorieren.
         if (unsafeInstantiatedClasses.contains(clazz)) {
             type.registerAsAllocated(null);
         }
