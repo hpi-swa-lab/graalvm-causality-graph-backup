@@ -148,6 +148,7 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
     protected void onObjectReachable(ImageHeapConstant imageHeapConstant) {
         super.onObjectReachable(imageHeapConstant);
 
+        // TODO: Trace that this object made the method suceptible to reflection rooting
         if (metaAccess.isInstanceOf(imageHeapConstant, Field.class) || metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
             reflectionSupport.registerHeapReflectionObject((AccessibleObject) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()));
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {

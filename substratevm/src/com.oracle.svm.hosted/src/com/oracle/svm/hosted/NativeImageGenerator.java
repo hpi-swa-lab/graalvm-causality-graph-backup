@@ -59,6 +59,7 @@ import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.reports.AnalysisReportsOptions;
 import com.oracle.graal.pointsto.reports.CausalityExport;
+import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.MapCursor;
@@ -899,6 +900,10 @@ public class NativeImageGenerator {
                 } else {
                     aScanningObserver = new ReachabilityObjectScanner(bb, aMetaAccess);
                 }
+
+                if(!AnalysisReportsOptions.HeapAssignmentTracingAgentPath.getValue(options).isEmpty())
+                    HeapAssignmentTracing.activate();
+
                 ImageHeapScanner heapScanner = new SVMImageHeapScanner(bb, imageHeap, loader, aMetaAccess, aSnippetReflection, aConstantReflection, aScanningObserver);
                 aUniverse.setHeapScanner(heapScanner);
                 HeapSnapshotVerifier heapVerifier = new SVMImageHeapVerifier(bb, imageHeap, heapScanner);

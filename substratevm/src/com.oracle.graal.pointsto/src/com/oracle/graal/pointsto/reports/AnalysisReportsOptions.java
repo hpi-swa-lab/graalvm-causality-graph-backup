@@ -80,6 +80,9 @@ public class AnalysisReportsOptions {
     @Option(help = "Suppress the expansion of specified types. See: Reports.md.")//
     public static final OptionKey<String> ImageObjectTreeSuppressTypes = new OptionKey<>("");
 
+    @Option(help = "Specifies the path to libheap-assignment-tacing-agent.so.")
+    public static final OptionKey<String> HeapAssignmentTracingAgentPath = new OptionKey<>("");
+
     enum CallTreeType {
         TXT,
         CSV;

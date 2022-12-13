@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.oracle.graal.pointsto.reports.AnalysisReportsOptions;
 import org.graalvm.compiler.options.OptionKey;
 import org.graalvm.compiler.serviceprovider.JavaVersionUtil;
 import org.graalvm.nativeimage.Platform;
@@ -223,6 +224,8 @@ public class NativeImage {
 
     final String oHInspectServerContentPath = oH(PointstoOptions.InspectServerContentPath);
     final String oHDeadlockWatchdogInterval = oH(SubstrateOptions.DeadlockWatchdogInterval);
+
+    final String oHHeapAssignmentTracingAgentPath = oH(AnalysisReportsOptions.HeapAssignmentTracingAgentPath);
 
     static final String oXmx = "-Xmx";
     static final String oXms = "-Xms";
@@ -1188,6 +1191,7 @@ public class NativeImage {
         String agentOptions = "";
         List<String> traceClassInitializationOpts = getHostedOptionArgumentValues(imageBuilderArgs, oHTraceClassInitialization);
         List<String> traceObjectInstantiationOpts = getHostedOptionArgumentValues(imageBuilderArgs, oHTraceObjectInstantiation);
+        String heapAssignmentTracingPath = getHostedOptionFinalArgumentValue(imageBuilderArgs, oHHeapAssignmentTracingAgentPath);
         if (!traceClassInitializationOpts.isEmpty()) {
             agentOptions = getAgentOptions(traceClassInitializationOpts, "c");
         }
@@ -1196,6 +1200,10 @@ public class NativeImage {
                 agentOptions += ",";
             }
             agentOptions += getAgentOptions(traceObjectInstantiationOpts, "o");
+        }
+
+        if(heapAssignmentTracingPath != null && !heapAssignmentTracingPath.isEmpty()) {
+            args.add("-agentpath:" + heapAssignmentTracingPath);
         }
 
         if (!agentOptions.isEmpty()) {
