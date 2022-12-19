@@ -52,7 +52,7 @@ public class CausalityExport {
         private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
         private final HashSet<AnalysisType> rootTypes = new HashSet<>();
         private final HashSet<Class<?>> unresolvedRootTypes = new HashSet<>();
-        private final HashSet<Pair<JavaMethod, AnalysisType>> methodsReachingTypes = new HashSet<>();
+        private final HashSet<Pair<AnalysisMethod, AnalysisType>> methodsReachingTypes = new HashSet<>();
         private final Map<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> callbackReasons = new HashMap<>();
         private final HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
 
@@ -95,6 +95,7 @@ public class CausalityExport {
         }
 
         public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
+            /*
             if (caller == null) {
                 String qualifiedName = callee.getDeclaringClass().toJavaName();
                 if(qualifiedName.startsWith("com.oracle.svm.core.") && qualifiedName.endsWith("Holder")) {
@@ -102,6 +103,7 @@ public class CausalityExport {
                     return;
                 }
             }
+            */
 
             if (caller == null) {
                 rootCount.compute(callee, (id, count) -> (count == null ? 0 : count) + 1);
@@ -142,7 +144,7 @@ public class CausalityExport {
 
         public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m)
         {
-            methodsReachingTypes.add(Pair.create(m, type));
+            methodsReachingTypes.add(Pair.create((AnalysisMethod) m, type));
         }
 
         public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
@@ -225,31 +227,35 @@ public class CausalityExport {
             lateResolvedTypes.forEach(rootTypes::add);
             unresolvedRootTypes.clear();
 
-            /*
-            Set<AnalysisType> reachedAccordingToCausalityExport = Stream.concat(rootTypes.stream(), methodsReachingTypes.stream().map(Pair::getRight).distinct()).flatMap(t -> {
-                ArrayList<AnalysisType> superTypes = new ArrayList<>();
-                t.forAllSuperTypes(superTypes::add);
-                return superTypes.stream();
-            }).collect(Collectors.toSet());
+            {
+                Set<AnalysisType> reachedAccordingToCausalityExport = Stream.concat(rootTypes.stream(), methodsReachingTypes.stream().filter(p -> p.getLeft().isImplementationInvoked()).map(Pair::getRight).distinct()).flatMap(t -> {
+                    ArrayList<AnalysisType> superTypes = new ArrayList<>();
+                    t.forAllSuperTypes(superTypes::add);
+                    return superTypes.stream();
+                }).collect(Collectors.toSet());
 
-            List<AnalysisType> invokedByRoot = methodsReachingTypes.stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
+                List<AnalysisType> invokedByRoot = methodsReachingTypes.stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
 
-            Set<AnalysisType> reached = bb.getUniverse().getTypes().stream().filter(AnalysisType::isReachable).collect(Collectors.toSet());
+                Set<AnalysisType> reached = bb.getUniverse().getTypes().stream().filter(AnalysisType::isReachable).collect(Collectors.toSet());
 
-            List<AnalysisType> log4jTypes = Stream.concat(rootTypes.stream(), invokedByRoot.stream()).filter(t -> t.toJavaName().contains("log4j")).collect(Collectors.toList());
+                List<AnalysisType> log4jTypes = Stream.concat(rootTypes.stream(), invokedByRoot.stream()).filter(t -> t.toJavaName().contains("log4j")).collect(Collectors.toList());
 
-            if (!reached.containsAll(reachedAccordingToCausalityExport)) {
-                System.err.println("Types additionally reached according to CausalityExport!");
+                if (!reached.containsAll(reachedAccordingToCausalityExport)) {
+                    System.err.println("Types additionally reached according to CausalityExport!");
+                }
+
+                reached.removeAll(reachedAccordingToCausalityExport);
+
+                List<AnalysisType> overlookedWithClassInitializer = reached.stream().filter(t -> t.getClassInitializer() != null).collect(Collectors.toList());
+
+                for (AnalysisType t : overlookedWithClassInitializer) {
+                    System.err.println("Type not reached according to CausalityExport: " + t.toJavaName());
+                }
+
+
+
+                rootTypes.addAll(reached); // Because we dont know...
             }
-
-            reached.removeAll(reachedAccordingToCausalityExport);
-
-            List<AnalysisType> overlookedWithClassInitializer = reached.stream().filter(t -> t.getClassInitializer() != null).collect(Collectors.toList());
-
-            for (AnalysisType t : overlookedWithClassInitializer) {
-                System.err.println("Type not reached according to CausalityExport: " + t.toJavaName());
-            }
-            */
 
             Graph g = new Graph();
 
@@ -311,14 +317,12 @@ public class CausalityExport {
             }
 
             for (AnalysisType t : rootTypes) {
-                g.directInvokes.add(new Graph.DirectCallEdge(null, new Graph.ClassReachableNode(t)));
+                g.directInvokes.add(new Graph.DirectCallEdge(null, typeReachableMapping.get(t)));
             }
 
-            for (Pair<JavaMethod, AnalysisType> e : methodsReachingTypes) {
+            for (Pair<AnalysisMethod, AnalysisType> e : methodsReachingTypes) {
                 JavaMethod m = e.getLeft();
-                if (!(m instanceof AnalysisMethod))
-                    continue;
-                Graph.RealMethodNode mnode = methodMapping.get((AnalysisMethod) m);
+                Graph.RealMethodNode mnode = methodMapping.get(m);
                 if (mnode == null)
                     continue;
 
