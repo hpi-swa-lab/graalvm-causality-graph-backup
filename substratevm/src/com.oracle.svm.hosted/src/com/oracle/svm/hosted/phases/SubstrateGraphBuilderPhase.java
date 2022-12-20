@@ -69,7 +69,7 @@ public class SubstrateGraphBuilderPhase extends SharedGraphBuilderPhase {
                  * InvocationPlugins.resolvedRegistrations map reachable from
                  * SubstrateReplacements.snippetInvocationPlugins.
                  */
-                CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) targetMethod.getDeclaringClass());
+                CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) targetMethod.getDeclaringClass(), false);
                 ((AnalysisType) targetMethod.getDeclaringClass()).registerAsReachable();
             }
             return inlineInfo;

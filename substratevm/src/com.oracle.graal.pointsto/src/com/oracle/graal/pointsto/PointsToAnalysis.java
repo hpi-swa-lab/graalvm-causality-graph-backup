@@ -404,7 +404,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     @Override
     public AnalysisType addRootClass(Class<?> clazz, boolean addFields, boolean addArrayClass) {
         AnalysisType type = metaAccess.lookupJavaType(clazz);
-        CausalityExport.getInstance().registerTypeReachableRoot(type);
+        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
         type.registerAsReachable();
         return addRootClass(type, addFields, addArrayClass);
     }

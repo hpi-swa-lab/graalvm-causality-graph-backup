@@ -143,7 +143,7 @@ public class CGlobalDataFeature implements InternalFeature {
 
                     ResolvedJavaType infoType = b.getMetaAccess().lookupJavaType(CGlobalDataInfo.class);
                     if (infoType instanceof AnalysisType) {
-                        CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) infoType);
+                        CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) infoType, false);
                         ((AnalysisType) infoType).registerAsReachable();
                     }
 

@@ -248,7 +248,9 @@ public class ObjectScanner {
             return;
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
-            bb.markTypeInHeap(bb.getMetaAccess().lookupJavaType(value));
+            AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, value, true);
+            bb.markTypeInHeap(type);
             return;
         }
         Object valueObj = (value instanceof ImageHeapConstant) ? value : constantAsObject(bb, value);
@@ -413,7 +415,7 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, entry.constant);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, entry.constant, false);
             type.registerAsReachable();
 
             if (type.isInstanceClass()) {

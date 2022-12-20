@@ -47,8 +47,8 @@ public class AnalysisConstantPool extends WrappedConstantPool {
         JavaType declaringClass = field.getDeclaringClass();
         if (declaringClass instanceof ResolvedJavaType) {
             AnalysisType fieldDeclaringType = ((AnalysisUniverse) universe).lookup(declaringClass);
-            CausalityExport.getInstance().registerTypeReachableByMethod(fieldDeclaringType, ((AnalysisUniverse)universe).lookup(substMethod));
-            fieldDeclaringType.registerAsReachable(); // TODO: Make method accountable for reachability
+            CausalityExport.getInstance().registerTypeReachableByMethod(fieldDeclaringType, ((AnalysisUniverse)universe).lookup(substMethod), false);
+            fieldDeclaringType.registerAsReachable();
         }
         return universe.lookupAllowUnresolved(field);
     }

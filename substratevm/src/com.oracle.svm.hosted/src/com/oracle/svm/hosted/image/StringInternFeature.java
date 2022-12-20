@@ -49,7 +49,7 @@ class StringInternFeature implements InternalFeature {
         try {
             if (metaAccess instanceof AnalysisMetaAccess) {
                 AnalysisType type = ((AnalysisMetaAccess) metaAccess).lookupJavaType(StringInternSupport.class);
-                CausalityExport.getInstance().registerTypeReachableRoot(type);
+                CausalityExport.getInstance().registerTypeReachableRoot(type, false);
                 type.registerAsReachable();
             }
             return metaAccess.lookupJavaField(StringInternSupport.class.getDeclaredField("internedStrings"));

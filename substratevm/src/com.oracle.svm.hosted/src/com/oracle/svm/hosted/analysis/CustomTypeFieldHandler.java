@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.word.WordBase;
 
 import com.oracle.graal.pointsto.BigBang;
@@ -108,6 +109,7 @@ public abstract class CustomTypeFieldHandler {
     private void injectFieldTypes(AnalysisField field, List<AnalysisType> customTypes) {
         for (AnalysisType type : customTypes) {
             if (!type.isPrimitive()) {
+                CausalityExport.getInstance().registerTypeReachableRoot(type, true);
                 type.registerAsAllocated(null);
             }
         }

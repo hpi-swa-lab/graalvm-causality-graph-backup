@@ -50,9 +50,9 @@ public class CausalityExport {
         private final HashMap<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
         private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
         private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
-        private final HashSet<AnalysisType> rootTypes = new HashSet<>();
         private final HashSet<Class<?>> unresolvedRootTypes = new HashSet<>();
-        private final HashSet<Pair<AnalysisMethod, AnalysisType>> methodsReachingTypes = new HashSet<>();
+        // Boolean stores whether the type is also instantiated
+        private final HashMap<Pair<AnalysisMethod, AnalysisType>, Boolean> methodsReachingTypes = new HashMap<>();
         private final Map<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> callbackReasons = new HashMap<>();
         private final HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
 
@@ -77,9 +77,8 @@ public class CausalityExport {
                 mergeTypeFlowMap(virtual_invokes, i.virtual_invokes, bb);
                 typeflowGateMethods.putAll(i.typeflowGateMethods);
                 i.rootCount.forEach((k, v) -> rootCount.merge(k, v, Integer::sum));
-                rootTypes.addAll(i.rootTypes);
                 unresolvedRootTypes.addAll(i.unresolvedRootTypes);
-                methodsReachingTypes.addAll(i.methodsReachingTypes);
+                mergeMap(methodsReachingTypes, i.methodsReachingTypes, Boolean::logicalOr);
                 mergeMap(callbackReasons, i.callbackReasons, (l1, l2) -> Stream.concat(l1.stream(), l2.stream()).collect(Collectors.toList()));
                 reachableThroughFeatureCallback.addAll(i.reachableThroughFeatureCallback);
             }
@@ -127,9 +126,9 @@ public class CausalityExport {
             }
         }
 
-        public void registerTypeReachableRoot(AnalysisType type)
+        public void registerTypeReachableRoot(AnalysisType type, boolean instantiated)
         {
-            rootTypes.add(type);
+            methodsReachingTypes.compute(Pair.create(null, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
         }
 
         public void registerTypeReachableRoot(Class<?> type)
@@ -137,23 +136,25 @@ public class CausalityExport {
             unresolvedRootTypes.add(type);
         }
 
-        public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object)
+        public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated)
         {
-            rootTypes.add(type); // TODO: Make build-time clinit accountable
+            if(type.getName().equals("Lorg/apache/log4j/helpers/NullEnumeration;"))
+                return;
+
+            methodsReachingTypes.compute(Pair.create(null, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated); // TODO: Make build-time clinit accountable
         }
 
-        public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m)
+        public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated)
         {
-            methodsReachingTypes.add(Pair.create((AnalysisMethod) m, type));
+            methodsReachingTypes.compute(Pair.create((AnalysisMethod) m, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
         }
 
         public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
             TypeState typeState = TypeState.forExactType(bb, type, true);
-            TypeState typeStateNonNull = TypeState.forExactType(bb, type, false);
 
             type.forAllSuperTypes(t -> {
                 addFlowingTypes(bb, cause, t.instantiatedTypes, typeState);
-                addFlowingTypes(bb, cause, t.instantiatedTypesNonNull, typeStateNonNull);
+                addFlowingTypes(bb, cause, t.instantiatedTypesNonNull, typeState);
             });
         }
 
@@ -224,21 +225,19 @@ public class CausalityExport {
 
         public Graph createCausalityGraph(PointsToAnalysis bb) {
             Stream<AnalysisType> lateResolvedTypes = unresolvedRootTypes.stream().map(bb.getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get);
-            lateResolvedTypes.forEach(rootTypes::add);
+            lateResolvedTypes.forEach(t -> methodsReachingTypes.putIfAbsent(Pair.create(null, t), false));
             unresolvedRootTypes.clear();
 
             {
-                Set<AnalysisType> reachedAccordingToCausalityExport = Stream.concat(rootTypes.stream(), methodsReachingTypes.stream().filter(p -> p.getLeft().isImplementationInvoked()).map(Pair::getRight).distinct()).flatMap(t -> {
+                Set<AnalysisType> reachedAccordingToCausalityExport = methodsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null || p.getLeft().isImplementationInvoked()).map(Pair::getRight).distinct().flatMap(t -> {
                     ArrayList<AnalysisType> superTypes = new ArrayList<>();
                     t.forAllSuperTypes(superTypes::add);
                     return superTypes.stream();
                 }).collect(Collectors.toSet());
 
-                List<AnalysisType> invokedByRoot = methodsReachingTypes.stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
+                List<AnalysisType> invokedByRoot = methodsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
 
                 Set<AnalysisType> reached = bb.getUniverse().getTypes().stream().filter(AnalysisType::isReachable).collect(Collectors.toSet());
-
-                List<AnalysisType> log4jTypes = Stream.concat(rootTypes.stream(), invokedByRoot.stream()).filter(t -> t.toJavaName().contains("log4j")).collect(Collectors.toList());
 
                 if (!reached.containsAll(reachedAccordingToCausalityExport)) {
                     System.err.println("Types additionally reached according to CausalityExport!");
@@ -253,8 +252,9 @@ public class CausalityExport {
                 }
 
 
-
-                rootTypes.addAll(reached); // Because we dont know...
+                for(AnalysisType t : reached) {
+                    methodsReachingTypes.putIfAbsent(Pair.create(null, t), false); // Because we dont know...
+                }
             }
 
             Graph g = new Graph();
@@ -316,15 +316,17 @@ public class CausalityExport {
                 g.interflows.put(new Graph.FlowEdge(e.getKey().getLeft() == null ? null : flowMapping.get(e.getKey().getLeft()), flowMapping.get(e.getKey().getRight())), e.getValue());
             }
 
-            for (AnalysisType t : rootTypes) {
-                g.directInvokes.add(new Graph.DirectCallEdge(null, typeReachableMapping.get(t)));
-            }
+            for (Pair<AnalysisMethod, AnalysisType> e : methodsReachingTypes.keySet()) {
+                AnalysisMethod m = e.getLeft();
 
-            for (Pair<AnalysisMethod, AnalysisType> e : methodsReachingTypes) {
-                JavaMethod m = e.getLeft();
-                Graph.RealMethodNode mnode = methodMapping.get(m);
-                if (mnode == null)
-                    continue;
+                Graph.RealMethodNode mnode;
+                if(m == null) {
+                    mnode = null; // Intentionally null
+                } else {
+                    mnode = methodMapping.get(m);
+                    if (mnode == null)
+                        continue;
+                }
 
                 g.directInvokes.add(new Graph.DirectCallEdge(mnode, typeReachableMapping.get(e.getRight())));
             }
@@ -333,6 +335,37 @@ public class CausalityExport {
                 AnalysisMethod classInitializer = e.getKey().getClassInitializer();
                 if (classInitializer != null && methodMapping.containsKey(classInitializer)) {
                     g.directInvokes.add(new Graph.DirectCallEdge(e.getValue(), methodMapping.get(classInitializer)));
+                }
+            }
+
+            for(Map.Entry<Pair<AnalysisMethod, AnalysisType>, Boolean> kv : methodsReachingTypes.entrySet()) {
+                if(kv.getValue()) {
+                    AnalysisMethod m = kv.getKey().getLeft();
+
+                    Graph.RealMethodNode mnode;
+                    if(m == null) {
+                        mnode = null; // Intentionally null
+                    } else {
+                        mnode = methodMapping.get(m);
+                        if (mnode == null)
+                            continue;
+                    }
+
+                    AnalysisType t = kv.getKey().getRight();
+                    TypeState state = TypeState.forExactType(bb, t, false);
+
+                    String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
+                    if(m != null) {
+                        debugStr += " in " + m.getQualifiedName();
+                    }
+
+                    Graph.FlowNode vfn = new Graph.FlowNode(debugStr, mnode);
+                    g.interflows.put(new Graph.FlowEdge(null, vfn), state);
+
+                    t.forAllSuperTypes(t1 -> {
+                        g.interflows.put(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)), state);
+                        g.interflows.put(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)), state);
+                    });
                 }
             }
 
@@ -379,16 +412,16 @@ public class CausalityExport {
     public void registerMethodFlow(MethodTypeFlow method) {
     }
 
-    public void registerTypeReachableRoot(AnalysisType type) {
+    public void registerTypeReachableRoot(AnalysisType type, boolean instantiated) {
     }
 
     public void registerTypeReachableRoot(Class<?> type) {
     }
 
-    public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object) {
+    public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated) {
     }
 
-    public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m) {
+    public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated) {
     }
 
     public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
@@ -427,33 +460,41 @@ public class CausalityExport {
     // --- Postprocessing ---
 
     private static class Graph {
-        static class Node implements Comparable<Node> {
+        static abstract class Node implements Comparable<Node> {
+            private final String toStringCached;
+
+            public Node(String debugStr) {
+                toStringCached = debugStr;
+            }
+
+            public final String toString() { return toStringCached; }
+
             @Override
             public int compareTo(Node o) {
-                return toString().compareTo(o.toString());
+                return toStringCached.compareTo(o.toStringCached);
             }
         }
 
-        static class MethodNode extends Node {
+        static abstract class MethodNode extends Node {
+            public MethodNode(String debugStr) {
+                super(debugStr);
+            }
         }
 
         static class FeatureCallbackNode extends MethodNode {
             private final Consumer<Feature.DuringAnalysisAccess> callback;
 
             FeatureCallbackNode(Consumer<Feature.DuringAnalysisAccess> callback) {
+                super(callback.getClass().toString());
                 this.callback = callback;
-            }
-
-            @Override
-            public String toString() {
-                return callback.getClass().toString();
             }
         }
 
         static class FlowNode extends Node {
             public final MethodNode containing;
 
-            FlowNode(MethodNode containing) {
+            FlowNode(String debugStr, MethodNode containing) {
+                super(debugStr);
                 this.containing = containing;
             }
         }
@@ -545,35 +586,26 @@ public class CausalityExport {
             private final AnalysisMethod m;
 
             public RealMethodNode(AnalysisMethod m) {
+                super(m.getQualifiedName());
                 this.m = m;
-            }
-
-            @Override
-            public String toString() {
-                return m.getQualifiedName();
             }
         }
 
         static class ClassReachableNode extends MethodNode {
             private final AnalysisType t;
 
-            public ClassReachableNode(AnalysisType t) { this.t = t; }
-
-            @Override
-            public String toString() { return t.toJavaName(); }
+            public ClassReachableNode(AnalysisType t) {
+                super(t.toJavaName());
+                this.t = t;
+            }
         }
 
         static class RealFlowNode extends FlowNode {
             private final TypeFlow<?> f;
 
             public RealFlowNode(TypeFlow<?> f, MethodNode containing) {
-                super(containing);
+                super(f.toString(), containing);
                 this.f = f;
-            }
-
-            @Override
-            public String toString() {
-                return f.toString();
             }
         }
 

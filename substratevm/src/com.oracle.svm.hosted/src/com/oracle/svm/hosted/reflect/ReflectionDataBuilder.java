@@ -131,7 +131,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean unsafeInstantiated, Class<?> clazz) {
         checkNotSealed();
-        CausalityExport.getInstance().registerTypeReachableRoot(clazz);
+        CausalityExport.getInstance().registerTypeReachableRoot(clazz); // TODO: Track "is instantiated"
         registerConditionalConfiguration(condition, () -> {
             if (unsafeInstantiated) {
                 unsafeInstantiatedClasses.add(clazz);
@@ -155,7 +155,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
 
         for(Executable m : methods) {
-            CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass());
+            CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass()); // TODO: Track "is instantiated"
         }
 
         registerConditionalConfiguration(condition, () -> registerMethods(queriedOnly, methods));
@@ -183,7 +183,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
 
         for(Field f : fields) {
-            CausalityExport.getInstance().registerTypeReachableRoot(f.getDeclaringClass());
+            CausalityExport.getInstance().registerTypeReachableRoot(f.getDeclaringClass()); // TODO: Track "is instantiated"
         }
 
         registerConditionalConfiguration(condition, () -> registerFields(fields));
@@ -221,7 +221,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
                 ResolvedJavaType annotationType = ((AnnotationSubstitutionType) type.getWrappedWithoutResolve()).getAnnotationInterfaceType();
                 Class<?> annotationClass = access.getUniverse().lookup(annotationType).getJavaClass();
                 if (!annotationMembers.containsKey(annotationClass)) {
-                    CausalityExport.getInstance().registerTypeReachableRoot(annotationClass);
+                    CausalityExport.getInstance().registerTypeReachableRoot(annotationClass); // TODO: Track "is instantiated"
                     processClass(access, annotationClass);
                 }
                 for (Member member : annotationMembers.get(annotationClass)) {
@@ -687,6 +687,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
              * Exception proxies are stored as-is in the image heap
              */
             if (ExceptionProxy.class.isAssignableFrom(type)) {
+                CausalityExport.getInstance().registerTypeReachableRoot(analysisType, true);
                 analysisType.registerAsInHeap();
             }
         }
@@ -734,6 +735,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
          */
         type.registerAsReachable(); // TODO: Wenn durch register(...), dann ignorieren.
         if (unsafeInstantiatedClasses.contains(clazz)) {
+            CausalityExport.getInstance().registerTypeReachableRoot(type, true);
             type.registerAsAllocated(null);
         }
 

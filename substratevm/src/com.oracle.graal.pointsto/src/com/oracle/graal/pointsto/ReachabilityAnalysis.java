@@ -31,6 +31,7 @@ import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.svm.util.UnsafePartitionKind;
 
 /**
@@ -98,6 +99,7 @@ public interface ReachabilityAnalysis {
     }
 
     default boolean markTypeInstantiated(AnalysisType type) {
+        CausalityExport.getInstance().registerTypeReachableRoot(type, true);
         return type.registerAsAllocated(null);
     }
 

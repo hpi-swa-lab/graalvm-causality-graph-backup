@@ -160,6 +160,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         Object valueObj = analysis.getSnippetReflectionProvider().asObject(Object.class, value);
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
+        CausalityExport.getInstance().registerTypeReachableThroughHeap(type, value, true);
         type.registerAsInHeap();
     }
 

@@ -1032,17 +1032,27 @@ public class NativeImageGenerator {
          * good example.
          */
         try (Indent ignored = debug.logAndIndent("add initial classes/fields/methods")) {
-            bb.markTypeInHeap(bb.addRootClass(Object.class, false, false));
+            java.util.function.Consumer<Class<?>> registerInHeap = c -> {
+                AnalysisType t = bb.addRootClass(c, false, false);
+                CausalityExport.getInstance().registerTypeReachableRoot(t, true);
+                bb.markTypeInHeap(t);
+            };
+
+            registerInHeap.accept(Object.class);
             bb.addRootField(DynamicHub.class, "vtable");
-            bb.markTypeInHeap(bb.addRootClass(String.class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(String[].class, false, false));
-            bb.markTypeInHeap(bb.addRootField(String.class, "value"));
-            bb.markTypeInHeap(bb.addRootClass(long[].class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(byte[].class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(byte[][].class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(Object[].class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(CFunctionPointer[].class, false, false));
-            bb.markTypeInHeap(bb.addRootClass(PointerBase[].class, false, false));
+            registerInHeap.accept(String.class);
+            registerInHeap.accept(String[].class);
+
+            AnalysisType fieldType = bb.addRootField(String.class, "value");
+            CausalityExport.getInstance().registerTypeReachableRoot(fieldType, true);
+            bb.markTypeInHeap(fieldType);
+
+            registerInHeap.accept(long[].class);
+            registerInHeap.accept(byte[].class);
+            registerInHeap.accept(byte[][].class);
+            registerInHeap.accept(Object[].class);
+            registerInHeap.accept(CFunctionPointer[].class);
+            registerInHeap.accept(PointerBase[].class);
 
             bb.addRootMethod(ReflectionUtil.lookupMethod(SubstrateArraycopySnippets.class, "doArraycopy", Object.class, int.class, Object.class, int.class, int.class), true);
             bb.addRootMethod(ReflectionUtil.lookupMethod(Object.class, "getClass"), true);
@@ -1050,7 +1060,11 @@ public class NativeImageGenerator {
             for (JavaKind kind : JavaKind.values()) {
                 if (kind.isPrimitive() && kind != JavaKind.Void) {
                     bb.addRootClass(kind.toJavaClass(), false, true);
-                    bb.addRootClass(kind.toBoxedJavaClass(), false, true).registerAsInHeap();
+                    {
+                        AnalysisType t = bb.addRootClass(kind.toBoxedJavaClass(), false, true);
+                        CausalityExport.getInstance().registerTypeReachableRoot(t, true);
+                        t.registerAsInHeap();
+                    }
                     bb.addRootField(kind.toBoxedJavaClass(), "value");
                     bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), "valueOf", kind.toJavaClass()), true);
                     bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), kind.getJavaName() + "Value"), true);
@@ -1060,18 +1074,28 @@ public class NativeImageGenerator {
                      */
                     Class<?>[] innerClasses = kind.toBoxedJavaClass().getDeclaredClasses();
                     if (innerClasses != null && innerClasses.length > 0) {
-                        CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(innerClasses[0]));
-                        bb.getMetaAccess().lookupJavaType(innerClasses[0]).registerAsReachable();
+                        AnalysisType t = bb.getMetaAccess().lookupJavaType(innerClasses[0]);
+                        CausalityExport.getInstance().registerTypeReachableRoot(t, false);
+                        t.registerAsReachable();
                     }
                 }
             }
             /* SubstrateTemplates#toLocationIdentity accesses the Counter.value field. */
-            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()));
-            bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()).registerAsReachable();
-            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class));
-            bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class).registerAsReachable();
-            CausalityExport.getInstance().registerTypeReachableRoot(bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class));
-            bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class).registerAsReachable();
+            {
+                AnalysisType t = bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass());
+                CausalityExport.getInstance().registerTypeReachableRoot(t, false);
+                t.registerAsReachable();
+            }
+            {
+                AnalysisType t = bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class);
+                CausalityExport.getInstance().registerTypeReachableRoot(t, false);
+                t.registerAsReachable();
+            }
+            {
+                AnalysisType t = bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class);
+                CausalityExport.getInstance().registerTypeReachableRoot(t, false);
+                t.registerAsReachable();
+            }
 
             NativeImageGenerator.registerGraphBuilderPlugins(featureHandler, null, aProviders, aMetaAccess, aUniverse, null, null, nativeLibraries, loader, ParsingReason.PointsToAnalysis,
                             bb.getAnnotationSubstitutionProcessor(), classInitializationPlugin, ConfigurationValues.getTarget());
@@ -1099,14 +1123,14 @@ public class NativeImageGenerator {
                     SnippetReflectionProvider aSnippetReflection, AnnotationSubstitutionProcessor annotationSubstitutionProcessor, ForeignCallsProvider aForeignCalls,
                     ClassInitializationSupport classInitializationSupport, Providers originalProviders, SubstratePlatformConfigurationProvider platformConfig) {
         assert aUniverse != null : "Analysis universe must be initialized.";
-        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(String.class));
+        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(String.class), false);
         aMetaAccess.lookupJavaType(String.class).registerAsReachable();
         AnalysisConstantFieldProvider aConstantFieldProvider = new AnalysisConstantFieldProvider(aUniverse, aMetaAccess, aConstantReflection, classInitializationSupport);
         /*
          * Install all snippets so that the types, methods, and fields used in the snippets get
          * added to the universe.
          */
-        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(Reference.class));
+        CausalityExport.getInstance().registerTypeReachableRoot(aMetaAccess.lookupJavaType(Reference.class), false);
         aMetaAccess.lookupJavaType(Reference.class).registerAsReachable();
         MetaAccessExtensionProvider aMetaAccessExtensionProvider = HostedConfiguration.instance().createAnalysisMetaAccessExtensionProvider();
         LoweringProvider aLoweringProvider = SubstrateLoweringProvider.createForHosted(aMetaAccess, null, platformConfig, aMetaAccessExtensionProvider);
@@ -1259,7 +1283,7 @@ public class NativeImageGenerator {
         plugins.appendNodePlugin(new InjectedAccessorsPlugin());
         ResolvedJavaType resolvedJavaType = providers.getMetaAccess().lookupJavaType(ClassInitializationTracking.class);
         if (resolvedJavaType instanceof AnalysisType) {
-            CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) resolvedJavaType);
+            CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) resolvedJavaType, false);
             ((AnalysisType) resolvedJavaType).registerAsReachable();
         }
         plugins.appendNodePlugin(new EarlyConstantFoldLoadFieldPlugin(providers.getMetaAccess(), providers.getSnippetReflection()));
