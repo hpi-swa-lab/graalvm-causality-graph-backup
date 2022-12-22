@@ -49,6 +49,7 @@ public class FrozenFieldFilterTypeFlow extends TypeFlow<AnalysisField> {
         super(field, field.getType());
         this.unsafeSink = unsafeSink;
         this.source.getInstanceFieldFlow().addObserver(bb, this);
+        CausalityExport.getInstance().addTypeFlowEdge(this.source.getInstanceFieldFlow(), this);
     }
 
     @Override
@@ -70,7 +71,6 @@ public class FrozenFieldFilterTypeFlow extends TypeFlow<AnalysisField> {
          * collected in the sink, through the new filter.
          */
         addState(bb, unsafeSink.getState());
-        CausalityExport.getInstance().addFlowingTypes(bb, this.source.getInstanceFieldFlow(), this, unsafeSink.getState());
     }
 
     @Override

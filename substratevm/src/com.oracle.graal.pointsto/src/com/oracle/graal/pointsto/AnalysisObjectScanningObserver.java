@@ -58,8 +58,6 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         if (!fieldTypeFlow.getState().canBeNull()) {
             /* Signal that the field can contain null. */
-            // Is currently a NO-op, because CausalityExport doesn't care for nulls
-            CausalityExport.getInstance().addFlowingTypes(getAnalysis(), null, fieldTypeFlow, TypeState.forNull());
             return fieldTypeFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -77,7 +75,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         PointsToAnalysis analysis = getAnalysis();
         AnalysisType fieldType = analysis.getMetaAccess().lookupJavaType(fieldValue);
 
-        receiver = normalize(receiver);
+        JavaConstant normalizedReceiver = normalize(receiver);
         fieldValue = normalize(fieldValue);
 
         Class<?> creason;
@@ -85,15 +83,14 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         if(field.isStatic()) {
             creason = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
         } else {
-            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(analysis.getSnippetReflectionProvider().asObject(Object.class, receiver), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
+            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedReceiver), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
         }
 
         /* Add the constant value object to the field's type flow. */
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         /* Add the new constant to the field's flow state. */
         TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType);
-        // TODO: Find out what causes this to happen in order to make the analysis more complete!
-        CausalityExport.getInstance().addFlowingTypes(analysis, null, fieldTypeFlow, constantTypeState);
+        CausalityExport.getInstance().addTypeFlowFromHeap(analysis, creason, fieldTypeFlow, fieldType);
         return fieldTypeFlow.addState(analysis, constantTypeState);
     }
 
@@ -122,8 +119,6 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         ArrayElementsTypeFlow arrayObjElementsFlow = getArrayElementsFlow(array, arrayType);
         if (!arrayObjElementsFlow.getState().canBeNull()) {
             /* Signal that the constant array can contain null. */
-            // Is currently a NO-op, because CausalityExport doesn't care for nulls
-            CausalityExport.getInstance().addFlowingTypes(getAnalysis(), null, arrayObjElementsFlow, TypeState.forNull());
             return arrayObjElementsFlow.addState(getAnalysis(), TypeState.forNull());
         }
         return false;
@@ -135,13 +130,13 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         PointsToAnalysis analysis = getAnalysis();
 
         array = normalize(array);
-        elementConstant = normalize(elementConstant);
+        JavaConstant normalizedElementConstant = normalize(elementConstant);
 
-        Class<?> creason = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(analysis.getSnippetReflectionProvider().asObject(Object[].class, array), elementIndex, analysis.getSnippetReflectionProvider().asObject(Object.class, elementConstant));
+        Class<?> creason = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(analysis.getSnippetReflectionProvider().asObject(Object[].class, array), elementIndex, analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedElementConstant));
 
         /* Add the constant element to the constant's array type flow. */
         TypeState constantTypeState = bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType);
-        CausalityExport.getInstance().addFlowingTypes(analysis, null, arrayObjElementsFlow, constantTypeState);
+        CausalityExport.getInstance().addTypeFlowFromHeap(analysis, creason, arrayObjElementsFlow, elementType);
         return arrayObjElementsFlow.addState(analysis, constantTypeState);
     }
 

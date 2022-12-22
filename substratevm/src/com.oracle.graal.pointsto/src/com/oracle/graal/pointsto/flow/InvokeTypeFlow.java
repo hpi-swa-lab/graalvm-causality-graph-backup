@@ -160,14 +160,14 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
         FormalReceiverTypeFlow formalReceiverFlow = calleeFlows.getFormalReceiver();
         if (formalReceiverFlow != null) {
             formalReceiverFlow.addReceiverState(bb, receiverTypeState);
-            CausalityExport.getInstance().addFlowingTypes(bb, getReceiver(), formalReceiverFlow, receiverTypeState);
+            CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), formalReceiverFlow);
         }
 
         if (PointstoOptions.DivertParameterReturningMethod.getValue(bb.getOptions())) {
             int paramIndex = calleeFlows.getMethod().getTypeFlow().getReturnedParameterIndex();
             if (actualReturn != null && paramIndex == 0) {
                 actualReturn.addState(bb, receiverTypeState);
-                CausalityExport.getInstance().addFlowingTypes(bb, getReceiver(), actualReturn, receiverTypeState);
+                CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), actualReturn);
             }
         }
 

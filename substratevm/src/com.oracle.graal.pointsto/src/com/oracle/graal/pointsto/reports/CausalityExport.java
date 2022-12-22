@@ -2,17 +2,21 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
+import com.oracle.graal.pointsto.flow.ConstantTypeFlow;
+import com.oracle.graal.pointsto.flow.FilterTypeFlow;
+import com.oracle.graal.pointsto.flow.FormalReceiverTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
+import com.oracle.graal.pointsto.flow.NewInstanceTypeFlow;
+import com.oracle.graal.pointsto.flow.SourceTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
-import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
-import com.oracle.graal.pointsto.meta.PointsToAnalysisType;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaMethod;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.hosted.Feature;
 
@@ -20,7 +24,6 @@ import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
-import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -45,7 +48,7 @@ public class CausalityExport {
     private static class Impl extends CausalityExport {
         // All typeflows ever constructed
         private final HashSet<TypeFlow<?>> typeflows = new HashSet<>();
-        private final HashMap<Pair<TypeFlow<?>, TypeFlow<?>>, TypeState> interflows = new HashMap<>();
+        private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
         private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
         private final HashMap<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
         private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
@@ -72,7 +75,7 @@ public class CausalityExport {
             for(Impl i : instances)
             {
                 typeflows.addAll(i.typeflows);
-                mergeTypeFlowMap(interflows, i.interflows, bb);
+                interflows.addAll(i.interflows);
                 direct_invokes.addAll(i.direct_invokes);
                 mergeTypeFlowMap(virtual_invokes, i.virtual_invokes, bb);
                 typeflowGateMethods.putAll(i.typeflowGateMethods);
@@ -88,9 +91,17 @@ public class CausalityExport {
             typeflows.add(flow);
         }
 
-        public void addFlowingTypes(PointsToAnalysis bb, TypeFlow<?> from, TypeFlow<?> to, TypeState addTypes) {
-            TypeState newTypes = to.filter(bb, addTypes);
-            interflows.compute(Pair.create(from, to), (edge, state) -> state == null ? newTypes : TypeState.forUnion(bb, state, newTypes));
+        public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
+            interflows.add(Pair.create(from, to));
+        }
+
+        public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
+
+            // Evil hack, but works for now...
+            // TODO: Make the logical intermediate flow be contained in the <clinit>()-Method of creason
+            FilterTypeFlow intermediate = new FilterTypeFlow((BytecodePosition) null, flowingType, true, true, false);
+            addTypeFlowEdge(null, intermediate);
+            addTypeFlowEdge(intermediate, fieldTypeFlow);
         }
 
         public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
@@ -153,8 +164,8 @@ public class CausalityExport {
             TypeState typeState = TypeState.forExactType(bb, type, true);
 
             type.forAllSuperTypes(t -> {
-                addFlowingTypes(bb, cause, t.instantiatedTypes, typeState);
-                addFlowingTypes(bb, cause, t.instantiatedTypesNonNull, typeState);
+                addTypeFlowEdge(cause, t.instantiatedTypes);
+                addTypeFlowEdge(cause, t.instantiatedTypesNonNull);
             });
         }
 
@@ -222,6 +233,31 @@ public class CausalityExport {
 
 
 
+        // A logical filter is useful for our internal graph structure. Generally, it is defined by the TypeFlow.filter()-Method.
+        // But some TypeFlows are designed in such a way that a filter is incorporated by custom logic.
+        // That is often the case in Typeflows that propagate typestates through "Observer"-relations.
+        private static TypeState createLogicalfilterForFlow(PointsToAnalysis bb, TypeFlow<?> flow) {
+            if(flow instanceof ConstantTypeFlow || flow instanceof NewInstanceTypeFlow || flow instanceof SourceTypeFlow) {
+                return TypeState.forExactType(bb, flow.getDeclaredType(), false);
+            } else if(flow instanceof FormalReceiverTypeFlow) {
+
+                // This type flow wants to only get subtypes that don't override the method.
+
+                TypeState filter = TypeState.forExactType(bb, flow.getDeclaredType(), false);
+
+                ResolvedJavaMethod m = ((FormalReceiverTypeFlow)flow).getSource().getMethod();
+                AnalysisMethod base = flow.getDeclaredType().resolveConcreteMethod(m);
+
+                for(AnalysisType subType : flow.getDeclaredType().getSubTypes()) {
+                    if(subType.resolveConcreteMethod(m) == base)
+                        filter = TypeState.forUnion(bb, filter, TypeState.forExactType(bb, subType, false));
+                }
+
+                return filter;
+            } else {
+                return flow.filter(bb, bb.getAllInstantiatedTypeFlow().getState());
+            }
+        }
 
         public Graph createCausalityGraph(PointsToAnalysis bb) {
             Stream<AnalysisType> lateResolvedTypes = unresolvedRootTypes.stream().map(bb.getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get);
@@ -280,7 +316,7 @@ public class CausalityExport {
                             if (n == null)
                                 continue;
                         }
-                        flowMapping.put(f, new Graph.RealFlowNode(f, n));
+                        flowMapping.put(f, new Graph.RealFlowNode(f, n, createLogicalfilterForFlow(bb, f)));
                     }
                 }
 
@@ -309,11 +345,11 @@ public class CausalityExport {
                 g.virtualInvokes.put(new Graph.VirtualCallEdge(flowMapping.get(e.getKey().getLeft()), methodMapping.get(e.getKey().getRight())), e.getValue());
             }
 
-            for (Map.Entry<Pair<TypeFlow<?>, TypeFlow<?>>, TypeState> e : interflows.entrySet()) {
-                if ((e.getKey().getLeft() != null && !flowMapping.containsKey(e.getKey().getLeft())) || !flowMapping.containsKey(e.getKey().getRight()))
+            for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows) {
+                if ((e.getLeft() != null && !flowMapping.containsKey(e.getLeft())) || !flowMapping.containsKey(e.getRight()))
                     continue;
 
-                g.interflows.put(new Graph.FlowEdge(e.getKey().getLeft() == null ? null : flowMapping.get(e.getKey().getLeft()), flowMapping.get(e.getKey().getRight())), e.getValue());
+                g.interflows.add(new Graph.FlowEdge(e.getLeft() == null ? null : flowMapping.get(e.getLeft()), flowMapping.get(e.getRight())));
             }
 
             for (Pair<AnalysisMethod, AnalysisType> e : methodsReachingTypes.keySet()) {
@@ -359,12 +395,12 @@ public class CausalityExport {
                         debugStr += " in " + m.getQualifiedName();
                     }
 
-                    Graph.FlowNode vfn = new Graph.FlowNode(debugStr, mnode);
-                    g.interflows.put(new Graph.FlowEdge(null, vfn), state);
+                    Graph.FlowNode vfn = new Graph.FlowNode(debugStr, mnode, state);
+                    g.interflows.add(new Graph.FlowEdge(null, vfn));
 
                     t.forAllSuperTypes(t1 -> {
-                        g.interflows.put(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)), state);
-                        g.interflows.put(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)), state);
+                        g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)));
+                        g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)));
                     });
                 }
             }
@@ -400,7 +436,10 @@ public class CausalityExport {
     public void addTypeFlow(TypeFlow<?> flow) {
     }
 
-    public void addFlowingTypes(PointsToAnalysis bb, TypeFlow<?> from, TypeFlow<?> to, TypeState addTypes) {
+    public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
+    }
+
+    public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
     }
 
     public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
@@ -492,10 +531,12 @@ public class CausalityExport {
 
         static class FlowNode extends Node {
             public final MethodNode containing;
+            public final TypeState filter;
 
-            FlowNode(String debugStr, MethodNode containing) {
+            FlowNode(String debugStr, MethodNode containing, TypeState filter) {
                 super(debugStr);
                 this.containing = containing;
+                this.filter = filter;
             }
         }
 
@@ -603,14 +644,14 @@ public class CausalityExport {
         static class RealFlowNode extends FlowNode {
             private final TypeFlow<?> f;
 
-            public RealFlowNode(TypeFlow<?> f, MethodNode containing) {
-                super(f.toString(), containing);
+            public RealFlowNode(TypeFlow<?> f, MethodNode containing, TypeState filter) {
+                super(f.toString(), containing, filter);
                 this.f = f;
             }
         }
 
         public HashSet<DirectCallEdge> directInvokes = new HashSet<>();
-        public HashMap<FlowEdge, TypeState> interflows = new HashMap<>();
+        public HashSet<FlowEdge> interflows = new HashSet<>();
         public HashMap<VirtualCallEdge, TypeState> virtualInvokes = new HashMap<>();
 
         private static <T> HashMap<T, Integer> inverse(T[] arr, int startIndex) {
@@ -645,15 +686,15 @@ public class CausalityExport {
                     methods.add(e.getKey().from.containing);
             }
 
-            for (Map.Entry<FlowEdge, TypeState> e : interflows.entrySet()) {
-                if (e.getKey().from != null) {
-                    typeflows.add(e.getKey().from);
-                    if (e.getKey().from.containing != null)
-                        methods.add(e.getKey().from.containing);
+            for (FlowEdge e : interflows) {
+                if (e.from != null) {
+                    typeflows.add(e.from);
+                    if (e.from.containing != null)
+                        methods.add(e.from.containing);
                 }
-                typeflows.add(e.getKey().to);
-                if (e.getKey().to.containing != null)
-                    methods.add(e.getKey().to.containing);
+                typeflows.add(e.to);
+                if (e.to.containing != null)
+                    methods.add(e.to.containing);
             }
 
             MethodNode[] methodsSorted = methods.stream().sorted().toArray(MethodNode[]::new);
@@ -715,14 +756,26 @@ public class CausalityExport {
             try (FileOutputStream out = new FileOutputStream("interflows.bin")) {
                 FileChannel c = out.getChannel();
 
-                ByteBuffer b = ByteBuffer.allocate(12);
+                ByteBuffer b = ByteBuffer.allocate(8);
                 b.order(ByteOrder.LITTLE_ENDIAN);
 
-                for (Map.Entry<FlowEdge, TypeState> entry : interflows.entrySet()) {
-                    int typestate_id = typestate_to_id.computeIfAbsent(entry.getValue(), assignId);
+                for (FlowEdge e : interflows) {
+                    b.putInt(e.from == null ? 0 : flowIdMap.get(e.from));
+                    b.putInt(flowIdMap.get(e.to));
+                    b.flip();
+                    c.write(b);
+                    b.flip();
+                }
+            }
 
-                    b.putInt(entry.getKey().from == null ? 0 : flowIdMap.get(entry.getKey().from));
-                    b.putInt(flowIdMap.get(entry.getKey().to));
+            try (FileOutputStream out = new FileOutputStream("typeflow_filters.bin")) {
+                FileChannel c = out.getChannel();
+
+                ByteBuffer b = ByteBuffer.allocate(4);
+                b.order(ByteOrder.LITTLE_ENDIAN);
+
+                for (FlowNode flow : flowsSorted) {
+                    int typestate_id = typestate_to_id.computeIfAbsent(flow.filter, assignId);
                     b.putInt(typestate_id);
                     b.flip();
                     c.write(b);
@@ -763,7 +816,10 @@ public class CausalityExport {
                     b.put(zero);
 
                     for (AnalysisType t : state.types(bb)) {
-                        int id = typeIdMap.get(t.getId());
+                        Integer maybeId = typeIdMap.get(t.getId());
+                        if(maybeId == null)
+                            continue;
+                        int id = maybeId;
                         int byte_index = id / 8;
                         int bit_index = id % 8;
                         byte old = b.get(byte_index);

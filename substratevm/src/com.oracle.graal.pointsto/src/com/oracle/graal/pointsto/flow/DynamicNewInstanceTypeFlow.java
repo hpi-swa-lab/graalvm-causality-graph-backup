@@ -69,6 +69,7 @@ public final class DynamicNewInstanceTypeFlow extends TypeFlow<BytecodePosition>
     @Override
     public void initFlow(PointsToAnalysis bb) {
         this.newTypeFlow.addObserver(bb, this);
+        CausalityExport.getInstance().addTypeFlowEdge(newTypeFlow, this);
     }
 
     @Override
@@ -77,7 +78,6 @@ public final class DynamicNewInstanceTypeFlow extends TypeFlow<BytecodePosition>
         TypeState newTypeState = newTypeFlow.getState();
         TypeState updateState = bb.analysisPolicy().dynamicNewInstanceState(bb, state, newTypeState, source, allocationContext);
         addState(bb, updateState);
-        CausalityExport.getInstance().addFlowingTypes(bb, newTypeFlow, this, updateState);
     }
 
     public AnalysisContext allocationContext() {

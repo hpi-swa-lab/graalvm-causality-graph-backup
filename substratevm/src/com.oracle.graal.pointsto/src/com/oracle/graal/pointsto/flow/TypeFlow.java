@@ -372,6 +372,8 @@ public abstract class TypeFlow<T> {
     }
 
     private boolean addUse(PointsToAnalysis bb, TypeFlow<?> use, boolean propagateTypeState, boolean registerInput) {
+        CausalityExport.getInstance().addTypeFlowEdge(this, use);
+
         if (isSaturated() && propagateTypeState) {
             /* Let the use know that this flow is already saturated. */
             notifyUseOfSaturation(bb, use);
@@ -391,7 +393,6 @@ public abstract class TypeFlow<T> {
                     removeUse(use);
                     return false;
                 } else {
-                    CausalityExport.getInstance().addFlowingTypes(bb, this, use, getState());
                     use.addState(bb, getState());
                 }
             }
@@ -555,11 +556,9 @@ public abstract class TypeFlow<T> {
     public void update(PointsToAnalysis bb) {
         TypeState curState = getState();
         for (TypeFlow<?> use : getUses()) {
-            CausalityExport.getInstance().addFlowingTypes(bb, this, use, curState);
 
             if (use.isSaturated()) {
-                // Christoph: Don't do this, since it loses information about types that would flow to that direction
-                // removeUse(use);
+                removeUse(use);
             } else {
                 use.addState(bb, curState);
             }
