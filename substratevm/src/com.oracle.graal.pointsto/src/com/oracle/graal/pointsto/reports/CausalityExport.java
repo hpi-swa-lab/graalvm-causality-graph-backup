@@ -2,12 +2,8 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.flow.ConstantTypeFlow;
 import com.oracle.graal.pointsto.flow.FilterTypeFlow;
-import com.oracle.graal.pointsto.flow.FormalReceiverTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
-import com.oracle.graal.pointsto.flow.NewInstanceTypeFlow;
-import com.oracle.graal.pointsto.flow.SourceTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
@@ -16,7 +12,6 @@ import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaMethod;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
 import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.hosted.Feature;
 
@@ -233,35 +228,6 @@ public class CausalityExport {
             registerAnonymousRegistration((Object)c);
         }
 
-
-
-
-        // A logical filter is useful for our internal graph structure. Generally, it is defined by the TypeFlow.filter()-Method.
-        // But some TypeFlows are designed in such a way that a filter is incorporated by custom logic.
-        // That is often the case in Typeflows that propagate typestates through "Observer"-relations.
-        private static TypeState createLogicalfilterForFlow(PointsToAnalysis bb, TypeFlow<?> flow) {
-            if(flow instanceof ConstantTypeFlow || flow instanceof NewInstanceTypeFlow || flow instanceof SourceTypeFlow) {
-                return TypeState.forExactType(bb, flow.getDeclaredType(), false);
-            } else if(flow instanceof FormalReceiverTypeFlow) {
-
-                // This type flow wants to only get subtypes that don't override the method.
-
-                TypeState filter = TypeState.forExactType(bb, flow.getDeclaredType(), false);
-
-                ResolvedJavaMethod m = ((FormalReceiverTypeFlow)flow).getSource().getMethod();
-                AnalysisMethod base = flow.getDeclaredType().resolveConcreteMethod(m);
-
-                for(AnalysisType subType : flow.getDeclaredType().getSubTypes()) {
-                    if(subType.resolveConcreteMethod(m) == base)
-                        filter = TypeState.forUnion(bb, filter, TypeState.forExactType(bb, subType, false));
-                }
-
-                return filter;
-            } else {
-                return flow.filter(bb, bb.getAllInstantiatedTypeFlow().getState());
-            }
-        }
-
         public Graph createCausalityGraph(PointsToAnalysis bb) {
             Stream<AnalysisType> lateResolvedTypes = unresolvedRootTypes.stream().map(bb.getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get);
             lateResolvedTypes.forEach(t -> methodsReachingTypes.putIfAbsent(Pair.create(null, t), false));
@@ -319,7 +285,7 @@ public class CausalityExport {
                             if (n == null)
                                 continue;
                         }
-                        flowMapping.put(f, new Graph.RealFlowNode(f, n, createLogicalfilterForFlow(bb, f)));
+                        flowMapping.put(f, new Graph.RealFlowNode(f, n));
                     }
                 }
 
@@ -647,8 +613,8 @@ public class CausalityExport {
         static class RealFlowNode extends FlowNode {
             private final TypeFlow<?> f;
 
-            public RealFlowNode(TypeFlow<?> f, MethodNode containing, TypeState filter) {
-                super(f.toString(), containing, filter);
+            public RealFlowNode(TypeFlow<?> f, MethodNode containing) {
+                super(f.toString(), containing, f.getState());
                 this.f = f;
             }
         }
