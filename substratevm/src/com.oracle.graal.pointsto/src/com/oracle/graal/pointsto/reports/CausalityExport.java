@@ -25,6 +25,7 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,7 +34,6 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -270,7 +270,7 @@ public class CausalityExport {
 
             {
                 for (AnalysisMethod m : bb.getUniverse().getMethods()) {
-                    if (m.isReachable()) {
+                    if (m.isImplementationInvoked()) {
                         methodMapping.put(m, new Graph.RealMethodNode(m));
                     }
                 }
@@ -635,6 +635,27 @@ public class CausalityExport {
             return idMap;
         }
 
+        private static class SeenTypestates implements Iterable<TypeState>
+        {
+            private final ArrayList<TypeState> typestate_by_id = new ArrayList<>();
+            private final HashMap<TypeState, Integer> typestate_to_id = new HashMap<>();
+
+            private int assignId(TypeState s) {
+                int size = typestate_by_id.size();
+                typestate_by_id.add(s);
+                return size;
+            };
+
+            public Integer getId(PointsToAnalysis bb, TypeState s) {
+                return typestate_to_id.computeIfAbsent(s.forCanBeNull(bb, true), this::assignId);
+            }
+
+            @Override
+            public Iterator<TypeState> iterator() {
+                return typestate_by_id.iterator();
+            }
+        }
+
         public void export(PointsToAnalysis bb) throws java.io.IOException {
             Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
             AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
@@ -713,14 +734,7 @@ public class CausalityExport {
                 }
             }
 
-            ArrayList<TypeState> typestate_by_id = new ArrayList<>();
-            HashMap<TypeState, Integer> typestate_to_id = new HashMap<>();
-
-            Function<TypeState, Integer> assignId = s -> {
-                int size = typestate_by_id.size();
-                typestate_by_id.add(s);
-                return size;
-            };
+            SeenTypestates typestates = new SeenTypestates();
 
             try (FileOutputStream out = new FileOutputStream("interflows.bin")) {
                 FileChannel c = out.getChannel();
@@ -744,7 +758,7 @@ public class CausalityExport {
                 b.order(ByteOrder.LITTLE_ENDIAN);
 
                 for (FlowNode flow : flowsSorted) {
-                    int typestate_id = typestate_to_id.computeIfAbsent(flow.filter, assignId);
+                    int typestate_id = typestates.getId(bb, flow.filter);
                     b.putInt(typestate_id);
                     b.flip();
                     c.write(b);
@@ -759,7 +773,7 @@ public class CausalityExport {
                 b.order(ByteOrder.LITTLE_ENDIAN);
 
                 for (Map.Entry<VirtualCallEdge, TypeState> e : virtualInvokes.entrySet()) {
-                    int typestate_id = typestate_to_id.computeIfAbsent(e.getValue(), assignId);
+                    int typestate_id = typestates.getId(bb, e.getValue());
 
                     b.putInt(flowIdMap.get(e.getKey().from));
                     b.putInt(methodIdMap.get(e.getKey().to));
@@ -778,7 +792,7 @@ public class CausalityExport {
                 ByteBuffer b = ByteBuffer.allocate(bytesPerTypestate);
                 b.order(ByteOrder.LITTLE_ENDIAN);
 
-                for (TypeState state : typestate_by_id) {
+                for (TypeState state : typestates) {
                     b.clear();
                     zero.clear();
 
