@@ -92,6 +92,9 @@ public class CausalityExport {
         }
 
         public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
+            if(from == to)
+                return;
+
             interflows.add(Pair.create(from, to));
         }
 
