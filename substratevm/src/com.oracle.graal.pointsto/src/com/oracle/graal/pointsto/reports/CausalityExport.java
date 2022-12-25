@@ -2,8 +2,19 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.flow.AccessFieldTypeFlow;
+import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
+import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
+import com.oracle.graal.pointsto.flow.ConstantTypeFlow;
+import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.FilterTypeFlow;
+import com.oracle.graal.pointsto.flow.FormalParamTypeFlow;
+import com.oracle.graal.pointsto.flow.FormalReceiverTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
+import com.oracle.graal.pointsto.flow.NewInstanceTypeFlow;
+import com.oracle.graal.pointsto.flow.OffsetLoadTypeFlow;
+import com.oracle.graal.pointsto.flow.OffsetStoreTypeFlow;
+import com.oracle.graal.pointsto.flow.SourceTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
@@ -127,7 +138,7 @@ public class CausalityExport {
         }
 
         public void registerMethodFlow(MethodTypeFlow method) {
-            for (TypeFlow<?> flow : method.getMethodFlowsGraph().getMiscFlows()) {
+            for (TypeFlow<?> flow : method.getMethodFlowsGraph().flows()) {
                 if (method.getMethod() == null)
                     throw new RuntimeException("Null method registered");
                 if (flow.method() != null)
@@ -613,8 +624,41 @@ public class CausalityExport {
         static class RealFlowNode extends FlowNode {
             private final TypeFlow<?> f;
 
+            static String customToString(TypeFlow<?> f) {
+                String str = f.getClass().getSimpleName();
+
+                if(f.method() != null) {
+                    str += " in " + f.method().getQualifiedName();
+                }
+
+                String detail = null;
+
+                if(f instanceof ArrayElementsTypeFlow) {
+                    detail = ((ArrayElementsTypeFlow)f).getSourceObject().type().toJavaName();
+                } else if(f instanceof FieldTypeFlow) {
+                    detail = ((FieldTypeFlow)f).getSource().format("%H.%n");
+                } else if(f instanceof AccessFieldTypeFlow) {
+                    detail = ((AccessFieldTypeFlow)f).field().format("%H.%n");
+                } else if(f instanceof NewInstanceTypeFlow || f instanceof ConstantTypeFlow || f instanceof SourceTypeFlow) {
+                    detail = f.getDeclaredType().toJavaName();
+                } else if(f instanceof OffsetLoadTypeFlow) {
+                    detail = f.getDeclaredType().toJavaName();
+                } else if(f instanceof OffsetStoreTypeFlow) {
+                    detail = f.getDeclaredType().toJavaName();
+                } else if(f instanceof AllInstantiatedTypeFlow) {
+                    detail = f.getDeclaredType().toJavaName();
+                } else if(f instanceof FormalParamTypeFlow && !(f instanceof FormalReceiverTypeFlow)) {
+                    detail = Integer.toString(((FormalParamTypeFlow)f).position());
+                }
+
+                if(detail != null)
+                    str += ": " + detail;
+
+                return str;
+            }
+
             public RealFlowNode(TypeFlow<?> f, MethodNode containing) {
-                super(f.toString(), containing, f.getState());
+                super(customToString(f), containing, f.getState());
                 this.f = f;
             }
         }
