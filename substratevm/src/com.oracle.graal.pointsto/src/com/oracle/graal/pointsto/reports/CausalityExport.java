@@ -56,7 +56,7 @@ public class CausalityExport {
         private final HashSet<TypeFlow<?>> typeflows = new HashSet<>();
         private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
         private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
-        private final HashMap<Pair<InvokeTypeFlow, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
+        private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
         private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
         private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
         private final HashSet<Class<?>> unresolvedRootTypes = new HashSet<>();
@@ -86,7 +86,10 @@ public class CausalityExport {
                 typeflows.addAll(i.typeflows);
                 interflows.addAll(i.interflows);
                 direct_invokes.addAll(i.direct_invokes);
-                mergeTypeFlowMap(virtual_invokes, i.virtual_invokes, bb);
+                mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
+                    p1.getLeft().addAll(p2.getLeft());
+                    return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
+                });
                 typeflowGateMethods.putAll(i.typeflowGateMethods);
                 i.rootCount.forEach((k, v) -> rootCount.merge(k, v, Integer::sum));
                 unresolvedRootTypes.addAll(i.unresolvedRootTypes);
@@ -149,8 +152,16 @@ public class CausalityExport {
         }
 
         public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
-            Pair<InvokeTypeFlow, AnalysisMethod> e = Pair.create(invocation, concreteTargetMethod);
-            virtual_invokes.compute(e, (edge, state) -> state == null ? concreteTargetMethodCallingTypes : TypeState.forUnion(bb, state, concreteTargetMethodCallingTypes));
+            virtual_invokes.compute(concreteTargetMethod, (m, p) -> {
+                if(p == null) {
+                    HashSet<AbstractVirtualInvokeTypeFlow> invocations = new HashSet<>(1);
+                    invocations.add(invocation);
+                    return Pair.create(invocations, concreteTargetMethodCallingTypes);
+                } else {
+                    p.getLeft().add(invocation);
+                    return Pair.create(p.getLeft(), TypeState.forUnion(bb, p.getRight(), concreteTargetMethodCallingTypes));
+                }
+            });
         }
 
         public void registerMethodFlow(MethodTypeFlow method) {
@@ -338,16 +349,20 @@ public class CausalityExport {
                 g.directInvokes.add(new Graph.DirectCallEdge(e.getLeft() == null ? null : methodMapping.get(e.getLeft()), methodMapping.get(e.getRight())));
             }
 
-            for (Map.Entry<Pair<InvokeTypeFlow, AnalysisMethod>, TypeState> e : virtual_invokes.entrySet()) {
-                TypeFlow<?> receiver = originalInvokeReceivers.get(e.getKey().getLeft());
+            for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
+                Graph.MethodNode mNode = methodMapping.get(e.getKey());
 
-                if(receiver == null)
+                if (mNode == null)
                     continue;
 
-                if (!flowMapping.containsKey(receiver) || !methodMapping.containsKey(e.getKey().getRight()))
-                    continue;
+                Graph.InvocationFlowNode invocationFlowNode = new Graph.InvocationFlowNode(mNode, e.getValue().getRight());
 
-                g.interflows.add(new Graph.FlowEdge(flowMapping.get(receiver), new Graph.InvocationFlowNode(methodMapping.get(e.getKey().getRight()), e.getValue())));
+                e.getValue().getLeft().stream()
+                        .map(originalInvokeReceivers::get)
+                        .filter(Objects::nonNull)
+                        .map(flowMapping::get)
+                        .filter(Objects::nonNull)
+                        .forEach(receiverNode -> g.interflows.add(new Graph.FlowEdge(receiverNode, invocationFlowNode)));
             }
 
             for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows) {
