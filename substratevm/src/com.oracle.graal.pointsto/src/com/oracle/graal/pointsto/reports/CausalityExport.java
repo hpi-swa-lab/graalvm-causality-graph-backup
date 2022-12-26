@@ -2,14 +2,15 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.AccessFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.ConstantTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
-import com.oracle.graal.pointsto.flow.FilterTypeFlow;
 import com.oracle.graal.pointsto.flow.FormalParamTypeFlow;
 import com.oracle.graal.pointsto.flow.FormalReceiverTypeFlow;
+import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.NewInstanceTypeFlow;
 import com.oracle.graal.pointsto.flow.OffsetLoadTypeFlow;
@@ -20,7 +21,6 @@ import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.typestate.TypeState;
-import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaMethod;
 import org.graalvm.collections.Pair;
@@ -56,7 +56,7 @@ public class CausalityExport {
         private final HashSet<TypeFlow<?>> typeflows = new HashSet<>();
         private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
         private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
-        private final HashMap<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
+        private final HashMap<Pair<InvokeTypeFlow, AnalysisMethod>, TypeState> virtual_invokes = new HashMap<>();
         private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
         private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
         private final HashSet<Class<?>> unresolvedRootTypes = new HashSet<>();
@@ -66,6 +66,9 @@ public class CausalityExport {
         private final HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
 
         private Consumer<Feature.DuringAnalysisAccess> runningNotification = null;
+
+        private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
+        private final HashMap<Pair<Class<?>, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
 
         public Impl() {}
 
@@ -90,6 +93,8 @@ public class CausalityExport {
                 mergeMap(methodsReachingTypes, i.methodsReachingTypes, Boolean::logicalOr);
                 mergeMap(callbackReasons, i.callbackReasons, (l1, l2) -> Stream.concat(l1.stream(), l2.stream()).collect(Collectors.toList()));
                 reachableThroughFeatureCallback.addAll(i.reachableThroughFeatureCallback);
+                originalInvokeReceivers.putAll(i.originalInvokeReceivers);
+                mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
             }
         }
 
@@ -101,16 +106,27 @@ public class CausalityExport {
             if(from == to)
                 return;
 
+            if(currentlySaturatingDepth > 0/* && from instanceof AllInstantiatedTypeFlow*/)
+                return;
+
             interflows.add(Pair.create(from, to));
         }
 
-        public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
+        int currentlySaturatingDepth; // Inhibits the registration of new typeflow edges
 
-            // Evil hack, but works for now...
-            // TODO: Make the logical intermediate flow be contained in the <clinit>()-Method of creason
-            FilterTypeFlow intermediate = new FilterTypeFlow((BytecodePosition) null, flowingType, true, true, false);
-            addTypeFlowEdge(null, intermediate);
-            addTypeFlowEdge(intermediate, fieldTypeFlow);
+        public void setSaturationHappening(boolean currentlySaturating) {
+            if(currentlySaturating)
+                currentlySaturatingDepth++;
+            else
+                currentlySaturatingDepth--;
+
+            if(currentlySaturatingDepth < 0)
+                throw new RuntimeException();
+        }
+
+        public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
+            TypeState newState = TypeState.forExactType(analysis, flowingType, false);
+            flowingFromHeap.compute(Pair.create(creason, fieldTypeFlow), (p, state) -> state == null ? newState : TypeState.forUnion(analysis, state, newState));
         }
 
         public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
@@ -132,8 +148,8 @@ public class CausalityExport {
             assert !alreadyExisting : "Redundant adding of direct invoke";
         }
 
-        public void addVirtualInvoke(PointsToAnalysis bb, TypeFlow<?> actualReceiver, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
-            Pair<TypeFlow<?>, AnalysisMethod> e = Pair.create(actualReceiver, concreteTargetMethod);
+        public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
+            Pair<InvokeTypeFlow, AnalysisMethod> e = Pair.create(invocation, concreteTargetMethod);
             virtual_invokes.compute(e, (edge, state) -> state == null ? concreteTargetMethodCallingTypes : TypeState.forUnion(bb, state, concreteTargetMethodCallingTypes));
         }
 
@@ -144,6 +160,10 @@ public class CausalityExport {
                 if (flow.method() != null)
                     typeflowGateMethods.put(flow, method.getMethod());
             }
+        }
+
+        public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {
+            originalInvokeReceivers.put(invocation, invocation.getReceiver());
         }
 
         public void registerTypeReachableRoot(AnalysisType type, boolean instantiated)
@@ -296,7 +316,7 @@ public class CausalityExport {
                             if (n == null)
                                 continue;
                         }
-                        flowMapping.put(f, new Graph.RealFlowNode(f, n));
+                        flowMapping.put(f, Graph.RealFlowNode.create(bb, f, n));
                     }
                 }
 
@@ -318,11 +338,16 @@ public class CausalityExport {
                 g.directInvokes.add(new Graph.DirectCallEdge(e.getLeft() == null ? null : methodMapping.get(e.getLeft()), methodMapping.get(e.getRight())));
             }
 
-            for (Map.Entry<Pair<TypeFlow<?>, AnalysisMethod>, TypeState> e : virtual_invokes.entrySet()) {
-                if (!flowMapping.containsKey(e.getKey().getLeft()) || !methodMapping.containsKey(e.getKey().getRight()))
+            for (Map.Entry<Pair<InvokeTypeFlow, AnalysisMethod>, TypeState> e : virtual_invokes.entrySet()) {
+                TypeFlow<?> receiver = originalInvokeReceivers.get(e.getKey().getLeft());
+
+                if(receiver == null)
                     continue;
 
-                g.virtualInvokes.put(new Graph.VirtualCallEdge(flowMapping.get(e.getKey().getLeft()), methodMapping.get(e.getKey().getRight())), e.getValue());
+                if (!flowMapping.containsKey(receiver) || !methodMapping.containsKey(e.getKey().getRight()))
+                    continue;
+
+                g.interflows.add(new Graph.FlowEdge(flowMapping.get(receiver), new Graph.InvocationFlowNode(methodMapping.get(e.getKey().getRight()), e.getValue())));
             }
 
             for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows) {
@@ -344,7 +369,12 @@ public class CausalityExport {
                         continue;
                 }
 
-                g.directInvokes.add(new Graph.DirectCallEdge(mnode, typeReachableMapping.get(e.getRight())));
+                Graph.ClassReachableNode reachableNode = typeReachableMapping.get(e.getRight());
+
+                if(reachableNode == null)
+                    continue;
+
+                g.directInvokes.add(new Graph.DirectCallEdge(mnode, reachableNode));
             }
 
             for (Map.Entry<AnalysisType, Graph.ClassReachableNode> e : typeReachableMapping.entrySet()) {
@@ -385,6 +415,23 @@ public class CausalityExport {
                 }
             }
 
+            for(Map.Entry<Pair<Class<?>, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
+                Graph.MethodNode mNode = null;
+
+                if(e.getKey().getLeft() != null) {
+                    mNode = typeReachableMapping.get(bb.getMetaAccess().lookupJavaType(e.getClass()));
+                }
+
+                Graph.RealFlowNode fieldNode = flowMapping.get(e.getKey().getRight());
+
+                if(fieldNode == null)
+                    continue;
+
+                Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), mNode, e.getValue());
+                g.interflows.add(new Graph.FlowEdge(null, intermediate));
+                g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+            }
+
             return g;
         }
     }
@@ -419,16 +466,23 @@ public class CausalityExport {
     public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
     }
 
+    public void setSaturationHappening(boolean currentlySaturating) {
+
+    }
+
     public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
     }
 
     public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
     }
 
-    public void addVirtualInvoke(PointsToAnalysis bb, TypeFlow<?> actualReceiver, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
+    public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
     }
 
     public void registerMethodFlow(MethodTypeFlow method) {
+    }
+
+    public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {
     }
 
     public void registerTypeReachableRoot(AnalysisType type, boolean instantiated) {
@@ -518,6 +572,23 @@ public class CausalityExport {
                 this.containing = containing;
                 this.filter = filter;
             }
+
+            // If this returns true, the "containing" MethodNode is to be interpreted as a method made reachable through this flow,
+            // instead of a method needing to be reachable for this flow to be reachable
+            public boolean makesContainingReachable() {
+                return false;
+            }
+        }
+
+        static final class InvocationFlowNode extends FlowNode {
+            public InvocationFlowNode(MethodNode invocationTarget, TypeState filter) {
+                super("Virtual Invocation Flow Node: " + invocationTarget, invocationTarget, filter);
+            }
+
+            @Override
+            public boolean makesContainingReachable() {
+                return true;
+            }
         }
 
         static class DirectCallEdge {
@@ -547,34 +618,6 @@ public class CausalityExport {
             @Override
             public String toString() {
                 return (from == null ? "" : from.toString()) + "->" + to.toString();
-            }
-        }
-
-        static class VirtualCallEdge {
-            public final FlowNode from;
-            public final MethodNode to;
-
-            VirtualCallEdge(FlowNode from, MethodNode to) {
-                if(from == null)
-                    throw new NullPointerException();
-                if(to == null)
-                    throw new NullPointerException();
-
-                this.from = from;
-                this.to = to;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (o == null || getClass() != o.getClass()) return false;
-                VirtualCallEdge that = (VirtualCallEdge) o;
-                return from.equals(that.from) && to.equals(that.to);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(from, to);
             }
         }
 
@@ -657,15 +700,29 @@ public class CausalityExport {
                 return str;
             }
 
-            public RealFlowNode(TypeFlow<?> f, MethodNode containing) {
-                super(customToString(f), containing, f.getState());
+            static TypeState customFilter(PointsToAnalysis bb, TypeFlow<?> f) {
+                if(f instanceof NewInstanceTypeFlow || f instanceof SourceTypeFlow || f instanceof ConstantTypeFlow) {
+                    return TypeState.forExactType(bb, f.getDeclaredType(), false);
+                } else if(f instanceof FormalReceiverTypeFlow) {
+                    // No saturation happens here, therefore we can use all flowing types as empirical filter
+                    return f.getState();
+                } else {
+                    return f.filter(bb, bb.getAllInstantiatedTypeFlow().getState());
+                }
+            }
+
+            public RealFlowNode(TypeFlow<?> f, MethodNode containing, TypeState filter) {
+                super(customToString(f), containing, filter);
                 this.f = f;
+            }
+
+            public static RealFlowNode create(PointsToAnalysis bb, TypeFlow<?> f, MethodNode containing) {
+                return new RealFlowNode(f, containing, customFilter(bb, f));
             }
         }
 
         public HashSet<DirectCallEdge> directInvokes = new HashSet<>();
         public HashSet<FlowEdge> interflows = new HashSet<>();
-        public HashMap<VirtualCallEdge, TypeState> virtualInvokes = new HashMap<>();
 
         private static <T> HashMap<T, Integer> inverse(T[] arr, int startIndex) {
             HashMap<T, Integer> idMap = new HashMap<>();
@@ -711,13 +768,6 @@ public class CausalityExport {
                 if (e.from != null)
                     methods.add(e.from);
                 methods.add(e.to);
-            }
-
-            for (Map.Entry<VirtualCallEdge, TypeState> e : virtualInvokes.entrySet()) {
-                methods.add(e.getKey().to);
-                typeflows.add(e.getKey().from);
-                if (e.getKey().from.containing != null)
-                    methods.add(e.getKey().from.containing);
             }
 
             for (FlowEdge e : interflows) {
@@ -810,24 +860,6 @@ public class CausalityExport {
                 }
             }
 
-            try (FileOutputStream out = new FileOutputStream("virtual_invokes.bin")) {
-                FileChannel c = out.getChannel();
-
-                ByteBuffer b = ByteBuffer.allocate(12);
-                b.order(ByteOrder.LITTLE_ENDIAN);
-
-                for (Map.Entry<VirtualCallEdge, TypeState> e : virtualInvokes.entrySet()) {
-                    int typestate_id = typestates.getId(bb, e.getValue());
-
-                    b.putInt(flowIdMap.get(e.getKey().from));
-                    b.putInt(methodIdMap.get(e.getKey().to));
-                    b.putInt(typestate_id);
-                    b.flip();
-                    c.write(b);
-                    b.flip();
-                }
-            }
-
             try (FileOutputStream out = new FileOutputStream("typestates.bin")) {
                 FileChannel c = out.getChannel();
                 int bytesPerTypestate = (typesSorted.length + 7) / 8;
@@ -867,6 +899,9 @@ public class CausalityExport {
 
                 for (FlowNode f : flowsSorted) {
                     int mid = f.containing == null ? 0 : methodIdMap.get(f.containing);
+
+                    if(f.makesContainingReachable())
+                        mid |= Integer.MIN_VALUE; // Set MSB
 
                     b.putInt(mid);
                     b.flip();
