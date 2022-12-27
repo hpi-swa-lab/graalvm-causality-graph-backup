@@ -4,6 +4,8 @@ import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.AccessFieldTypeFlow;
+import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
+import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.ConstantTypeFlow;
@@ -109,8 +111,11 @@ public class CausalityExport {
             if(from == to)
                 return;
 
-            if(currentlySaturatingDepth > 0/* && from instanceof AllInstantiatedTypeFlow*/)
-                return;
+            if(currentlySaturatingDepth > 0)
+                if(from instanceof AllInstantiatedTypeFlow)
+                    return;
+                else
+                    assert to.isContextInsensitive() || from instanceof ActualReturnTypeFlow && to instanceof ActualReturnTypeFlow || to instanceof ActualParameterTypeFlow;
 
             interflows.add(Pair.create(from, to));
         }
@@ -319,7 +324,7 @@ public class CausalityExport {
 
 
                 for (TypeFlow<?> f : typeflows) {
-                    if (f.getState().typesCount() != 0) {
+                    if (f.getState().typesCount() != 0 || f.isSaturated()) {
                         AnalysisMethod m = typeflowGateMethods.get(f);
                         Graph.MethodNode n = null;
                         if (m != null) {
