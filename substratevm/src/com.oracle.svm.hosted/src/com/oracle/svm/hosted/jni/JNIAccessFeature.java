@@ -203,36 +203,32 @@ public class JNIAccessFeature implements Feature {
         public void register(ConfigurationCondition condition, boolean unsafeAllocated, Class<?> clazz) {
             assert !unsafeAllocated : "unsafeAllocated can be only set via Unsafe.allocateInstance, not via JNI.";
             abortIfSealed();
-            CausalityExport.getInstance().registerTypeReachableRoot(clazz); // TODO: Track "is instantiated"
-            registerConditionalConfiguration(condition, () -> newClasses.add(clazz));
+            registerConditionalConfiguration(condition, () -> {
+                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(clazz));
+                newClasses.add(clazz);
+            });
         }
 
         @Override
         public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
             abortIfSealed();
-
-            for(Executable m : methods) {
-                CausalityExport.getInstance().registerAnonymousRegistration(m);
-                CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass()); // TODO: Track "is instantiated"
-            }
-
-            registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
+            registerConditionalConfiguration(condition, () -> {
+                for(Executable m : methods) {
+                    CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(m));
+                }
+                newMethods.addAll(Arrays.asList(methods));
+            });
         }
 
         @Override
         public void register(ConfigurationCondition condition, boolean finalIsWritable, Field... fields) {
             abortIfSealed();
-
-            for (Field field : fields) {
-                CausalityExport.getInstance().registerTypeReachableRoot(field.getDeclaringClass()); // TODO: Track "is instantiated"
-                // TODO: Possibly register "field.getType()"
-            }
-
             registerConditionalConfiguration(condition, () -> registerFields(finalIsWritable, fields));
         }
 
         private void registerFields(boolean finalIsWritable, Field[] fields) {
             for (Field field : fields) {
+                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(field));
                 boolean writable = finalIsWritable || !Modifier.isFinal(field.getModifiers());
                 newFields.put(field, writable);
             }
@@ -328,17 +324,24 @@ public class JNIAccessFeature implements Feature {
         }
 
         for (Class<?> clazz : newClasses) {
-            addClass(clazz, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(clazz))) {
+                addClass(clazz, access);
+            }
         }
         newClasses.clear();
 
         for (Executable method : newMethods) {
-            addMethod(method, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(method))) {
+                addMethod(method, access);
+            }
         }
         newMethods.clear();
 
         newFields.forEach((field, writable) -> {
-            addField(field, writable, access);
+            // Ignore writable for now... TODO
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(field))) {
+                addField(field, writable, access);
+            }
         });
         newFields.clear();
 
@@ -358,8 +361,10 @@ public class JNIAccessFeature implements Feature {
         return JNIReflectionDictionary.singleton().addClassIfAbsent(classObj, c -> {
             AnalysisType analysisClass = access.getMetaAccess().lookupJavaType(classObj);
             if (analysisClass.isInterface() || (analysisClass.isInstanceClass() && analysisClass.isAbstract())) {
+                CausalityExport.getInstance().registerTypeReachableRoot(analysisClass, false);
                 analysisClass.registerAsReachable();
             } else {
+                CausalityExport.getInstance().registerTypeReachableRoot(analysisClass, true);
                 access.getBigBang().markTypeInstantiated(analysisClass);
             }
             return new JNIAccessibleClass(classObj);
@@ -426,7 +431,9 @@ public class JNIAccessFeature implements Feature {
     }
 
     private static void addField(Field reflField, boolean writable, DuringAnalysisAccessImpl access) {
-        access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass()).registerAsReachable(); // TODO: Ignorieren, und stattdessen .register(...) tracken
+        AnalysisType t = access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass());
+        CausalityExport.getInstance().registerTypeReachableRoot(t, false);
+        t.registerAsReachable(); // TODO: Ignorieren, und stattdessen .register(...) tracken
         if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess(), access.getUniverse())) {
             return;
         }

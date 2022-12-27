@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Stack;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -37,13 +38,12 @@ public class Impl extends CausalityExport {
     // All typeflows ever constructed
     private final HashSet<TypeFlow<?>> typeflows = new HashSet<>();
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
-    private final HashSet<Pair<AnalysisMethod, AnalysisMethod>> direct_invokes = new HashSet<>();
+    private final HashSet<Pair<Object, Object>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
     private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
-    private final HashMap<AnalysisElement, Integer> rootCount = new HashMap<>();
-    private final HashSet<Class<?>> unresolvedRootTypes = new HashSet<>();
+    private final HashSet<Pair<Object, Class<?>>> unresolvedRootTypes = new HashSet<>();
     // Boolean stores whether the type is also instantiated
-    private final HashMap<Pair<AnalysisMethod, AnalysisType>, Boolean> methodsReachingTypes = new HashMap<>();
+    private final HashMap<Pair<Object, AnalysisType>, Boolean> reasonsReachingTypes = new HashMap<>();
     private final Map<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> callbackReasons = new HashMap<>();
     private final HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
 
@@ -67,15 +67,14 @@ public class Impl extends CausalityExport {
         for (Impl i : instances) {
             typeflows.addAll(i.typeflows);
             interflows.addAll(i.interflows);
-            direct_invokes.addAll(i.direct_invokes);
+            direct_edges.addAll(i.direct_edges);
             mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
                 p1.getLeft().addAll(p2.getLeft());
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
             });
             typeflowGateMethods.putAll(i.typeflowGateMethods);
-            i.rootCount.forEach((k, v) -> rootCount.merge(k, v, Integer::sum));
             unresolvedRootTypes.addAll(i.unresolvedRootTypes);
-            mergeMap(methodsReachingTypes, i.methodsReachingTypes, Boolean::logicalOr);
+            mergeMap(reasonsReachingTypes, i.reasonsReachingTypes, Boolean::logicalOr);
             mergeMap(callbackReasons, i.callbackReasons, (l1, l2) -> Stream.concat(l1.stream(), l2.stream()).collect(Collectors.toList()));
             reachableThroughFeatureCallback.addAll(i.reachableThroughFeatureCallback);
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
@@ -123,22 +122,8 @@ public class Impl extends CausalityExport {
 
     @Override
     public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
-        /*
-        if (caller == null) {
-            String qualifiedName = callee.getDeclaringClass().toJavaName();
-            if(qualifiedName.startsWith("com.oracle.svm.core.") && qualifiedName.endsWith("Holder")) {
-                //System.err.println("Ignored Method Entry point: " + callee.getQualifiedName());
-                return;
-            }
-        }
-        */
-
-        if (caller == null) {
-            rootCount.compute(callee, (id, count) -> (count == null ? 0 : count) + 1);
-        }
-
-        boolean alreadyExisting = !direct_invokes.add(Pair.create(caller, callee));
-        assert !alreadyExisting : "Redundant adding of direct invoke";
+        Object reason = caller != null ? caller : rootReasons.empty() ? null : rootReasons.peek();
+        direct_edges.add(Pair.create(reason, callee));
     }
 
     @Override
@@ -172,12 +157,14 @@ public class Impl extends CausalityExport {
 
     @Override
     public void registerTypeReachableRoot(AnalysisType type, boolean instantiated) {
-        methodsReachingTypes.compute(Pair.create(null, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
+        Object reason = rootReasons.empty() ? null : rootReasons.peek();
+        reasonsReachingTypes.compute(Pair.create(reason, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
     }
 
     @Override
     public void registerTypeReachableRoot(Class<?> type) {
-        unresolvedRootTypes.add(type);
+        Object reason = rootReasons.empty() ? null : rootReasons.peek();
+        unresolvedRootTypes.add(Pair.create(reason, type));
     }
 
     @Override
@@ -185,18 +172,16 @@ public class Impl extends CausalityExport {
         if (type.getName().equals("Lorg/apache/log4j/helpers/NullEnumeration;"))
             return;
 
-        methodsReachingTypes.compute(Pair.create(null, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated); // TODO: Make build-time clinit accountable
+        reasonsReachingTypes.compute(Pair.create(null, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated); // TODO: Make build-time clinit accountable
     }
 
     @Override
     public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated) {
-        methodsReachingTypes.compute(Pair.create((AnalysisMethod) m, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
+        reasonsReachingTypes.compute(Pair.create((AnalysisMethod) m, type), (t, wasInstantiated) -> wasInstantiated == null ? instantiated : wasInstantiated | instantiated);
     }
 
     @Override
     public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
-        TypeState typeState = TypeState.forExactType(bb, type, true);
-
         type.forAllSuperTypes(t -> {
             addTypeFlowEdge(cause, t.instantiatedTypes);
             addTypeFlowEdge(cause, t.instantiatedTypesNonNull);
@@ -246,42 +231,43 @@ public class Impl extends CausalityExport {
         runningNotification = null;
     }
 
-    private void registerAnonymousRegistration(Object unresolvedElement) {
-        Consumer<Feature.DuringAnalysisAccess> running = runningNotification;
+    @Override
+    public void registerReasonRoot(Object reason) {
+        Object from = rootReasons.empty() ? null : rootReasons.peek();
+        direct_edges.add(Pair.create(from, reason));
+    }
 
-        if (running != null) {
-            reachableThroughFeatureCallback.add(Pair.create(running, unresolvedElement));
+    private final Stack<Object> rootReasons = new Stack<>();
+
+    @Override
+    protected void beginAccountingRootRegistrationsTo(Object reason) {
+        rootReasons.push(reason);
+    }
+
+    @Override
+    protected void endAccountingRootRegistrationsTo(Object reason) {
+        if(rootReasons.empty() || rootReasons.pop() != reason) {
+            throw new RuntimeException("Invalid Call to endAccountingRootRegistrationsTo()");
         }
     }
 
-    @Override
-    public void registerAnonymousRegistration(Executable e) {
-        registerAnonymousRegistration((Object) e);
-    }
 
-    @Override
-    public void registerAnonymousRegistration(Field f) {
-        registerAnonymousRegistration((Object) f);
-    }
 
-    @Override
-    public void registerAnonymousRegistration(Class<?> c) {
-        registerAnonymousRegistration((Object) c);
-    }
 
     public Graph createCausalityGraph(PointsToAnalysis bb) {
-        Stream<AnalysisType> lateResolvedTypes = unresolvedRootTypes.stream().map(bb.getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get);
-        lateResolvedTypes.forEach(t -> methodsReachingTypes.putIfAbsent(Pair.create(null, t), false));
+        Stream<Pair<Object, AnalysisType>> lateResolvedTypes = unresolvedRootTypes.stream().map(p -> Pair.create(p.getLeft(), bb.getMetaAccess().optionalLookupJavaType(p.getRight()))).filter(p -> p.getRight().isPresent()).map(p -> Pair.create(p.getLeft(), p.getRight().get()));
+        lateResolvedTypes.forEach(t -> reasonsReachingTypes.putIfAbsent(t, false));
         unresolvedRootTypes.clear();
 
+        /*
         {
-            Set<AnalysisType> reachedAccordingToCausalityExport = methodsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null || p.getLeft().isImplementationInvoked()).map(Pair::getRight).distinct().flatMap(t -> {
+            Set<AnalysisType> reachedAccordingToCausalityExport = reasonsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().flatMap(t -> {
                 ArrayList<AnalysisType> superTypes = new ArrayList<>();
                 t.forAllSuperTypes(superTypes::add);
                 return superTypes.stream();
             }).collect(Collectors.toSet());
 
-            List<AnalysisType> invokedByRoot = methodsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
+            List<AnalysisType> invokedByRoot = reasonsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
 
             Set<AnalysisType> reached = bb.getUniverse().getTypes().stream().filter(AnalysisType::isReachable).collect(Collectors.toSet());
 
@@ -299,15 +285,18 @@ public class Impl extends CausalityExport {
 
 
             for (AnalysisType t : reached) {
-                methodsReachingTypes.putIfAbsent(Pair.create(null, t), false); // Because we dont know...
+                reasonsReachingTypes.putIfAbsent(Pair.create(null, t), false); // Because we dont know...
             }
         }
+        */
 
         Graph g = new Graph();
 
         HashMap<AnalysisMethod, Graph.RealMethodNode> methodMapping = new HashMap<>();
         HashMap<TypeFlow<?>, Graph.RealFlowNode> flowMapping = new HashMap<>();
         HashMap<AnalysisType, Graph.ClassReachableNode> typeReachableMapping = new HashMap<>();
+
+        HashMap<Object, Graph.MethodNode> reasonMapping = new HashMap<>();
 
         {
             for (AnalysisMethod m : bb.getUniverse().getMethods()) {
@@ -338,14 +327,30 @@ public class Impl extends CausalityExport {
         }
 
 
-        for (Pair<AnalysisMethod, AnalysisMethod> e : direct_invokes) {
-            if ((e.getLeft() != null && !methodMapping.containsKey(e.getLeft())) || !methodMapping.containsKey(e.getRight()))
-                continue;
+        for (Pair<Object, Object> e : direct_edges) {
+            Graph.MethodNode from, to;
 
-            if (e.getLeft() == null && e.getRight().isClassInitializer())
-                continue; // Re-account class-initializers to type instantiation!
+            if(e.getLeft() == null)
+                from = null;
+            else if(e.getLeft() instanceof AnalysisMethod) {
+                from = methodMapping.get(e.getLeft());
+                if(from == null)
+                    continue;
+            } else {
+                from = reasonMapping.computeIfAbsent(e.getLeft(), Graph.ReasonMethodNode::new);
+            }
 
-            g.directInvokes.add(new Graph.DirectCallEdge(e.getLeft() == null ? null : methodMapping.get(e.getLeft()), methodMapping.get(e.getRight())));
+            if(e.getRight() instanceof AnalysisMethod) {
+                if(((AnalysisMethod)e.getRight()).isClassInitializer())
+                    continue; // Re-account class-initializers to type instantiation!
+                to = methodMapping.get(e.getRight());
+                if(to == null)
+                    continue;
+            } else {
+                to = reasonMapping.computeIfAbsent(e.getRight(), Graph.ReasonMethodNode::new);
+            }
+
+            g.directInvokes.add(new Graph.DirectCallEdge(from, to));
         }
 
         for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
@@ -371,16 +376,18 @@ public class Impl extends CausalityExport {
             g.interflows.add(new Graph.FlowEdge(e.getLeft() == null ? null : flowMapping.get(e.getLeft()), flowMapping.get(e.getRight())));
         }
 
-        for (Pair<AnalysisMethod, AnalysisType> e : methodsReachingTypes.keySet()) {
-            AnalysisMethod m = e.getLeft();
+        for (Pair<Object, AnalysisType> e : reasonsReachingTypes.keySet()) {
+            Object reason = e.getLeft();
 
-            Graph.RealMethodNode mnode;
-            if (m == null) {
+            Graph.MethodNode mnode;
+            if (reason == null) {
                 mnode = null; // Intentionally null
-            } else {
-                mnode = methodMapping.get(m);
+            } else if(reason instanceof AnalysisMethod) {
+                mnode = methodMapping.get(reason);
                 if (mnode == null)
                     continue;
+            } else {
+                mnode = reasonMapping.computeIfAbsent(reason, Graph.ReasonMethodNode::new);
             }
 
             Graph.ClassReachableNode reachableNode = typeReachableMapping.get(e.getRight());
@@ -398,25 +405,27 @@ public class Impl extends CausalityExport {
             }
         }
 
-        for (Map.Entry<Pair<AnalysisMethod, AnalysisType>, Boolean> kv : methodsReachingTypes.entrySet()) {
+        for (Map.Entry<Pair<Object, AnalysisType>, Boolean> kv : reasonsReachingTypes.entrySet()) {
             if (kv.getValue()) {
-                AnalysisMethod m = kv.getKey().getLeft();
+                Object reason = kv.getKey().getLeft();
 
-                Graph.RealMethodNode mnode;
-                if (m == null) {
+                Graph.MethodNode mnode;
+                if (reason == null) {
                     mnode = null; // Intentionally null
-                } else {
-                    mnode = methodMapping.get(m);
+                } else if(reason instanceof AnalysisMethod) {
+                    mnode = methodMapping.get(reason);
                     if (mnode == null)
                         continue;
+                } else {
+                    mnode = reasonMapping.computeIfAbsent(reason, Graph.ReasonMethodNode::new);
                 }
 
                 AnalysisType t = kv.getKey().getRight();
                 TypeState state = TypeState.forExactType(bb, t, false);
 
                 String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
-                if (m != null) {
-                    debugStr += " in " + m.getQualifiedName();
+                if (mnode != null) {
+                    debugStr += " due to " + mnode;
                 }
 
                 Graph.FlowNode vfn = new Graph.FlowNode(debugStr, mnode, state);

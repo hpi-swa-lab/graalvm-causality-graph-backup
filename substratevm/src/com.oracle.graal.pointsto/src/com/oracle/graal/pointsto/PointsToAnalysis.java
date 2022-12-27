@@ -217,6 +217,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     public void registerAsJNIAccessed(AnalysisField field, boolean writable) {
         // Same as addRootField() and addRootStaticField():
         // create type flows for any subtype of the field's declared type
+        // Causality-TODO: Account this flow edge to the ongoing JNI registration processing somehow
         TypeFlow<?> declaredTypeFlow = field.getType().getTypeFlow(this, true);
         if (field.isStatic()) {
             declaredTypeFlow.addUse(this, field.getStaticFieldFlow());
@@ -326,10 +327,11 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
                  * parsing and return the method flows graph. Then the method parameter type flows
                  * are initialized with the corresponding parameter declared type.
                  */
+                CausalityExport.getInstance().addDirectInvoke(null, pointsToMethod);
+
                 postTask(() -> {
                     pointsToMethod.registerAsDirectRootMethod();
                     pointsToMethod.registerAsImplementationInvoked(null);
-                    CausalityExport.getInstance().addDirectInvoke(null, pointsToMethod);
                     MethodFlowsGraph methodFlowsGraph = analysisPolicy.staticRootMethodGraph(this, pointsToMethod);
                     for (int idx = 0; idx < paramCount; idx++) {
                         AnalysisType declaredParamType = (AnalysisType) signature.getParameterType(idx, declaringClass);

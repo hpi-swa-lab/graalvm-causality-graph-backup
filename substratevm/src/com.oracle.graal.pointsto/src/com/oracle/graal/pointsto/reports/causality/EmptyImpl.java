@@ -87,14 +87,14 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerAnonymousRegistration(Executable e) {
+    public void registerReasonRoot(Object reason) {
     }
 
     @Override
-    public void registerAnonymousRegistration(Field f) {
+    protected void beginAccountingRootRegistrationsTo(Object reason) {
     }
 
     @Override
-    public void registerAnonymousRegistration(Class<?> c) {
+    protected void endAccountingRootRegistrationsTo(Object reason) {
     }
 }

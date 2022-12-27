@@ -59,6 +59,15 @@ public class Graph {
         }
     }
 
+    static class ReasonMethodNode extends MethodNode {
+        public final Object reason;
+
+        public ReasonMethodNode(Object reason) {
+            super(reason.toString());
+            this.reason = reason;
+        }
+    }
+
     static class FeatureCallbackNode extends MethodNode {
         private final Consumer<Feature.DuringAnalysisAccess> callback;
 
