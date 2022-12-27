@@ -79,27 +79,23 @@ public abstract class CausalityExport {
 
     public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback);
 
-    public abstract void registerNotificationStart(Consumer<Feature.DuringAnalysisAccess> notification);
-
-    public abstract void registerNotificationEnd(Consumer<Feature.DuringAnalysisAccess> notification);
-
-    public final ReRootingToken accountRootRegistrationsTo(Object reason) {
+    public final ReRootingToken accountRootRegistrationsTo(CustomReason reason) {
         beginAccountingRootRegistrationsTo(reason);
         return new ReRootingToken(reason);
     }
 
     // May be unrooted due to an ongoing accountRootRegistrationsTo(...)
-    public abstract void registerReasonRoot(Object reason);
+    public abstract void registerReasonRoot(CustomReason reason);
 
-    protected abstract void beginAccountingRootRegistrationsTo(Object reason);
+    protected abstract void beginAccountingRootRegistrationsTo(CustomReason reason);
 
-    protected abstract void endAccountingRootRegistrationsTo(Object reason);
+    protected abstract void endAccountingRootRegistrationsTo(CustomReason reason);
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
     public class ReRootingToken implements AutoCloseable {
-        private final Object reason;
+        private final CustomReason reason;
 
-        ReRootingToken(Object reason) {
+        ReRootingToken(CustomReason reason) {
             this.reason = reason;
         }
 
@@ -109,7 +105,10 @@ public abstract class CausalityExport {
         }
     }
 
-    public static class JNIRegistration {
+    public static abstract class CustomReason {
+    }
+
+    public static class JNIRegistration extends CustomReason {
         public final Object element;
 
         public JNIRegistration(Executable method) {
@@ -140,6 +139,32 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return element.hashCode();
+        }
+    }
+
+    public static class ReachabilityNotificationCallback extends CustomReason {
+        public final Consumer<Feature.DuringAnalysisAccess> callback;
+
+        public ReachabilityNotificationCallback(Consumer<Feature.DuringAnalysisAccess> callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public String toString() {
+            return "Reachability callback " + callback;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ReachabilityNotificationCallback that = (ReachabilityNotificationCallback) o;
+            return callback.equals(that.callback);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(callback);
         }
     }
 }

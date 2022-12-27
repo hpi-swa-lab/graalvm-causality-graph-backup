@@ -79,22 +79,14 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerNotificationStart(Consumer<Feature.DuringAnalysisAccess> notification) {
+    public void registerReasonRoot(CustomReason reason) {
     }
 
     @Override
-    public void registerNotificationEnd(Consumer<Feature.DuringAnalysisAccess> notification) {
+    protected void beginAccountingRootRegistrationsTo(CustomReason reason) {
     }
 
     @Override
-    public void registerReasonRoot(Object reason) {
-    }
-
-    @Override
-    protected void beginAccountingRootRegistrationsTo(Object reason) {
-    }
-
-    @Override
-    protected void endAccountingRootRegistrationsTo(Object reason) {
+    protected void endAccountingRootRegistrationsTo(CustomReason reason) {
     }
 }

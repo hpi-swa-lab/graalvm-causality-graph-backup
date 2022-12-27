@@ -9,6 +9,7 @@ import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
+import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
@@ -44,10 +45,7 @@ public class Impl extends CausalityExport {
     private final HashSet<Pair<Object, Class<?>>> unresolvedRootTypes = new HashSet<>();
     // Boolean stores whether the type is also instantiated
     private final HashMap<Pair<Object, AnalysisType>, Boolean> reasonsReachingTypes = new HashMap<>();
-    private final Map<Consumer<Feature.DuringAnalysisAccess>, List<AnalysisElement>> callbackReasons = new HashMap<>();
-    private final HashSet<Pair<Consumer<Feature.DuringAnalysisAccess>, Object>> reachableThroughFeatureCallback = new HashSet<>();
-
-    private Consumer<Feature.DuringAnalysisAccess> runningNotification = null;
+    private final HashSet<Pair<AnalysisElement, Object>> analysisElementsReachingReasons = new HashSet<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
     private final HashMap<Pair<Class<?>, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
@@ -75,8 +73,7 @@ public class Impl extends CausalityExport {
             typeflowGateMethods.putAll(i.typeflowGateMethods);
             unresolvedRootTypes.addAll(i.unresolvedRootTypes);
             mergeMap(reasonsReachingTypes, i.reasonsReachingTypes, Boolean::logicalOr);
-            mergeMap(callbackReasons, i.callbackReasons, (l1, l2) -> Stream.concat(l1.stream(), l2.stream()).collect(Collectors.toList()));
-            reachableThroughFeatureCallback.addAll(i.reachableThroughFeatureCallback);
+            analysisElementsReachingReasons.addAll(i.analysisElementsReachingReasons);
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
@@ -188,51 +185,13 @@ public class Impl extends CausalityExport {
         });
     }
 
-    static boolean indirectlyImplementsFeature(Class<?> clazz) {
-        if (clazz.equals(Feature.class))
-            return true;
-
-        for (Class<?> interfaces : clazz.getInterfaces())
-            if (indirectlyImplementsFeature(interfaces))
-                return true;
-
-        return false;
-    }
-
     @Override
     public void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback) {
-        try {
-            Class<?> callbackClass = Class.forName(callback.getClass().getName().split("\\$")[0]);
-
-            if (!indirectlyImplementsFeature(callbackClass)) {
-                //System.err.println(callbackClass + " is not a Feature!");
-            }
-
-        } catch (ReflectiveOperationException ex) {
-            System.err.println(ex);
-        }
-
-        callbackReasons.computeIfAbsent(callback, k -> new ArrayList<>()).add(e);
+        analysisElementsReachingReasons.add(Pair.create(e, new CausalityExport.ReachabilityNotificationCallback(callback)));
     }
 
     @Override
-    public void registerNotificationStart(Consumer<Feature.DuringAnalysisAccess> notification) {
-        if (runningNotification != null)
-            throw new RuntimeException("Notification already running!");
-
-        runningNotification = notification;
-    }
-
-    @Override
-    public void registerNotificationEnd(Consumer<Feature.DuringAnalysisAccess> notification) {
-        if (runningNotification != notification)
-            throw new RuntimeException("Notification was not running!");
-
-        runningNotification = null;
-    }
-
-    @Override
-    public void registerReasonRoot(Object reason) {
+    public void registerReasonRoot(CustomReason reason) {
         Object from = rootReasons.empty() ? null : rootReasons.peek();
         direct_edges.add(Pair.create(from, reason));
     }
@@ -240,12 +199,14 @@ public class Impl extends CausalityExport {
     private final Stack<Object> rootReasons = new Stack<>();
 
     @Override
-    protected void beginAccountingRootRegistrationsTo(Object reason) {
+    protected void beginAccountingRootRegistrationsTo(CustomReason reason) {
+        if(!rootReasons.empty())
+            throw new RuntimeException("Oops! Thought that would never happen...");
         rootReasons.push(reason);
     }
 
     @Override
-    protected void endAccountingRootRegistrationsTo(Object reason) {
+    protected void endAccountingRootRegistrationsTo(CustomReason reason) {
         if(rootReasons.empty() || rootReasons.pop() != reason) {
             throw new RuntimeException("Invalid Call to endAccountingRootRegistrationsTo()");
         }
@@ -258,37 +219,6 @@ public class Impl extends CausalityExport {
         Stream<Pair<Object, AnalysisType>> lateResolvedTypes = unresolvedRootTypes.stream().map(p -> Pair.create(p.getLeft(), bb.getMetaAccess().optionalLookupJavaType(p.getRight()))).filter(p -> p.getRight().isPresent()).map(p -> Pair.create(p.getLeft(), p.getRight().get()));
         lateResolvedTypes.forEach(t -> reasonsReachingTypes.putIfAbsent(t, false));
         unresolvedRootTypes.clear();
-
-        /*
-        {
-            Set<AnalysisType> reachedAccordingToCausalityExport = reasonsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().flatMap(t -> {
-                ArrayList<AnalysisType> superTypes = new ArrayList<>();
-                t.forAllSuperTypes(superTypes::add);
-                return superTypes.stream();
-            }).collect(Collectors.toSet());
-
-            List<AnalysisType> invokedByRoot = reasonsReachingTypes.keySet().stream().filter(p -> p.getLeft() == null).map(Pair::getRight).distinct().collect(Collectors.toList());
-
-            Set<AnalysisType> reached = bb.getUniverse().getTypes().stream().filter(AnalysisType::isReachable).collect(Collectors.toSet());
-
-            if (!reached.containsAll(reachedAccordingToCausalityExport)) {
-                System.err.println("Types additionally reached according to CausalityExport!");
-            }
-
-            reached.removeAll(reachedAccordingToCausalityExport);
-
-            List<AnalysisType> overlookedWithClassInitializer = reached.stream().filter(t -> t.getClassInitializer() != null).collect(Collectors.toList());
-
-            for (AnalysisType t : overlookedWithClassInitializer) {
-                System.err.println("Type not reached according to CausalityExport: " + t.toJavaName());
-            }
-
-
-            for (AnalysisType t : reached) {
-                reasonsReachingTypes.putIfAbsent(Pair.create(null, t), false); // Because we dont know...
-            }
-        }
-        */
 
         Graph g = new Graph();
 
@@ -453,6 +383,27 @@ public class Impl extends CausalityExport {
             Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), mNode, e.getValue());
             g.interflows.add(new Graph.FlowEdge(null, intermediate));
             g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+        }
+
+        for (Pair<AnalysisElement, Object> e : analysisElementsReachingReasons) {
+            Graph.MethodNode from, to;
+
+            if(e.getLeft() instanceof AnalysisType) {
+                from = typeReachableMapping.get(e.getLeft());
+            } else if(e.getLeft() instanceof AnalysisMethod) {
+                from = methodMapping.get(e.getLeft());
+                if(from == null)
+                    continue;
+            } else if(e.getLeft() instanceof AnalysisField) {
+                // Causality-TODO: Introduce Field reachability into the causality graph. Until now, we model the reachability of a class to lead to all its fields being reachable, which is an overapproximation
+                from = typeReachableMapping.get(((AnalysisField)e.getLeft()).getDeclaringClass());
+            } else {
+                throw new RuntimeException();
+            }
+
+            to = reasonMapping.computeIfAbsent(e.getRight(), Graph.ReasonMethodNode::new);
+
+            g.directInvokes.add(new Graph.DirectCallEdge(from, to));
         }
 
         return g;

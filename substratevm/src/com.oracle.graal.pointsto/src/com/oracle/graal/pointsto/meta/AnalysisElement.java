@@ -101,9 +101,9 @@ public abstract class AnalysisElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                CausalityExport.getInstance().registerNotificationStart(callback);
-                callback.accept(universe.getConcurrentAnalysisAccess());
-                CausalityExport.getInstance().registerNotificationEnd(callback);
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReachabilityNotificationCallback(callback))) {
+                    callback.accept(universe.getConcurrentAnalysisAccess());
+                }
                 return null;
             });
 
