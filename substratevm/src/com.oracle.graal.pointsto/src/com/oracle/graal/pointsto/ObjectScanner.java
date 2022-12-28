@@ -249,7 +249,7 @@ public class ObjectScanner {
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, value, true);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, value, true);
             bb.markTypeInHeap(type);
             return;
         }
@@ -415,7 +415,7 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, entry.constant, false);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, entry.constant, false);
             type.registerAsReachable();
 
             if (type.isInstanceClass()) {

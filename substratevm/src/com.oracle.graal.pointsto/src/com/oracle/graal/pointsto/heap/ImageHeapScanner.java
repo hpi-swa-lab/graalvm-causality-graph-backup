@@ -254,12 +254,12 @@ public abstract class ImageHeapScanner {
                     onArrayElementReachable(array, type, elementValue, idx, arrayReason, onAnalysisModified);
                 }
             }
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, object, true);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, object.hostedObject, true);
             markTypeInstantiated(type);
         } else {
             ImageHeapInstance instance = (ImageHeapInstance) object;
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, object, true);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, object.hostedObject, true);
             markTypeInstantiated(type);
             for (AnalysisField field : type.getInstanceFields(true)) {
                 if (field.isRead() && isValueAvailable(field)) {
@@ -358,7 +358,7 @@ public abstract class ImageHeapScanner {
                     array.setElement(idx, arrayElement);
                 }
             }
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, constant, true);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, constant, true);
             markTypeInstantiated(type);
         } else {
             /*
@@ -367,7 +367,7 @@ public abstract class ImageHeapScanner {
              * thread before all instanceFieldValues are filled in.
              */
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            CausalityExport.getInstance().registerTypeReachableThroughHeap(type, constant, true);
+            CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, type, constant, true);
             markTypeInstantiated(type);
             AnalysisField[] instanceFields = type.getInstanceFields(true);
             newImageHeapConstant = new ImageHeapInstance(type, constant, instanceFields.length);
@@ -523,7 +523,7 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.add(objectType, imageHeapConstant);
 
-        CausalityExport.getInstance().registerTypeReachableThroughHeap(objectType, imageHeapConstant, true);
+        CausalityExport.getInstance().registerTypeReachableThroughHeap((PointsToAnalysis) bb, objectType, imageHeapConstant.hostedObject, true);
         markTypeInstantiated(objectType);
 
         if (imageHeapConstant instanceof ImageHeapInstance) {

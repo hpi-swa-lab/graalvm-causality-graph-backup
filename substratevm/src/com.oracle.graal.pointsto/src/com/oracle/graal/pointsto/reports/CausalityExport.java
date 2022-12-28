@@ -69,7 +69,7 @@ public abstract class CausalityExport {
 
     public abstract void registerTypeReachableRoot(AnalysisType type, boolean instantiated);
 
-    public abstract void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated);
+    public abstract void registerTypeReachableThroughHeap(PointsToAnalysis bb, AnalysisType type, JavaConstant object, boolean instantiated);
 
     public abstract void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated);
 
@@ -264,6 +264,59 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(callback);
+        }
+    }
+
+    public static class BuildTimeClassInitialization extends Reason {
+        public final Class<?> clazz;
+
+        public BuildTimeClassInitialization(Class<?> clazz) {
+            this.clazz = clazz;
+        }
+
+        @Override
+        public String toString() {
+            return clazz.getTypeName() + ".<clinit>() [BUILD TIME]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            BuildTimeClassInitialization that = (BuildTimeClassInitialization) o;
+            return clazz.equals(that.clazz);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(clazz);
+        }
+    }
+
+    public static class UnknownHeapObject extends Reason {
+        public final Class<?> heapObjectType;
+
+
+        public UnknownHeapObject(Class<?> heapObjectType) {
+            this.heapObjectType = heapObjectType;
+        }
+
+        @Override
+        public String toString() {
+            return "Unknown Heap Object: " + heapObjectType.getTypeName();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            UnknownHeapObject that = (UnknownHeapObject) o;
+            return heapObjectType.equals(that.heapObjectType);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(heapObjectType);
         }
     }
 }

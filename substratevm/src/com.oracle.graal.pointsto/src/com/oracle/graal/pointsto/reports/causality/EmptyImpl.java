@@ -59,7 +59,7 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated) {
+    public void registerTypeReachableThroughHeap(PointsToAnalysis bb, AnalysisType type, JavaConstant object, boolean instantiated) {
     }
 
     @Override

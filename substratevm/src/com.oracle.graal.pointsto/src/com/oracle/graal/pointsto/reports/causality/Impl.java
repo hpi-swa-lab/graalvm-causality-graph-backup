@@ -12,6 +12,7 @@ import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
+import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaMethod;
@@ -38,7 +39,7 @@ public class Impl extends CausalityExport {
     private final HashSet<Pair<Reason, AnalysisType>> reasonsInstantiatingTypes = new HashSet<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
-    private final HashMap<Pair<Class<?>, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
+    private final HashMap<Pair<Reason, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
 
     public Impl() {
     }
@@ -102,7 +103,14 @@ public class Impl extends CausalityExport {
     @Override
     public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
         TypeState newState = TypeState.forExactType(analysis, flowingType, false);
-        flowingFromHeap.compute(Pair.create(creason, fieldTypeFlow), (p, state) -> state == null ? newState : TypeState.forUnion(analysis, state, newState));
+        Reason reason = null;
+
+        if(creason != null) {
+            reason = new BuildTimeClassInitialization(creason);
+            direct_edges.add(Pair.create(new TypeReachableReason(flowingType), reason));
+        }
+
+        flowingFromHeap.compute(Pair.create(reason, fieldTypeFlow), (p, state) -> state == null ? newState : TypeState.forUnion(analysis, state, newState));
     }
 
     @Override
@@ -156,11 +164,25 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated) {
-        if (type.getName().equals("Lorg/apache/log4j/helpers/NullEnumeration;")) // TODO: TEMP
-            return;
+    public void registerTypeReachableThroughHeap(PointsToAnalysis bb, AnalysisType type, JavaConstant object, boolean instantiated) {
+        Object o = bb.getSnippetReflectionProvider().asObject(Object.class, object);
+        Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
 
-        registerTypeReachableRoot(type, instantiated); // TODO: Make build-time clinit accountable
+        Reason reason;
+
+        if(responsible == null) {
+            reason = new UnknownHeapObject(o.getClass());
+            direct_edges.add(Pair.create(null, reason));
+        } else {
+            reason = new BuildTimeClassInitialization(responsible);
+            direct_edges.add(Pair.create(new TypeReachableReason(type), reason));
+        }
+
+        direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
+
+        if(instantiated) {
+            reasonsInstantiatingTypes.add(Pair.create(reason, type));
+        }
     }
 
     @Override
@@ -304,19 +326,13 @@ public class Impl extends CausalityExport {
             });
         }
 
-        for (Map.Entry<Pair<Class<?>, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
-            Reason mNode = null;
-
-            if (e.getKey().getLeft() != null) {
-                mNode = new TypeReachableReason(bb.getMetaAccess().lookupJavaType(e.getClass()));
-            }
-
+        for (Map.Entry<Pair<Reason, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
             Graph.RealFlowNode fieldNode = flowMapping.get(e.getKey().getRight());
 
             if (fieldNode == null)
                 continue;
 
-            Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), mNode, e.getValue());
+            Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), e.getKey().getLeft(), e.getValue());
             g.interflows.add(new Graph.FlowEdge(null, intermediate));
             g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
         }

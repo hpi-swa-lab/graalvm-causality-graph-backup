@@ -76,14 +76,14 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         AnalysisType fieldType = analysis.getMetaAccess().lookupJavaType(fieldValue);
 
         JavaConstant normalizedReceiver = normalize(receiver);
-        fieldValue = normalize(fieldValue);
+        JavaConstant normalizedFieldValue = normalize(fieldValue);
 
         Class<?> creason;
 
         if(field.isStatic()) {
-            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
+            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedFieldValue));
         } else {
-            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedReceiver), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, fieldValue));
+            creason = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedReceiver), field.getJavaField(), analysis.getSnippetReflectionProvider().asObject(Object.class, normalizedFieldValue));
         }
 
         /* Add the constant value object to the field's type flow. */
@@ -155,7 +155,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         Object valueObj = analysis.getSnippetReflectionProvider().asObject(Object.class, value);
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
-        CausalityExport.getInstance().registerTypeReachableThroughHeap(type, value, true);
+        CausalityExport.getInstance().registerTypeReachableThroughHeap(analysis, type, value, true);
         type.registerAsInHeap();
     }
 
