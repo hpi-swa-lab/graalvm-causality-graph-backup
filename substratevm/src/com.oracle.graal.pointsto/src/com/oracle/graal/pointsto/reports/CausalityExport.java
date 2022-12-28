@@ -105,7 +105,74 @@ public abstract class CausalityExport {
         }
     }
 
-    public static abstract class CustomReason {
+    public static abstract class Reason {
+        public boolean unused() {
+            return false;
+        }
+    }
+
+    public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
+        public final T element;
+
+        public ReachableReason(T element) {
+            this.element = element;
+        }
+
+        public static ReachableReason<?> create(AnalysisElement e) {
+            if(e instanceof AnalysisMethod)
+                return new MethodReachableReason((AnalysisMethod) e);
+            if(e instanceof AnalysisType)
+                return new TypeReachableReason((AnalysisType) e);
+            throw new IllegalArgumentException();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ReachableReason that = (ReachableReason) o;
+            return element.equals(that.element);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(element);
+        }
+    }
+
+    public static final class MethodReachableReason extends ReachableReason<AnalysisMethod> {
+        public MethodReachableReason(AnalysisMethod method) {
+            super(method);
+        }
+
+        @Override
+        public String toString() {
+            return element.getQualifiedName();
+        }
+
+        @Override
+        public boolean unused() {
+            return !element.isImplementationInvoked();
+        }
+    }
+
+    public static final class TypeReachableReason extends ReachableReason<AnalysisType> {
+        public TypeReachableReason(AnalysisType type) {
+            super(type);
+        }
+
+        @Override
+        public String toString() {
+            return element.toJavaName();
+        }
+
+        @Override
+        public boolean unused() {
+            return !element.isReachable();
+        }
+    }
+
+    public static abstract class CustomReason extends Reason {
     }
 
     public static class JNIRegistration extends CustomReason {

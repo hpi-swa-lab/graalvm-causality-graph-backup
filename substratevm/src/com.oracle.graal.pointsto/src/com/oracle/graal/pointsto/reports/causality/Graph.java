@@ -14,11 +14,9 @@ import com.oracle.graal.pointsto.flow.OffsetLoadTypeFlow;
 import com.oracle.graal.pointsto.flow.OffsetStoreTypeFlow;
 import com.oracle.graal.pointsto.flow.SourceTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
-import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.typestate.TypeState;
-import org.graalvm.nativeimage.hosted.Feature;
 
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -26,13 +24,13 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Stack;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 public class Graph {
@@ -53,35 +51,11 @@ public class Graph {
         }
     }
 
-    static abstract class MethodNode extends Node {
-        public MethodNode(String debugStr) {
-            super(debugStr);
-        }
-    }
-
-    static class ReasonMethodNode extends MethodNode {
-        public final Object reason;
-
-        public ReasonMethodNode(Object reason) {
-            super(reason.toString());
-            this.reason = reason;
-        }
-    }
-
-    static class FeatureCallbackNode extends MethodNode {
-        private final Consumer<Feature.DuringAnalysisAccess> callback;
-
-        FeatureCallbackNode(Consumer<Feature.DuringAnalysisAccess> callback) {
-            super(callback.getClass().toString());
-            this.callback = callback;
-        }
-    }
-
     static class FlowNode extends Node {
-        public final MethodNode containing;
+        public final CausalityExport.Reason containing;
         public final TypeState filter;
 
-        FlowNode(String debugStr, MethodNode containing, TypeState filter) {
+        FlowNode(String debugStr, CausalityExport.Reason containing, TypeState filter) {
             super(debugStr);
             this.containing = containing;
             this.filter = filter;
@@ -95,7 +69,7 @@ public class Graph {
     }
 
     static final class InvocationFlowNode extends FlowNode {
-        public InvocationFlowNode(MethodNode invocationTarget, TypeState filter) {
+        public InvocationFlowNode(CausalityExport.Reason invocationTarget, TypeState filter) {
             super("Virtual Invocation Flow Node: " + invocationTarget, invocationTarget, filter);
         }
 
@@ -106,9 +80,9 @@ public class Graph {
     }
 
     static class DirectCallEdge {
-        public final MethodNode from, to;
+        public final CausalityExport.Reason from, to;
 
-        DirectCallEdge(MethodNode from, MethodNode to) {
+        DirectCallEdge(CausalityExport.Reason from, CausalityExport.Reason to) {
             if (to == null)
                 throw new NullPointerException();
 
@@ -160,24 +134,6 @@ public class Graph {
         }
     }
 
-    static class RealMethodNode extends MethodNode {
-        private final AnalysisMethod m;
-
-        public RealMethodNode(AnalysisMethod m) {
-            super(m.getQualifiedName());
-            this.m = m;
-        }
-    }
-
-    static class ClassReachableNode extends MethodNode {
-        private final AnalysisType t;
-
-        public ClassReachableNode(AnalysisType t) {
-            super(t.toJavaName());
-            this.t = t;
-        }
-    }
-
     static class RealFlowNode extends FlowNode {
         private final TypeFlow<?> f;
 
@@ -225,12 +181,12 @@ public class Graph {
             }
         }
 
-        public RealFlowNode(TypeFlow<?> f, MethodNode containing, TypeState filter) {
+        public RealFlowNode(TypeFlow<?> f, CausalityExport.Reason containing, TypeState filter) {
             super(customToString(f), containing, filter);
             this.f = f;
         }
 
-        public static RealFlowNode create(PointsToAnalysis bb, TypeFlow<?> f, MethodNode containing) {
+        public static RealFlowNode create(PointsToAnalysis bb, TypeFlow<?> f, CausalityExport.Reason containing) {
             return new RealFlowNode(f, containing, customFilter(bb, f));
         }
     }
@@ -276,7 +232,7 @@ public class Graph {
         Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
 
-        HashSet<MethodNode> methods = new HashSet<>();
+        HashSet<CausalityExport.Reason> methods = new HashSet<>();
         HashSet<FlowNode> typeflows = new HashSet<>();
 
         for (DirectCallEdge e : directInvokes) {
@@ -296,8 +252,8 @@ public class Graph {
                 methods.add(e.to.containing);
         }
 
-        MethodNode[] methodsSorted = methods.stream().sorted().toArray(MethodNode[]::new);
-        HashMap<MethodNode, Integer> methodIdMap = inverse(methodsSorted, 1);
+        CausalityExport.Reason[] methodsSorted = methods.stream().filter(m -> !m.unused()).sorted(Comparator.comparing(CausalityExport.Reason::toString)).toArray(CausalityExport.Reason[]::new);
+        HashMap<CausalityExport.Reason, Integer> methodIdMap = inverse(methodsSorted, 1);
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
 
@@ -308,7 +264,7 @@ public class Graph {
         }
 
         try (PrintStream w = new PrintStream(new FileOutputStream("methods.txt"))) {
-            for (MethodNode method : methodsSorted) {
+            for (CausalityExport.Reason method : methodsSorted) {
                 w.println(method);
             }
         }
