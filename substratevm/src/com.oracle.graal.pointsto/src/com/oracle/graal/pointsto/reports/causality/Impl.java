@@ -27,7 +27,6 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 public class Impl extends CausalityExport {
     // All typeflows ever constructed
@@ -36,8 +35,6 @@ public class Impl extends CausalityExport {
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
     private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
-    private final HashSet<Pair<Reason, Class<?>>> unresolvedRootTypes = new HashSet<>();
-    // Boolean stores whether the type is also instantiated
     private final HashSet<Pair<Reason, AnalysisType>> reasonsInstantiatingTypes = new HashSet<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
@@ -64,7 +61,6 @@ public class Impl extends CausalityExport {
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
             });
             typeflowGateMethods.putAll(i.typeflowGateMethods);
-            unresolvedRootTypes.addAll(i.unresolvedRootTypes);
             reasonsInstantiatingTypes.addAll(i.reasonsInstantiatingTypes);
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
@@ -160,12 +156,6 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableRoot(Class<?> type) {
-        Reason reason = rootReasons.empty() ? null : rootReasons.peek();
-        unresolvedRootTypes.add(Pair.create(reason, type));
-    }
-
-    @Override
     public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated) {
         if (type.getName().equals("Lorg/apache/log4j/helpers/NullEnumeration;")) // TODO: TEMP
             return;
@@ -198,7 +188,7 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerReasonRoot(CustomReason reason) {
+    public void registerReasonRoot(Reason reason) {
         Reason from = rootReasons.empty() ? null : rootReasons.peek();
         direct_edges.add(Pair.create(from, reason));
     }
@@ -206,14 +196,14 @@ public class Impl extends CausalityExport {
     private final Stack<Reason> rootReasons = new Stack<>();
 
     @Override
-    protected void beginAccountingRootRegistrationsTo(CustomReason reason) {
+    protected void beginAccountingRootRegistrationsTo(Reason reason) {
         if(!rootReasons.empty())
             throw new RuntimeException("Oops! Thought that would never happen...");
         rootReasons.push(reason);
     }
 
     @Override
-    protected void endAccountingRootRegistrationsTo(CustomReason reason) {
+    protected void endAccountingRootRegistrationsTo(Reason reason) {
         if(rootReasons.empty() || rootReasons.pop() != reason) {
             throw new RuntimeException("Invalid Call to endAccountingRootRegistrationsTo()");
         }
@@ -223,10 +213,6 @@ public class Impl extends CausalityExport {
 
 
     public Graph createCausalityGraph(PointsToAnalysis bb) {
-        Stream<Pair<Reason, Reason>> lateResolvedTypes = unresolvedRootTypes.stream().map(p -> Pair.create(p.getLeft(), bb.getMetaAccess().optionalLookupJavaType(p.getRight()))).filter(p -> p.getRight().isPresent()).map(p -> Pair.create(p.getLeft(), new TypeReachableReason(p.getRight().get())));
-        lateResolvedTypes.forEach(direct_edges::add);
-        unresolvedRootTypes.clear();
-
         Graph g = new Graph();
 
         HashMap<TypeFlow<?>, Graph.RealFlowNode> flowMapping = new HashMap<>();

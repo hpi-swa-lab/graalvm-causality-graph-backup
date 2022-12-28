@@ -69,8 +69,6 @@ public abstract class CausalityExport {
 
     public abstract void registerTypeReachableRoot(AnalysisType type, boolean instantiated);
 
-    public abstract void registerTypeReachableRoot(Class<?> type);
-
     public abstract void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated);
 
     public abstract void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated);
@@ -79,23 +77,23 @@ public abstract class CausalityExport {
 
     public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback);
 
-    public final ReRootingToken accountRootRegistrationsTo(CustomReason reason) {
+    public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
         beginAccountingRootRegistrationsTo(reason);
         return new ReRootingToken(reason);
     }
 
     // May be unrooted due to an ongoing accountRootRegistrationsTo(...)
-    public abstract void registerReasonRoot(CustomReason reason);
+    public abstract void registerReasonRoot(Reason reason);
 
-    protected abstract void beginAccountingRootRegistrationsTo(CustomReason reason);
+    protected abstract void beginAccountingRootRegistrationsTo(Reason reason);
 
-    protected abstract void endAccountingRootRegistrationsTo(CustomReason reason);
+    protected abstract void endAccountingRootRegistrationsTo(Reason reason);
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
     public class ReRootingToken implements AutoCloseable {
-        private final CustomReason reason;
+        private final Reason reason;
 
-        ReRootingToken(CustomReason reason) {
+        ReRootingToken(Reason reason) {
             this.reason = reason;
         }
 
@@ -200,6 +198,40 @@ public abstract class CausalityExport {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             JNIRegistration that = (JNIRegistration) o;
+            return element.equals(that.element);
+        }
+
+        @Override
+        public int hashCode() {
+            return element.hashCode();
+        }
+    }
+
+    public static class ReflectionRegistration extends CustomReason {
+        public final Object element;
+
+        public ReflectionRegistration(Executable method) {
+            this.element = method;
+        }
+
+        public ReflectionRegistration(Field field) {
+            this.element = field;
+        }
+
+        public ReflectionRegistration(Class<?> clazz) {
+            this.element = clazz;
+        }
+
+        @Override
+        public String toString() {
+            return "Reflection registration of " + element.toString();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ReflectionRegistration that = (ReflectionRegistration) o;
             return element.equals(that.element);
         }
 

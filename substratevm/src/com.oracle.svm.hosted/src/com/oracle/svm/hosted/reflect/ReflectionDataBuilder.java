@@ -131,8 +131,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean unsafeInstantiated, Class<?> clazz) {
         checkNotSealed();
-        CausalityExport.getInstance().registerTypeReachableRoot(clazz); // TODO: Track "is instantiated"
         registerConditionalConfiguration(condition, () -> {
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(clazz)); // TODO: Differentiate on "unsafeInstantiated"
             if (unsafeInstantiated) {
                 unsafeInstantiatedClasses.add(clazz);
             }
@@ -153,16 +153,14 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
         checkNotSealed();
-
-        for(Executable m : methods) {
-            CausalityExport.getInstance().registerTypeReachableRoot(m.getDeclaringClass()); // TODO: Track "is instantiated"
-        }
-
         registerConditionalConfiguration(condition, () -> registerMethods(queriedOnly, methods));
     }
 
     private void registerMethods(boolean queriedOnly, Executable[] methods) {
         for (Executable method : methods) {
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(method));
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(method.getDeclaringClass()));
+
             ExecutableAccessibility oldValue;
             ExecutableAccessibility newValue;
             do {
@@ -181,17 +179,14 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void register(ConfigurationCondition condition, boolean finalIsWritable, Field... fields) {
         checkNotSealed();
-
-        for(Field f : fields) {
-            CausalityExport.getInstance().registerTypeReachableRoot(f.getDeclaringClass()); // TODO: Track "is instantiated"
-        }
-
         registerConditionalConfiguration(condition, () -> registerFields(fields));
     }
 
     private void registerFields(Field[] fields) {
         // Unsafe and write accesses are always enabled for fields because accessors use Unsafe.
         for (Field field : fields) {
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(field));
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(field.getDeclaringClass()));
             if (reflectionFields.add(field)) {
                 modifiedClasses.add(field.getDeclaringClass());
             }
@@ -221,7 +216,6 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
                 ResolvedJavaType annotationType = ((AnnotationSubstitutionType) type.getWrappedWithoutResolve()).getAnnotationInterfaceType();
                 Class<?> annotationClass = access.getUniverse().lookup(annotationType).getJavaClass();
                 if (!annotationMembers.containsKey(annotationClass)) {
-                    CausalityExport.getInstance().registerTypeReachableRoot(annotationClass); // TODO: Track "is instantiated"
                     processClass(access, annotationClass);
                 }
                 for (Member member : annotationMembers.get(annotationClass)) {
@@ -252,39 +246,46 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         for (DynamicHub hub : heapDynamicHubs) {
             if (!processedDynamicHubs.contains(hub)) {
                 AnalysisType type = access.getHostVM().lookupType(hub);
-                if (!SubstitutionReflectivityFilter.shouldExclude(type.getJavaClass(), access.getMetaAccess(), access.getUniverse())) {
-                    registerTypesForClass(access, type, type.getJavaClass());
-                    processedDynamicHubs.add(hub);
+                // Causality-TODO: Account heap object to registration
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeReachableReason(type))) {
+                    if (!SubstitutionReflectivityFilter.shouldExclude(type.getJavaClass(), access.getMetaAccess(), access.getUniverse())) {
+                        registerTypesForClass(access, type, type.getJavaClass());
+                        processedDynamicHubs.add(hub);
+                    }
                 }
             }
         }
         for (Field reflectField : reflectionFields) {
-            if (!registeredFields.containsKey(reflectField) && !SubstitutionReflectivityFilter.shouldExclude(reflectField, access.getMetaAccess(), access.getUniverse())) {
-                AnalysisField analysisField = access.getMetaAccess().lookupJavaField(reflectField);
-                registerTypesForField(access, analysisField, reflectField);
-                registeredFields.put(reflectField, analysisField);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(reflectField))) {
+                if (!registeredFields.containsKey(reflectField) && !SubstitutionReflectivityFilter.shouldExclude(reflectField, access.getMetaAccess(), access.getUniverse())) {
+                    AnalysisField analysisField = access.getMetaAccess().lookupJavaField(reflectField);
+                    registerTypesForField(access, analysisField, reflectField);
+                    registeredFields.put(reflectField, analysisField);
+                }
             }
         }
         for (AnalysisField registeredField : registeredFields.values()) {
             registerHidingSubTypeFields(access, registeredField, registeredField.getDeclaringClass());
         }
         for (Executable method : reflectionMethods.keySet()) {
-            if (SubstitutionReflectivityFilter.shouldExclude(method, access.getMetaAccess(), access.getUniverse())) {
-                continue;
-            }
-            if (!registeredMethods.containsKey(method)) {
-                AnalysisMethod analysisMethod = access.getMetaAccess().lookupJavaMethod(method);
-                registerTypesForMethod(access, analysisMethod, method);
-                registeredMethods.put(method, analysisMethod);
-            }
-            if (reflectionMethods.get(method) == ExecutableAccessibility.Accessed) {
-                /*
-                 * We must also generate the accessor for a method that was registered as queried
-                 * and then registered again as accessed
-                 */
-                SubstrateAccessor accessor = ImageSingletons.lookup(ReflectionFeature.class).getOrCreateAccessor(method);
-                if (methodAccessors.putIfAbsent(method, accessor) == null) {
-                    access.rescanObject(accessor);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(method))) {
+                if (SubstitutionReflectivityFilter.shouldExclude(method, access.getMetaAccess(), access.getUniverse())) {
+                    continue;
+                }
+                if (!registeredMethods.containsKey(method)) {
+                    AnalysisMethod analysisMethod = access.getMetaAccess().lookupJavaMethod(method);
+                    registerTypesForMethod(access, analysisMethod, method);
+                    registeredMethods.put(method, analysisMethod);
+                }
+                if (reflectionMethods.get(method) == ExecutableAccessibility.Accessed) {
+                    /*
+                     * We must also generate the accessor for a method that was registered as queried
+                     * and then registered again as accessed
+                     */
+                    SubstrateAccessor accessor = ImageSingletons.lookup(ReflectionFeature.class).getOrCreateAccessor(method);
+                    if (methodAccessors.putIfAbsent(method, accessor) == null) {
+                        access.rescanObject(accessor);
+                    }
                 }
             }
         }
@@ -296,15 +297,19 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
                 AnalysisElement analysisElement = null;
                 if (object instanceof Field) {
                     Field field = (Field) object;
-                    if (!SubstitutionReflectivityFilter.shouldExclude(field, access.getMetaAccess(), access.getUniverse())) {
-                        analysisElement = access.getMetaAccess().lookupJavaField(field);
-                        registerTypesForField(access, (AnalysisField) analysisElement, field);
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(field))) {
+                        if (!SubstitutionReflectivityFilter.shouldExclude(field, access.getMetaAccess(), access.getUniverse())) {
+                            analysisElement = access.getMetaAccess().lookupJavaField(field);
+                            registerTypesForField(access, (AnalysisField) analysisElement, field);
+                        }
                     }
                 } else if (object instanceof Executable) {
                     Executable executable = (Executable) object;
-                    if (!SubstitutionReflectivityFilter.shouldExclude(executable, access.getMetaAccess(), access.getUniverse())) {
-                        analysisElement = access.getMetaAccess().lookupJavaMethod(executable);
-                        registerTypesForMethod(access, (AnalysisMethod) analysisElement, executable);
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(executable))) {
+                        if (!SubstitutionReflectivityFilter.shouldExclude(executable, access.getMetaAccess(), access.getUniverse())) {
+                            analysisElement = access.getMetaAccess().lookupJavaMethod(executable);
+                            registerTypesForMethod(access, (AnalysisMethod) analysisElement, executable);
+                        }
                     }
                 }
                 if (analysisElement != null) {
@@ -324,12 +329,16 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         if (SubstrateOptions.IncludeMethodData.getValue()) {
             for (AnalysisField field : access.getUniverse().getFields()) {
                 if (field.isAccessed()) {
-                    registerTypesForReachableField(access, field);
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeReachableReason(field.getDeclaringClass()))) {
+                        registerTypesForReachableField(access, field);
+                    }
                 }
             }
             for (AnalysisMethod method : access.getUniverse().getMethods()) {
                 if (method.isReachable() && !method.isIntrinsicMethod()) {
-                    registerTypesForReachableMethod(access, method);
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(method))) {
+                        registerTypesForReachableMethod(access, method);
+                    }
                 }
             }
         }
@@ -694,8 +703,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     }
 
     private static void makeAnalysisTypeReachable(DuringAnalysisAccessImpl access, AnalysisType type) {
-        // CausalityExport.instance.registerTypeReachableRoot(type); // TODO: Durch welche Registration wurde das hier hervorgerufen???
-        if (type.registerAsReachable()) { // TODO: Wenn durch register(...) hervorgerufen, dann ignorieren
+        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
+        if (type.registerAsReachable()) {
             access.requireAnalysisIteration();
         }
     }
@@ -703,7 +712,9 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     private void processRegisteredElements(DuringAnalysisAccessImpl access) {
         if (!modifiedClasses.isEmpty()) {
             for (Class<?> clazz : modifiedClasses) {
-                processClass(access, clazz);
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(clazz))) {
+                    processClass(access, clazz);
+                }
             }
             modifiedClasses.clear();
             access.requireAnalysisIteration();
@@ -733,7 +744,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
          * Make sure the class is registered as reachable before its fields are accessed below to
          * build the reflection metadata.
          */
-        type.registerAsReachable(); // TODO: Wenn durch register(...), dann ignorieren.
+        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
+        type.registerAsReachable();
         if (unsafeInstantiatedClasses.contains(clazz)) {
             CausalityExport.getInstance().registerTypeReachableRoot(type, true);
             type.registerAsAllocated(null);

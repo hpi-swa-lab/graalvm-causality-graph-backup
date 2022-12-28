@@ -59,10 +59,6 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableRoot(Class<?> type) {
-    }
-
-    @Override
     public void registerTypeReachableThroughHeap(AnalysisType type, JavaConstant object, boolean instantiated) {
     }
 
@@ -79,14 +75,14 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerReasonRoot(CustomReason reason) {
+    public void registerReasonRoot(Reason reason) {
     }
 
     @Override
-    protected void beginAccountingRootRegistrationsTo(CustomReason reason) {
+    protected void beginAccountingRootRegistrationsTo(Reason reason) {
     }
 
     @Override
-    protected void endAccountingRootRegistrationsTo(CustomReason reason) {
+    protected void endAccountingRootRegistrationsTo(Reason reason) {
     }
 }
