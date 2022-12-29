@@ -470,6 +470,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      * @param node For future use and debugging
      */
     public boolean registerAsAllocated(Node node) {
+        CausalityExport.getInstance().registerTypeReachable(null, this, true);
         registerAsReachable();
         if (AtomicUtils.atomicMark(this, isAllocatedUpdater)) {
             onInstantiated(UsageKind.Allocated);

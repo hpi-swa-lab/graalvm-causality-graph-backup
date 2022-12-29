@@ -364,7 +364,6 @@ public class JNIAccessFeature implements Feature {
                 CausalityExport.getInstance().registerTypeReachable(null, analysisClass, false);
                 analysisClass.registerAsReachable();
             } else {
-                CausalityExport.getInstance().registerTypeReachable(null, analysisClass, true);
                 access.getBigBang().markTypeInstantiated(analysisClass);
             }
             return new JNIAccessibleClass(classObj);

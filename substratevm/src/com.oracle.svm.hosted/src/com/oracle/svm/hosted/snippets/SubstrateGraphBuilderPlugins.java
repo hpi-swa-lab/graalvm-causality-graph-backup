@@ -773,8 +773,10 @@ public class SubstrateGraphBuilderPlugins {
                         AnalysisType type = (AnalysisType) b.getMetaAccess().lookupJavaType(clazz);
                         for (int i = 0; i < dimensionCount; i++) {
                             type = type.getArrayClass();
-                            CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) targetMethod), type, true);
-                            type.registerAsAllocated(clazzNode);
+                            // Causality-TODO: Possibly account this farer outwards to fix inlining issues
+                            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()))) {
+                                type.registerAsAllocated(clazzNode);
+                            }
                         }
                     }
                 }

@@ -745,7 +745,6 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         CausalityExport.getInstance().registerTypeReachable(null, type, false);
         type.registerAsReachable();
         if (unsafeInstantiatedClasses.contains(clazz)) {
-            CausalityExport.getInstance().registerTypeReachable(null, type, true);
             type.registerAsAllocated(null);
         }
 

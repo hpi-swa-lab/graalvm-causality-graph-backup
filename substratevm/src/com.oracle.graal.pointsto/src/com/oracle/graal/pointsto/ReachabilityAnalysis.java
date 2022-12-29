@@ -99,7 +99,6 @@ public interface ReachabilityAnalysis {
     }
 
     default boolean markTypeInstantiated(AnalysisType type) {
-        CausalityExport.getInstance().registerTypeReachable(null, type, true);
         return type.registerAsAllocated(null);
     }
 

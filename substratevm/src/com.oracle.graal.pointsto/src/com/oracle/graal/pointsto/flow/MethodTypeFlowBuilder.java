@@ -240,13 +240,11 @@ public class MethodTypeFlowBuilder {
                 } else if (n instanceof NewInstanceNode) {
                     NewInstanceNode node = (NewInstanceNode) n;
                     AnalysisType type = (AnalysisType) node.instanceClass();
-                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsAllocated(node);
 
                 } else if (n instanceof VirtualObjectNode) {
                     VirtualObjectNode node = (VirtualObjectNode) n;
                     AnalysisType type = (AnalysisType) node.type();
-                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsAllocated(node);
 
                 } else if (n instanceof CommitAllocationNode) {
@@ -270,14 +268,12 @@ public class MethodTypeFlowBuilder {
                 } else if (n instanceof NewArrayNode) {
                     NewArrayNode node = (NewArrayNode) n;
                     AnalysisType type = ((AnalysisType) node.elementType()).getArrayClass();
-                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsAllocated(node);
 
                 } else if (n instanceof NewMultiArrayNode) {
                     NewMultiArrayNode node = (NewMultiArrayNode) n;
                     AnalysisType type = ((AnalysisType) node.type());
                     for (int i = 0; i < node.dimensionCount(); i++) {
-                        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                         type.registerAsAllocated(node);
                         type = type.getComponentType();
                     }
@@ -285,7 +281,6 @@ public class MethodTypeFlowBuilder {
                 } else if (n instanceof BoxNode) {
                     BoxNode node = (BoxNode) n;
                     AnalysisType type = (AnalysisType) StampTool.typeOrNull(node);
-                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsAllocated(node);
 
                 } else if (n instanceof LoadFieldNode) {
