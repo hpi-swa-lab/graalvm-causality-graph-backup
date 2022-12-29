@@ -109,7 +109,7 @@ public abstract class CustomTypeFieldHandler {
     private void injectFieldTypes(AnalysisField field, List<AnalysisType> customTypes) {
         for (AnalysisType type : customTypes) {
             if (!type.isPrimitive()) {
-                CausalityExport.getInstance().registerTypeReachableRoot(type, true);
+                CausalityExport.getInstance().registerTypeReachable(null, type, true);
                 type.registerAsAllocated(null);
             }
         }

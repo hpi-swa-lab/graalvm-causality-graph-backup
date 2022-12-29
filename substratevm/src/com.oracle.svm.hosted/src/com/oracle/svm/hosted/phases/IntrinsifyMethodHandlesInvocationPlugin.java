@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.Pair;
 import org.graalvm.collections.UnmodifiableEconomicMap;
@@ -783,7 +784,7 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == LoadFieldNode.class) {
                 LoadFieldNode oLoad = (LoadFieldNode) oNode;
-                CausalityExport.getInstance().registerTypeReachableByMethod(aUniverse.lookup(oLoad.field().getDeclaringClass()), b.getMethod(), false);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()), aUniverse.lookup(oLoad.field().getDeclaringClass()), false);
                 ResolvedJavaField tTarget = lookup(oLoad.field());
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 ValueNode tLoad = b.add(LoadFieldNode.create(null, node(oLoad.object()), tTarget));
@@ -792,7 +793,7 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == StoreFieldNode.class) {
                 StoreFieldNode oStore = (StoreFieldNode) oNode;
-                CausalityExport.getInstance().registerTypeReachableByMethod(aUniverse.lookup(oStore.field().getDeclaringClass()), b.getMethod(), false);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()), aUniverse.lookup(oStore.field().getDeclaringClass()), false);
                 ResolvedJavaField tTarget = lookup(oStore.field());
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 b.add(new StoreFieldNode(node(oStore.object()), tTarget, node(oStore.value())));

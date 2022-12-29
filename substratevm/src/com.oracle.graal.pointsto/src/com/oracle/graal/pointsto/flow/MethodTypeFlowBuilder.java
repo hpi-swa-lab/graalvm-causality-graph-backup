@@ -232,20 +232,20 @@ public class MethodTypeFlowBuilder {
                 InstanceOfNode node = (InstanceOfNode) n;
                 AnalysisType type = (AnalysisType) node.type().getType();
                 if (!ignoreInstanceOfType(type)) {
-                    CausalityExport.getInstance().registerTypeReachableByMethod(type, method, false);
+                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, false);
                     type.registerAsReachable();
                 }
 
             } else if (n instanceof NewInstanceNode) {
                 NewInstanceNode node = (NewInstanceNode) n;
                 AnalysisType type = (AnalysisType) node.instanceClass();
-                CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                 type.registerAsAllocated(node);
 
             } else if (n instanceof VirtualObjectNode) {
                 VirtualObjectNode node = (VirtualObjectNode) n;
                 AnalysisType type = (AnalysisType) node.type();
-                CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                 type.registerAsAllocated(node);
 
             } else if (n instanceof CommitAllocationNode) {
@@ -269,14 +269,14 @@ public class MethodTypeFlowBuilder {
             } else if (n instanceof NewArrayNode) {
                 NewArrayNode node = (NewArrayNode) n;
                 AnalysisType type = ((AnalysisType) node.elementType()).getArrayClass();
-                CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                 type.registerAsAllocated(node);
 
             } else if (n instanceof NewMultiArrayNode) {
                 NewMultiArrayNode node = (NewMultiArrayNode) n;
                 AnalysisType type = ((AnalysisType) node.type());
                 for (int i = 0; i < node.dimensionCount(); i++) {
-                    CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsAllocated(node);
                     type = type.getComponentType();
                 }
@@ -284,7 +284,7 @@ public class MethodTypeFlowBuilder {
             } else if (n instanceof BoxNode) {
                 BoxNode node = (BoxNode) n;
                 AnalysisType type = (AnalysisType) StampTool.typeOrNull(node);
-                CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                 type.registerAsAllocated(node);
 
             } else if (n instanceof LoadFieldNode) {
@@ -302,7 +302,7 @@ public class MethodTypeFlowBuilder {
                 if (cn.hasUsages() && cn.isJavaConstant() && cn.asJavaConstant().getJavaKind() == JavaKind.Object && cn.asJavaConstant().isNonNull()) {
                     assert StampTool.isExactType(cn);
                     AnalysisType type = (AnalysisType) StampTool.typeOrNull(cn);
-                    CausalityExport.getInstance().registerTypeReachableByMethod(type, method, true);
+                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, true);
                     type.registerAsInHeap();
                     if (registerEmbeddedRoots && !ignoreConstant(cn)) {
                         registerEmbeddedRoot(cn);
@@ -319,7 +319,7 @@ public class MethodTypeFlowBuilder {
                      * metadata is only constructed after AOT compilation, so the image heap
                      * scanning during static analysis does not see these classes.
                      */
-                    CausalityExport.getInstance().registerTypeReachableByMethod(frameStateMethod.getDeclaringClass(), method, false);
+                    CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), frameStateMethod.getDeclaringClass(), false);
                     frameStateMethod.getDeclaringClass().registerAsReachable(); // TODO: Make this method accountable for reachability
                 }
 
@@ -394,7 +394,7 @@ public class MethodTypeFlowBuilder {
         if (bb.scanningPolicy().trackConstant(bb, root)) {
             AnalysisType t = bb.getMetaAccess().lookupJavaType(root);
             if(t != null)
-                CausalityExport.getInstance().registerTypeReachableByMethod(t, method, true);
+                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), t, true);
             bb.getUniverse().registerEmbeddedRoot(root, AbstractAnalysisEngine.sourcePosition(cn));
         }
     }

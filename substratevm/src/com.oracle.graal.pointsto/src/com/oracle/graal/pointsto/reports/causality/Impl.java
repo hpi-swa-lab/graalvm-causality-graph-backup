@@ -5,17 +5,20 @@ import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
+import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
+import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
+import com.oracle.graal.pointsto.heap.ImageHeapConstant;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
+import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
-import jdk.vm.ci.meta.JavaMethod;
 import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.hosted.Feature;
 
@@ -24,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
@@ -100,17 +104,17 @@ public class Impl extends CausalityExport {
             throw new RuntimeException();
     }
 
-    @Override
-    public void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType) {
-        TypeState newState = TypeState.forExactType(analysis, flowingType, false);
-        Reason reason = null;
-
-        if(creason != null) {
-            reason = new BuildTimeClassInitialization(creason);
-            direct_edges.add(Pair.create(new TypeReachableReason(flowingType), reason));
+    private static <T> T asObject(PointsToAnalysis bb, Class<T> tClass, JavaConstant constant) {
+        if(constant instanceof ImageHeapConstant)
+        {
+            constant = ((ImageHeapConstant)constant).getHostedObject();
         }
+        return bb.getSnippetReflectionProvider().asObject(tClass, constant);
+    }
 
-        flowingFromHeap.compute(Pair.create(reason, fieldTypeFlow), (p, state) -> state == null ? newState : TypeState.forUnion(analysis, state, newState));
+    @Override
+    public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {
+        flowingFromHeap.compute(Pair.create(reason, destination), (p, state) -> state == null ? types: TypeState.forUnion(bb, state, types));
     }
 
     @Override
@@ -120,7 +124,15 @@ public class Impl extends CausalityExport {
         if(callee.isClassInitializer())
             return; // We later add an edge from type reachability to class initializer
 
-        direct_edges.add(Pair.create(reason, new MethodReachableReason(callee)));
+        if(reason == null && callee.getDeclaringClass().getName().contains("ReflectiveClassInitializationWorld") && callee.getName().contains("print"))
+            throw new RuntimeException("Got root!");
+
+        register(reason, new MethodReachableReason(callee));
+    }
+
+    @Override
+    public void register(Reason reason, Reason consequence) {
+        direct_edges.add(Pair.create(reason, consequence));
     }
 
     @Override
@@ -153,8 +165,9 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableRoot(AnalysisType type, boolean instantiated) {
-        Reason reason = rootReasons.empty() ? null : rootReasons.peek();
+    public void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated) {
+        if(reason == null && !rootReasons.empty())
+            reason = rootReasons.peek();
 
         direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
 
@@ -164,36 +177,66 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachableThroughHeap(PointsToAnalysis bb, AnalysisType type, JavaConstant object, boolean instantiated) {
-        Object o = bb.getSnippetReflectionProvider().asObject(Object.class, object);
+    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
+        Object o = bb.getSnippetReflectionProvider().asObject(Object.class, heapObject);
         Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
 
-        Reason reason;
+        Reason reason = null;
 
-        if(responsible == null) {
+        if(responsible != null) {
+            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
+            if(responsibleType.isPresent()) {
+                reason = new BuildTimeClassInitialization(responsible);
+                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
+            }
+        }
+
+        if(reason == null) {
             reason = new UnknownHeapObject(o.getClass());
             direct_edges.add(Pair.create(null, reason));
-        } else {
-            reason = new BuildTimeClassInitialization(responsible);
-            direct_edges.add(Pair.create(new TypeReachableReason(type), reason));
         }
 
-        direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
-
-        if(instantiated) {
-            reasonsInstantiatingTypes.add(Pair.create(reason, type));
-        }
+        return reason;
     }
 
     @Override
-    public void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated) {
-        Reason reason = m != null ? new MethodReachableReason((AnalysisMethod) m) : rootReasons.empty() ? null : rootReasons.peek();
+    public Reason getReasonForHeapFieldAssignment(PointsToAnalysis bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
+        Class<?> responsible;
 
-        direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
-
-        if(instantiated) {
-            reasonsInstantiatingTypes.add(Pair.create(reason, type));
+        if(field.isStatic()) {
+            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), asObject(bb, Object.class, value));
+        } else {
+            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(asObject(bb, Object.class, receiver), field.getJavaField(), asObject(bb, Object.class, value));
         }
+
+        Reason reason = null;
+
+        if(responsible != null) {
+            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
+            if(responsibleType.isPresent()) {
+                reason = new BuildTimeClassInitialization(responsible);
+                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
+            }
+        }
+
+        return reason;
+    }
+
+    @Override
+    public Reason getReasonForHeapArrayAssignment(PointsToAnalysis bb, JavaConstant array, int elementIndex, JavaConstant value) {
+        Class<?> responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, asObject(bb, Object.class, value));
+
+        Reason reason = null;
+
+        if(responsible != null) {
+            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
+            if(responsibleType.isPresent()) {
+                reason = new BuildTimeClassInitialization(responsible);
+                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
+            }
+        }
+
+        return reason;
     }
 
     @Override
@@ -219,7 +262,7 @@ public class Impl extends CausalityExport {
 
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
-        if(!rootReasons.empty())
+        if(!rootReasons.empty() && !rootReasons.peek().equals(reason))
             throw new RuntimeException("Oops! Thought that would never happen...");
         rootReasons.push(reason);
     }

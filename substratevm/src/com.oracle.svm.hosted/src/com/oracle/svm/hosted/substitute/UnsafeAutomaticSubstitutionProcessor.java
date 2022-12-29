@@ -300,7 +300,7 @@ public class UnsafeAutomaticSubstitutionProcessor extends SubstitutionProcessor 
                     case FieldOffset:
                         Field targetField = cvField.getTargetField();
                         AnalysisType fieldDeclaringType = access.getMetaAccess().lookupJavaType(targetField.getDeclaringClass());
-                        CausalityExport.getInstance().registerTypeReachableRoot(fieldDeclaringType, false); // TODO: Make original field's reachability accountable
+                        CausalityExport.getInstance().registerTypeReachable(null, fieldDeclaringType, false); // TODO: Make original field's reachability accountable
                         fieldDeclaringType.registerAsReachable();
                         if (access.registerAsUnsafeAccessed(access.getMetaAccess().lookupJavaField(targetField))) {
                             access.requireAnalysisIteration();

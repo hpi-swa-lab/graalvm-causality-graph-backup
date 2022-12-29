@@ -124,7 +124,7 @@ public class HostedGraphKit extends SubstrateGraphKit {
         try {
             ResolvedJavaType type = getMetaAccess().lookupJavaType(clazz);
             if (type instanceof AnalysisType) {
-                CausalityExport.getInstance().registerTypeReachableRoot((AnalysisType) type, false);
+                CausalityExport.getInstance().registerTypeReachable(null, (AnalysisType) type, false);
                 ((AnalysisType) type).registerAsReachable();
             }
             ResolvedJavaField field = getMetaAccess().lookupJavaField(clazz.getDeclaredField(fieldName));

@@ -437,7 +437,7 @@ public abstract class RuntimeCompilationFeature implements Feature {
         NodeClass<?>[] snippetNodeClasses = ((SubstrateReplacements) runtimeProviders.getReplacements()).getSnippetNodeClasses();
         for (NodeClass<?> nodeClass : snippetNodeClasses) {
             AnalysisType t = config.getMetaAccess().lookupJavaType(nodeClass.getClazz());
-            CausalityExport.getInstance().registerTypeReachableRoot(t, true);
+            CausalityExport.getInstance().registerTypeReachable(null, t, true);
             t.registerAsAllocated(null);
         }
 
@@ -538,7 +538,7 @@ public abstract class RuntimeCompilationFeature implements Feature {
         NodeClass<?>[] nodeClasses = graphEncoder.getNodeClasses();
         for (NodeClass<?> nodeClass : nodeClasses) {
             AnalysisType t = metaAccess.lookupJavaType(nodeClass.getClazz());
-            CausalityExport.getInstance().registerTypeReachableRoot(t, true);
+            CausalityExport.getInstance().registerTypeReachable(null, t, true);
             t.registerAsAllocated(null);
         }
         if (GraalSupport.setGraphEncoding(config, graphEncoder.getEncoding(), graphEncoder.getObjects(), nodeClasses)) {

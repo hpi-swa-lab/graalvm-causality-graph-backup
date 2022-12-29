@@ -29,6 +29,8 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.util.function.Consumer;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.type.TypedConstant;
@@ -148,11 +150,14 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
     protected void onObjectReachable(ImageHeapConstant imageHeapConstant) {
         super.onObjectReachable(imageHeapConstant);
 
-        // TODO: Trace that this object made the method suceptible to reflection rooting
         if (metaAccess.isInstanceOf(imageHeapConstant, Field.class) || metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
-            reflectionSupport.registerHeapReflectionObject((AccessibleObject) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()));
+            AccessibleObject o = (AccessibleObject) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
+            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(o));
+            reflectionSupport.registerHeapReflectionObject(o);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {
-            reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()));
+            DynamicHub hub = (DynamicHub) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
+            CausalityExport.getInstance().register(new CausalityExport.HeapObjectDynamicHub(hub.getHostedJavaClass()), new CausalityExport.ReflectionRegistration(hub.getHostedJavaClass()));
+            reflectionSupport.registerHeapDynamicHub(hub);
         }
     }
 }

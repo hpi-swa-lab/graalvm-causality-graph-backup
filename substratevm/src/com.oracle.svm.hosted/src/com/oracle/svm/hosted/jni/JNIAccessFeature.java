@@ -264,7 +264,7 @@ public class JNIAccessFeature implements Feature {
         MetaAccessProvider originalMetaAccess = access.getMetaAccess().getWrapped();
         ResolvedJavaField field = JNIAccessibleMethod.getCallVariantWrapperField(originalMetaAccess, variant, nonVirtual);
         AnalysisType fieldDeclaringType = access.getUniverse().lookup(field.getDeclaringClass());
-        CausalityExport.getInstance().registerTypeReachableRoot(fieldDeclaringType, false);
+        CausalityExport.getInstance().registerTypeReachable(null, fieldDeclaringType, false);
         fieldDeclaringType.registerAsReachable();
         access.registerAsAccessed(access.getUniverse().lookup(field));
         String name = JNIJavaCallTrampolineHolder.getTrampolineName(variant, nonVirtual);
@@ -361,10 +361,10 @@ public class JNIAccessFeature implements Feature {
         return JNIReflectionDictionary.singleton().addClassIfAbsent(classObj, c -> {
             AnalysisType analysisClass = access.getMetaAccess().lookupJavaType(classObj);
             if (analysisClass.isInterface() || (analysisClass.isInstanceClass() && analysisClass.isAbstract())) {
-                CausalityExport.getInstance().registerTypeReachableRoot(analysisClass, false);
+                CausalityExport.getInstance().registerTypeReachable(null, analysisClass, false);
                 analysisClass.registerAsReachable();
             } else {
-                CausalityExport.getInstance().registerTypeReachableRoot(analysisClass, true);
+                CausalityExport.getInstance().registerTypeReachable(null, analysisClass, true);
                 access.getBigBang().markTypeInstantiated(analysisClass);
             }
             return new JNIAccessibleClass(classObj);
@@ -432,8 +432,8 @@ public class JNIAccessFeature implements Feature {
 
     private static void addField(Field reflField, boolean writable, DuringAnalysisAccessImpl access) {
         AnalysisType t = access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass());
-        CausalityExport.getInstance().registerTypeReachableRoot(t, false);
-        t.registerAsReachable(); // TODO: Ignorieren, und stattdessen .register(...) tracken
+        CausalityExport.getInstance().registerTypeReachable(null, t, false);
+        t.registerAsReachable();
         if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess(), access.getUniverse())) {
             return;
         }

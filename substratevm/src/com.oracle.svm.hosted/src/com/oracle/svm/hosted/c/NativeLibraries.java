@@ -269,7 +269,7 @@ public final class NativeLibraries {
 
     private ResolvedJavaType lookupAndRegisterType(Class<?> clazz) {
         AnalysisType type = (AnalysisType) metaAccess.lookupJavaType(clazz);
-        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
+        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         type.registerAsReachable();
         return type;
     }

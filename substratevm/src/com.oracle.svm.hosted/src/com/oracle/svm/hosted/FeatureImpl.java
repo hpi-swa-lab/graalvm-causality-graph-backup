@@ -346,7 +346,7 @@ public class FeatureImpl {
         }
 
         public void registerAsUsed(AnalysisType aType) {
-            CausalityExport.getInstance().registerTypeReachableRoot(aType, false); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
+            CausalityExport.getInstance().registerTypeReachable(null, aType, false); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
             bb.markTypeReachable(aType);
         }
 
@@ -356,7 +356,7 @@ public class FeatureImpl {
         }
 
         public void registerAsInHeap(AnalysisType aType) {
-            CausalityExport.getInstance().registerTypeReachableRoot(aType, true); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
+            CausalityExport.getInstance().registerTypeReachable(null, aType, true); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
             bb.markTypeInHeap(aType);
         }
 

@@ -246,8 +246,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         for (DynamicHub hub : heapDynamicHubs) {
             if (!processedDynamicHubs.contains(hub)) {
                 AnalysisType type = access.getHostVM().lookupType(hub);
-                // Causality-TODO: Account heap object to registration
-                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeReachableReason(type))) {
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.HeapObjectDynamicHub(hub.getHostedJavaClass()))) {
                     if (!SubstitutionReflectivityFilter.shouldExclude(type.getJavaClass(), access.getMetaAccess(), access.getUniverse())) {
                         registerTypesForClass(access, type, type.getJavaClass());
                         processedDynamicHubs.add(hub);
@@ -696,14 +695,14 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
              * Exception proxies are stored as-is in the image heap
              */
             if (ExceptionProxy.class.isAssignableFrom(type)) {
-                CausalityExport.getInstance().registerTypeReachableRoot(analysisType, true);
+                CausalityExport.getInstance().registerTypeReachable(null, analysisType, true);
                 analysisType.registerAsInHeap();
             }
         }
     }
 
     private static void makeAnalysisTypeReachable(DuringAnalysisAccessImpl access, AnalysisType type) {
-        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
+        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         if (type.registerAsReachable()) {
             access.requireAnalysisIteration();
         }
@@ -744,10 +743,10 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
          * Make sure the class is registered as reachable before its fields are accessed below to
          * build the reflection metadata.
          */
-        CausalityExport.getInstance().registerTypeReachableRoot(type, false);
+        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         type.registerAsReachable();
         if (unsafeInstantiatedClasses.contains(clazz)) {
-            CausalityExport.getInstance().registerTypeReachableRoot(type, true);
+            CausalityExport.getInstance().registerTypeReachable(null, type, true);
             type.registerAsAllocated(null);
         }
 

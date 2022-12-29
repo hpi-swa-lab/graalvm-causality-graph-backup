@@ -5,6 +5,7 @@ import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
+import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.causality.EmptyImpl;
@@ -12,9 +13,9 @@ import com.oracle.graal.pointsto.reports.causality.Impl;
 import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
-import jdk.vm.ci.meta.JavaMethod;
 import org.graalvm.nativeimage.hosted.Feature;
 
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -57,9 +58,11 @@ public abstract class CausalityExport {
 
     public abstract void setSaturationHappening(boolean currentlySaturating);
 
-    public abstract void addTypeFlowFromHeap(PointsToAnalysis analysis, Class<?> creason, TypeFlow<?> fieldTypeFlow, AnalysisType flowingType);
+    public abstract void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types);
 
     public abstract void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee);
+
+    public abstract void register(Reason reason, Reason consequence);
 
     public abstract void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes);
 
@@ -67,11 +70,13 @@ public abstract class CausalityExport {
 
     public abstract void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation);
 
-    public abstract void registerTypeReachableRoot(AnalysisType type, boolean instantiated);
+    public abstract void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated);
 
-    public abstract void registerTypeReachableThroughHeap(PointsToAnalysis bb, AnalysisType type, JavaConstant object, boolean instantiated);
+    public abstract Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject);
 
-    public abstract void registerTypeReachableByMethod(AnalysisType type, JavaMethod m, boolean instantiated);
+    public abstract Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value);
+
+    public abstract Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value);
 
     public abstract void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type);
 
@@ -128,7 +133,7 @@ public abstract class CausalityExport {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            ReachableReason that = (ReachableReason) o;
+            ReachableReason<?> that = (ReachableReason<?>) o;
             return element.equals(that.element);
         }
 
@@ -210,12 +215,8 @@ public abstract class CausalityExport {
     public static class ReflectionRegistration extends CustomReason {
         public final Object element;
 
-        public ReflectionRegistration(Executable method) {
-            this.element = method;
-        }
-
-        public ReflectionRegistration(Field field) {
-            this.element = field;
+        public ReflectionRegistration(AccessibleObject methodOrField) {
+            this.element = methodOrField;
         }
 
         public ReflectionRegistration(Class<?> clazz) {
@@ -290,6 +291,33 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(clazz);
+        }
+    }
+
+    public static class HeapObjectDynamicHub extends Reason {
+        public final Class<?> forClass;
+
+
+        public HeapObjectDynamicHub(Class<?> forClass) {
+            this.forClass = forClass;
+        }
+
+        @Override
+        public String toString() {
+            return "DynamicHub in Heap: " + forClass.getTypeName();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            HeapObjectDynamicHub that = (HeapObjectDynamicHub) o;
+            return forClass.equals(that.forClass);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(forClass);
         }
     }
 

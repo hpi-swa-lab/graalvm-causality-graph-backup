@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.CompressEncoding;
@@ -772,7 +773,7 @@ public class SubstrateGraphBuilderPlugins {
                         AnalysisType type = (AnalysisType) b.getMetaAccess().lookupJavaType(clazz);
                         for (int i = 0; i < dimensionCount; i++) {
                             type = type.getArrayClass();
-                            CausalityExport.getInstance().registerTypeReachableByMethod(type, targetMethod, true);
+                            CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) targetMethod), type, true);
                             type.registerAsAllocated(clazzNode);
                         }
                     }

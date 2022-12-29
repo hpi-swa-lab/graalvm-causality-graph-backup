@@ -24,12 +24,16 @@
  */
 package com.oracle.svm.hosted.ameta;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.svm.core.feature.InternalFeature;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.feature.AutomaticallyRegisteredFeature;
+import com.oracle.svm.core.meta.SubstrateObjectConstant;
 import com.oracle.svm.hosted.FeatureImpl.DuringSetupAccessImpl;
 import com.oracle.svm.hosted.SVMHost;
+import jdk.vm.ci.meta.JavaConstant;
 
 @AutomaticallyRegisteredFeature
 public class HostedDynamicHubFeature implements InternalFeature {
@@ -50,6 +54,9 @@ public class HostedDynamicHubFeature implements InternalFeature {
             Class<?> clazz = (Class<?>) source;
             DynamicHub dynamicHub = hostVM.dynamicHub(metaAccess.lookupJavaType(clazz));
             AnalysisConstantReflectionProvider.registerAsReachable(hostVM, dynamicHub);
+            CausalityExport.getInstance().register(
+                    CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) metaAccess.getUniverse().getBigbang(), SubstrateObjectConstant.forObject(source)),
+                    new CausalityExport.HeapObjectDynamicHub(dynamicHub.getHostedJavaClass()));
             return dynamicHub;
         }
         if (source instanceof DynamicHub) {
