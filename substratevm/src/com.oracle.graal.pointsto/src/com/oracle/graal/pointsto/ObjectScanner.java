@@ -249,8 +249,9 @@ public class ObjectScanner {
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, value), type, true);
-            bb.markTypeInHeap(type);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, value))) {
+                bb.markTypeInHeap(type);
+            }
             return;
         }
         Object valueObj = (value instanceof ImageHeapConstant) ? value : constantAsObject(bb, value);

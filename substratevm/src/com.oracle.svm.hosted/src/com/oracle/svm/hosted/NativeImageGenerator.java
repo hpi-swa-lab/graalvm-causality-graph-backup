@@ -1034,7 +1034,6 @@ public class NativeImageGenerator {
         try (Indent ignored = debug.logAndIndent("add initial classes/fields/methods")) {
             java.util.function.Consumer<Class<?>> registerInHeap = c -> {
                 AnalysisType t = bb.addRootClass(c, false, false);
-                CausalityExport.getInstance().registerTypeReachable(null, t, true);
                 bb.markTypeInHeap(t);
             };
 
@@ -1044,7 +1043,6 @@ public class NativeImageGenerator {
             registerInHeap.accept(String[].class);
 
             AnalysisType fieldType = bb.addRootField(String.class, "value");
-            CausalityExport.getInstance().registerTypeReachable(null, fieldType, true);
             bb.markTypeInHeap(fieldType);
 
             registerInHeap.accept(long[].class);
@@ -1060,11 +1058,7 @@ public class NativeImageGenerator {
             for (JavaKind kind : JavaKind.values()) {
                 if (kind.isPrimitive() && kind != JavaKind.Void) {
                     bb.addRootClass(kind.toJavaClass(), false, true);
-                    {
-                        AnalysisType t = bb.addRootClass(kind.toBoxedJavaClass(), false, true);
-                        CausalityExport.getInstance().registerTypeReachable(null, t, true);
-                        t.registerAsInHeap();
-                    }
+                    bb.addRootClass(kind.toBoxedJavaClass(), false, true).registerAsInHeap();
                     bb.addRootField(kind.toBoxedJavaClass(), "value");
                     bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), "valueOf", kind.toJavaClass()), true);
                     bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), kind.getJavaName() + "Value"), true);

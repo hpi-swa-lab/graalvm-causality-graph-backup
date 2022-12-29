@@ -5,8 +5,6 @@ import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
-import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
-import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
@@ -262,8 +260,9 @@ public class Impl extends CausalityExport {
 
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
-        if(!rootReasons.empty() && !rootReasons.peek().equals(reason))
-            throw new RuntimeException("Oops! Thought that would never happen...");
+        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason))
+            Thread.dumpStack();
+
         rootReasons.push(reason);
     }
 

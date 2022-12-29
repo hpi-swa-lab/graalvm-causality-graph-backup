@@ -695,7 +695,6 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
              * Exception proxies are stored as-is in the image heap
              */
             if (ExceptionProxy.class.isAssignableFrom(type)) {
-                CausalityExport.getInstance().registerTypeReachable(null, analysisType, true);
                 analysisType.registerAsInHeap();
             }
         }

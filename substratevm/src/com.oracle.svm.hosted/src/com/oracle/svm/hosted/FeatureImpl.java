@@ -356,7 +356,6 @@ public class FeatureImpl {
         }
 
         public void registerAsInHeap(AnalysisType aType) {
-            CausalityExport.getInstance().registerTypeReachable(null, aType, true); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
             bb.markTypeInHeap(aType);
         }
 

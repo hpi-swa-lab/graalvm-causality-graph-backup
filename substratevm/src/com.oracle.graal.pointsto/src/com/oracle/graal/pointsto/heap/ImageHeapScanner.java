@@ -112,10 +112,11 @@ public abstract class ImageHeapScanner {
     public void scanEmbeddedRoot(JavaConstant root, BytecodePosition position) {
         if (isNonNullObjectConstant(root)) {
             AnalysisType type = metaAccess.lookupJavaType(root);
-            // Already registered in MethodTypeFlowBuilder.registerEmbeddedRoot():
-            // CausalityExport.instance.registerTypeReachableByMethod(type, position.getMethod());
             type.registerAsReachable();
-            getOrCreateConstantReachableTask(root, new EmbeddedRootScan(position, root), null);
+            // Explicitly don't unroot registrations here. Otherwise, the current method processes by MethodTypeFlowBuilder could be accounted for scanned objects
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                getOrCreateConstantReachableTask(root, new EmbeddedRootScan(position, root), null);
+            }
         }
     }
 
@@ -253,13 +254,15 @@ public abstract class ImageHeapScanner {
                     onArrayElementReachable(array, type, elementValue, idx, arrayReason, onAnalysisModified);
                 }
             }
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()), type, true);
-            markTypeInstantiated(type);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
+                markTypeInstantiated(type);
+            }
         } else {
             ImageHeapInstance instance = (ImageHeapInstance) object;
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()), type, true);
-            markTypeInstantiated(type);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
+                markTypeInstantiated(type);
+            }
             for (AnalysisField field : type.getInstanceFields(true)) {
                 if (field.isRead() && isValueAvailable(field)) {
                     final JavaConstant fieldValue = instance.readFieldValue(field);
@@ -285,7 +288,7 @@ public abstract class ImageHeapScanner {
                          * 
                          * So for now we just reinstall the original JavaConstant value when the
                          * future is completed.
-                         * 
+                         *
                          * More specifically, the long term plan is that after scanning
                          * instance.field will refer to the `scannedFieldValue`, so any future read
                          * of `instance.field` will return an ImageHeapInstance. Moreover,
@@ -357,8 +360,9 @@ public abstract class ImageHeapScanner {
                     array.setElement(idx, arrayElement);
                 }
             }
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant), type, true);
-            markTypeInstantiated(type);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
+                markTypeInstantiated(type);
+            }
         } else {
             /*
              * We need to have the new ImageHeapInstance early so that we can reference it in the
@@ -366,8 +370,9 @@ public abstract class ImageHeapScanner {
              * thread before all instanceFieldValues are filled in.
              */
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant), type, true);
-            markTypeInstantiated(type);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
+                markTypeInstantiated(type);
+            }
             AnalysisField[] instanceFields = type.getInstanceFields(true);
             newImageHeapConstant = new ImageHeapInstance(type, constant, instanceFields.length);
             for (AnalysisField field : instanceFields) {
@@ -522,8 +527,9 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.add(objectType, imageHeapConstant);
 
-        CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), objectType, true);
-        markTypeInstantiated(objectType);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()))) {
+            markTypeInstantiated(objectType);
+        }
 
         if (imageHeapConstant instanceof ImageHeapInstance) {
             ImageHeapInstance imageHeapInstance = (ImageHeapInstance) imageHeapConstant;
@@ -658,7 +664,9 @@ public abstract class ImageHeapScanner {
      * Add the object to the image heap and, if the object is a collection, rescan its elements.
      */
     public void rescanObject(Object object) {
-        rescanObject(object, OtherReason.RESCAN);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            rescanObject(object, OtherReason.RESCAN);
+        }
     }
 
     /**

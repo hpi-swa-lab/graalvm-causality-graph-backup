@@ -129,8 +129,9 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         Object valueObj = analysis.getSnippetReflectionProvider().asObject(Object.class, value);
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
-        CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject(analysis, value), type, true);
-        type.registerAsInHeap();
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject(analysis, value))) {
+            type.registerAsInHeap();
+        }
     }
 
     private PointsToAnalysis getAnalysis() {

@@ -511,7 +511,6 @@ public class LibGraalFeature implements InternalFeature {
         EncodedSnippets encodedSnippets = HotSpotReplacementsImpl.getEncodedSnippets();
         for (NodeClass<?> nodeClass : encodedSnippets.getSnippetNodeClasses()) {
             AnalysisType t = impl.getMetaAccess().lookupJavaType(nodeClass.getClazz());
-            CausalityExport.getInstance().registerTypeReachable(null, t, true);
             bb.markTypeInHeap(t);
         }
     }

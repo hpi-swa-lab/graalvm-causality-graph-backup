@@ -457,6 +457,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     public boolean registerAsInHeap() {
+        CausalityExport.getInstance().registerTypeReachable(null, this, true);
         registerAsReachable();
         if (AtomicUtils.atomicMark(this, isInHeapUpdater)) {
             onInstantiated(UsageKind.InHeap);
