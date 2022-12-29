@@ -66,8 +66,6 @@ public class ConstantTypeFlow extends TypeFlow<BytecodePosition> {
          */
         addState(bb, constantState);
         CausalityExport.getInstance().addTypeFlowEdge(null, this);
-        if(declaredType != null)
-            CausalityExport.getInstance().registerTypeInstantiated(bb, this, declaredType);
     }
 
     @Override

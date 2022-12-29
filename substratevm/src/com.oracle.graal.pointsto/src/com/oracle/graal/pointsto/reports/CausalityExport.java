@@ -70,15 +70,11 @@ public abstract class CausalityExport {
 
     public abstract void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation);
 
-    public abstract void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated);
-
     public abstract Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject);
 
     public abstract Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value);
 
     public abstract Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value);
-
-    public abstract void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type);
 
     public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback);
 
@@ -174,6 +170,37 @@ public abstract class CausalityExport {
         @Override
         public boolean unused() {
             return !element.isReachable();
+        }
+    }
+
+    public static final class TypeInstantiatedReason extends Reason {
+        public final AnalysisType type;
+
+        public TypeInstantiatedReason(AnalysisType type) {
+            this.type = type;
+        }
+
+        @Override
+        public boolean unused() {
+            return !type.isInstantiated();
+        }
+
+        @Override
+        public String toString() {
+            return "Type Instantiated: " + type.toJavaName();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            TypeInstantiatedReason that = (TypeInstantiatedReason) o;
+            return type.equals(that.type);
+        }
+
+        @Override
+        public int hashCode() {
+            return type.hashCode();
         }
     }
 

@@ -38,7 +38,6 @@ public class Impl extends CausalityExport {
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
     private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
-    private final HashSet<Pair<Reason, AnalysisType>> reasonsInstantiatingTypes = new HashSet<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
     private final HashMap<Pair<Reason, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
@@ -64,7 +63,6 @@ public class Impl extends CausalityExport {
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
             });
             typeflowGateMethods.putAll(i.typeflowGateMethods);
-            reasonsInstantiatingTypes.addAll(i.reasonsInstantiatingTypes);
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
@@ -161,18 +159,6 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated) {
-        if((reason == null || reason.root()) && !rootReasons.empty())
-            reason = rootReasons.peek();
-
-        direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
-
-        if(instantiated) {
-            reasonsInstantiatingTypes.add(Pair.create(reason, type));
-        }
-    }
-
-    @Override
     public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
         Object o = bb.getSnippetReflectionProvider().asObject(Object.class, heapObject);
         Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
@@ -236,14 +222,6 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
-        type.forAllSuperTypes(t -> {
-            addTypeFlowEdge(cause, t.instantiatedTypes);
-            addTypeFlowEdge(cause, t.instantiatedTypesNonNull);
-        });
-    }
-
-    @Override
     public void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback) {
         direct_edges.add(Pair.create(CausalityExport.ReachableReason.create(e), new CausalityExport.ReachabilityNotificationCallback(callback)));
     }
@@ -258,7 +236,7 @@ public class Impl extends CausalityExport {
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
         if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance)
-            Thread.dumpStack();
+            throw new RuntimeException("Stacking Rerooting requests!");
 
         rootReasons.push(reason);
     }
@@ -342,27 +320,26 @@ public class Impl extends CausalityExport {
             }
         }
 
-        for (Pair<Reason, AnalysisType> e : reasonsInstantiatingTypes) {
-            Reason reason = e.getLeft();
+        for(Pair<Reason, Reason> e : direct_edges) {
+            if(e.getRight() instanceof TypeInstantiatedReason) {
+                TypeInstantiatedReason reason = (TypeInstantiatedReason) e.getRight();
 
-            if(reason != null && reason.unused())
-                continue;
+                if(reason.unused())
+                    continue;
 
-            AnalysisType t = e.getRight();
-            TypeState state = TypeState.forExactType(bb, t, false);
+                AnalysisType t = reason.type;
+                TypeState state = TypeState.forExactType(bb, t, false);
 
-            String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
-            if (reason != null) {
-                debugStr += " due to " + reason;
+                String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
+
+                Graph.FlowNode vfn = new Graph.FlowNode(debugStr, reason, state);
+                g.interflows.add(new Graph.FlowEdge(null, vfn));
+
+                t.forAllSuperTypes(t1 -> {
+                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)));
+                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)));
+                });
             }
-
-            Graph.FlowNode vfn = new Graph.FlowNode(debugStr, reason, state);
-            g.interflows.add(new Graph.FlowEdge(null, vfn));
-
-            t.forAllSuperTypes(t1 -> {
-                g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)));
-                g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)));
-            });
         }
 
         for (Map.Entry<Pair<Reason, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {

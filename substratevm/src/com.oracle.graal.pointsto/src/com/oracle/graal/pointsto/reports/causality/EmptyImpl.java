@@ -60,10 +60,6 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated) {
-    }
-
-    @Override
     public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
         return null;
     }
@@ -76,10 +72,6 @@ public class EmptyImpl extends CausalityExport {
     @Override
     public Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value) {
         return null;
-    }
-
-    @Override
-    public void registerTypeInstantiated(PointsToAnalysis bb, TypeFlow<?> cause, AnalysisType type) {
     }
 
     @Override

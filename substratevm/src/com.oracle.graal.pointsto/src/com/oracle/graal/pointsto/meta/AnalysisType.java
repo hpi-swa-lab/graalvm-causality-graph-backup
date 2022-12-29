@@ -457,8 +457,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     public boolean registerAsInHeap() {
-        CausalityExport.getInstance().registerTypeReachable(null, this, true);
-        registerAsReachable();
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
+        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+                registerAsReachable();
+            }
+        }
         if (AtomicUtils.atomicMark(this, isInHeapUpdater)) {
             onInstantiated(UsageKind.InHeap);
             return true;
@@ -470,8 +474,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      * @param node For future use and debugging
      */
     public boolean registerAsAllocated(Node node) {
-        CausalityExport.getInstance().registerTypeReachable(null, this, true);
-        registerAsReachable();
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
+        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+                registerAsReachable();
+            }
+        }
         if (AtomicUtils.atomicMark(this, isAllocatedUpdater)) {
             onInstantiated(UsageKind.Allocated);
             return true;
@@ -526,7 +534,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     public boolean registerAsReachable() {
-        CausalityExport.getInstance().registerTypeReachable(null, this, false);
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeReachableReason(this));
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
             forAllSuperTypes(type -> AtomicUtils.atomicMarkAndRun(type, isReachableUpdater, type::onReachable));
