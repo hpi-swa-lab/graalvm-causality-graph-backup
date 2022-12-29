@@ -122,14 +122,16 @@ public abstract class ImageHeapScanner {
 
     public void onFieldRead(AnalysisField field) {
         assert field.isRead();
-        /* Check if the value is available before accessing it. */
-        if (isValueAvailable(field)) {
-            AnalysisType declaringClass = field.getDeclaringClass();
-            if (field.isStatic()) {
-                snapshotFieldValue(field, declaringClass.getOrComputeData().getFieldValue(field));
-            } else {
-                /* Trigger field scanning for the already processed objects. */
-                postTask(() -> onInstanceFieldRead(field, declaringClass));
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            /* Check if the value is available before accessing it. */
+            if (isValueAvailable(field)) {
+                AnalysisType declaringClass = field.getDeclaringClass();
+                if (field.isStatic()) {
+                    snapshotFieldValue(field, declaringClass.getOrComputeData().getFieldValue(field));
+                } else {
+                    /* Trigger field scanning for the already processed objects. */
+                    postTask(() -> onInstanceFieldRead(field, declaringClass));
+                }
             }
         }
     }

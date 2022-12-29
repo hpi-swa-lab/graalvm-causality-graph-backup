@@ -290,8 +290,9 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
          * the method as invoked, it would have an unwanted side effect, where this method could
          * return before the class gets marked as reachable.
          */
-        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(this), getDeclaringClass(), false);
-        getDeclaringClass().registerAsReachable();
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(this))) {
+            getDeclaringClass().registerAsReachable();
+        }
         return AtomicUtils.atomicMarkAndRun(this, isImplementationInvokedUpdater, this::onReachable);
     }
 
@@ -329,8 +330,9 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
      * as in {@link AnalysisMethod#registerAsImplementationInvoked()}.
      */
     public boolean registerAsVirtualRootMethod() {
-        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(this), getDeclaringClass(), false);
-        getDeclaringClass().registerAsReachable();
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(this))) {
+            getDeclaringClass().registerAsReachable();
+        }
         return AtomicUtils.atomicMark(this, isVirtualRootMethodUpdater);
     }
 
@@ -338,8 +340,9 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
      * Registers this method as a direct (special or static) root for the analysis.
      */
     public boolean registerAsDirectRootMethod() {
-        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(this), getDeclaringClass(), false);
-        getDeclaringClass().registerAsReachable();
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(this))) {
+            getDeclaringClass().registerAsReachable();
+        }
         return AtomicUtils.atomicMark(this, isDirectRootMethodUpdater);
     }
 

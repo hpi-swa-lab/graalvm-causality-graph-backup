@@ -42,7 +42,6 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.api.runtime.GraalRuntime;
 import org.graalvm.compiler.core.common.spi.MetaAccessExtensionProvider;
@@ -436,8 +435,7 @@ public abstract class RuntimeCompilationFeature implements Feature {
 
         NodeClass<?>[] snippetNodeClasses = ((SubstrateReplacements) runtimeProviders.getReplacements()).getSnippetNodeClasses();
         for (NodeClass<?> nodeClass : snippetNodeClasses) {
-            AnalysisType t = config.getMetaAccess().lookupJavaType(nodeClass.getClazz());
-            t.registerAsAllocated(null);
+            config.getMetaAccess().lookupJavaType(nodeClass.getClazz()).registerAsAllocated(null);
         }
 
         /* Initialize configuration with reasonable default values. */
@@ -536,8 +534,7 @@ public abstract class RuntimeCompilationFeature implements Feature {
         AnalysisMetaAccess metaAccess = config.getMetaAccess();
         NodeClass<?>[] nodeClasses = graphEncoder.getNodeClasses();
         for (NodeClass<?> nodeClass : nodeClasses) {
-            AnalysisType t = metaAccess.lookupJavaType(nodeClass.getClazz());
-            t.registerAsAllocated(null);
+            metaAccess.lookupJavaType(nodeClass.getClazz()).registerAsAllocated(null);
         }
         if (GraalSupport.setGraphEncoding(config, graphEncoder.getEncoding(), graphEncoder.getObjects(), nodeClasses)) {
             config.requireAnalysisIteration();

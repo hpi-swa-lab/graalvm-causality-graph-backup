@@ -26,8 +26,6 @@ package com.oracle.svm.hosted.image;
 
 import static com.oracle.svm.core.util.VMError.shouldNotReachHere;
 
-import com.oracle.graal.pointsto.meta.AnalysisType;
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -48,9 +46,7 @@ class StringInternFeature implements InternalFeature {
     public static ResolvedJavaField getInternedStringsField(MetaAccessProvider metaAccess) {
         try {
             if (metaAccess instanceof AnalysisMetaAccess) {
-                AnalysisType type = ((AnalysisMetaAccess) metaAccess).lookupJavaType(StringInternSupport.class);
-                CausalityExport.getInstance().registerTypeReachable(null, type, false);
-                type.registerAsReachable();
+                ((AnalysisMetaAccess) metaAccess).lookupJavaType(StringInternSupport.class).registerAsReachable();
             }
             return metaAccess.lookupJavaField(StringInternSupport.class.getDeclaredField("internedStrings"));
         } catch (NoSuchFieldException ex) {

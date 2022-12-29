@@ -26,6 +26,7 @@ package com.oracle.svm.hosted.ameta;
 
 import java.util.function.ObjIntConsumer;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -315,8 +316,10 @@ public class AnalysisConstantReflectionProvider extends SharedConstantReflection
         if (!valueType.isReachable() && BuildPhaseProvider.isAnalysisFinished()) {
             throw VMError.shouldNotReachHere("Registering type as reachable after analysis: " + valueType);
         }
-        boolean added = valueType.registerAsReachable(); // TODO: Ignorieren... Oder hinnehmen, falls true zurückgegeben wird
-        int a = 5;
+
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+            valueType.registerAsReachable();
+        }
     }
 
     private SVMHost getHostVM() {

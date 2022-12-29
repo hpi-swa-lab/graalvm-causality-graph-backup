@@ -44,7 +44,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.AnnotationAccess;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
@@ -322,7 +321,6 @@ public class AnnotationSubstitutionProcessor extends SubstitutionProcessor {
                 switch (cvField.getRecomputeValueKind()) {
                     case FieldOffset:
                         AnalysisType targetFieldDeclaringType = bb.getMetaAccess().lookupJavaType(cvField.getTargetField().getDeclaringClass());
-                        CausalityExport.getInstance().registerTypeReachable(null, targetFieldDeclaringType, false);
                         targetFieldDeclaringType.registerAsReachable();
                         AnalysisField targetField = bb.getMetaAccess().lookupJavaField(cvField.getTargetField());
                         targetField.registerAsAccessed();

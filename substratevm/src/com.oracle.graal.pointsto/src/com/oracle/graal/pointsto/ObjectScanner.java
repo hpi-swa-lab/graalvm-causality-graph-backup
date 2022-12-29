@@ -416,8 +416,9 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            CausalityExport.getInstance().registerTypeReachable(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, entry.constant), type, false);
-            type.registerAsReachable();
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, entry.constant))) {
+                type.registerAsReachable();
+            }
 
             if (type.isInstanceClass()) {
                 /* Scan constant's instance fields. */

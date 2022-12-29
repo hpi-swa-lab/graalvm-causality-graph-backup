@@ -47,7 +47,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.Pair;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.phases.util.Providers;
@@ -346,7 +345,6 @@ public class FeatureImpl {
         }
 
         public void registerAsUsed(AnalysisType aType) {
-            CausalityExport.getInstance().registerTypeReachable(null, aType, false); // TODO: Possibly explicitly specify this should be investigated whether it has happened due to a (which?) Feature
             bb.markTypeReachable(aType);
         }
 
@@ -370,7 +368,7 @@ public class FeatureImpl {
         }
 
         public void registerAsRead(Field field, Object reason) {
-            getMetaAccess().lookupJavaType(field.getDeclaringClass()).registerAsReachable(); // TODO: Try to make feature accountable
+            getMetaAccess().lookupJavaType(field.getDeclaringClass()).registerAsReachable();
             registerAsRead(getMetaAccess().lookupJavaField(field), reason);
         }
 

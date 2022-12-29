@@ -112,6 +112,8 @@ public abstract class CausalityExport {
         public boolean unused() {
             return false;
         }
+
+        public boolean root() { return false; }
     }
 
     public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
@@ -294,6 +296,32 @@ public abstract class CausalityExport {
         }
     }
 
+    public static class HeapObjectClass extends Reason {
+        public final Class<?> clazz;
+
+        public HeapObjectClass(Class<?> clazz) {
+            this.clazz = clazz;
+        }
+
+        @Override
+        public String toString() {
+            return "Class in Heap: " + clazz.getTypeName();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            HeapObjectClass that = (HeapObjectClass) o;
+            return clazz.equals(that.clazz);
+        }
+
+        @Override
+        public int hashCode() {
+            return clazz.hashCode();
+        }
+    }
+
     public static class HeapObjectDynamicHub extends Reason {
         public final Class<?> forClass;
 
@@ -317,16 +345,20 @@ public abstract class CausalityExport {
 
         @Override
         public int hashCode() {
-            return Objects.hash(forClass);
+            return forClass.hashCode();
         }
     }
 
     public static class UnknownHeapObject extends Reason {
         public final Class<?> heapObjectType;
 
-
         public UnknownHeapObject(Class<?> heapObjectType) {
             this.heapObjectType = heapObjectType;
+        }
+
+        @Override
+        public boolean root() {
+            return true;
         }
 
         @Override
@@ -345,6 +377,18 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(heapObjectType);
+        }
+    }
+
+    // Can be used in Rerooting to indicate that registrations simply should be ignored
+    public static class Ignored extends Reason {
+        public static final Ignored Instance = new Ignored();
+
+        private Ignored() {}
+
+        @Override
+        public String toString() {
+            return "Ignored dummy node that never happens";
         }
     }
 }

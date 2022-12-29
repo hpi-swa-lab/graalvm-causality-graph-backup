@@ -30,7 +30,6 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.core.common.FieldIntrospection;
 import org.graalvm.compiler.core.common.Fields;
@@ -216,7 +215,6 @@ public class FieldsOffsetsFeature implements Feature {
 
         for (int i = 0; i < fields.getCount(); i++) {
             AnalysisField aField = config.getMetaAccess().lookupJavaField(findField(fields, i));
-            CausalityExport.getInstance().registerTypeReachable(null, aField.getType(), false);
             aField.getType().registerAsReachable();
             config.registerAsUnsafeAccessed(aField, partitionKind);
         }

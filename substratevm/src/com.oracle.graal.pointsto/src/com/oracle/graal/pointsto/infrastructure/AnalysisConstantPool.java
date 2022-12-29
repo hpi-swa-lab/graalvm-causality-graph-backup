@@ -47,8 +47,10 @@ public class AnalysisConstantPool extends WrappedConstantPool {
         JavaType declaringClass = field.getDeclaringClass();
         if (declaringClass instanceof ResolvedJavaType) {
             AnalysisType fieldDeclaringType = ((AnalysisUniverse) universe).lookup(declaringClass);
-            CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(((AnalysisUniverse)universe).lookup(substMethod)), fieldDeclaringType, false);
-            fieldDeclaringType.registerAsReachable();
+            // Causality-TODO: Inspect if this causes issues with InlineBeforeAnalysis
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(((AnalysisUniverse)universe).lookup(substMethod)))) {
+                fieldDeclaringType.registerAsReachable();
+            }
         }
         return universe.lookupAllowUnresolved(field);
     }

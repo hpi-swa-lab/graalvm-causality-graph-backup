@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.debug.GraalError;
 
 import com.oracle.graal.pointsto.api.DefaultUnsafePartition;
@@ -315,7 +316,9 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
 
     public void markFolded() {
         if (AtomicUtils.atomicMark(this, isFoldedUpdater)) {
-            getDeclaringClass().registerAsReachable(); // TODO: Ignorieren. Wenn constant folding versucht wird, macht die entsprechende Methode diesen Typen sowieso reachable.
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+                getDeclaringClass().registerAsReachable();
+            }
             onReachable();
         }
     }

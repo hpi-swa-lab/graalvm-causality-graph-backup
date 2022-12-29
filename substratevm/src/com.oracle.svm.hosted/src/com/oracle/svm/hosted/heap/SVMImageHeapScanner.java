@@ -155,9 +155,7 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
             CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(o));
             reflectionSupport.registerHeapReflectionObject(o);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {
-            DynamicHub hub = (DynamicHub) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(new CausalityExport.HeapObjectDynamicHub(hub.getHostedJavaClass()), new CausalityExport.ReflectionRegistration(hub.getHostedJavaClass()));
-            reflectionSupport.registerHeapDynamicHub(hub);
+            reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()));
         }
     }
 }

@@ -233,7 +233,6 @@ public class MethodTypeFlowBuilder {
                     InstanceOfNode node = (InstanceOfNode) n;
                     AnalysisType type = (AnalysisType) node.type().getType();
                     if (!ignoreInstanceOfType(type)) {
-                        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), type, false);
                         type.registerAsReachable();
                     }
 
@@ -314,8 +313,7 @@ public class MethodTypeFlowBuilder {
                          * metadata is only constructed after AOT compilation, so the image heap
                          * scanning during static analysis does not see these classes.
                          */
-                        CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason(method), frameStateMethod.getDeclaringClass(), false);
-                        frameStateMethod.getDeclaringClass().registerAsReachable(); // TODO: Make this method accountable for reachability
+                        frameStateMethod.getDeclaringClass().registerAsReachable();
                     }
 
                 } else if (n instanceof ForeignCall) {

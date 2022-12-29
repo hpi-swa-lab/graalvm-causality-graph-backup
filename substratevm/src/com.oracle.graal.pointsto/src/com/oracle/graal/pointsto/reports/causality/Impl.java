@@ -117,19 +117,17 @@ public class Impl extends CausalityExport {
 
     @Override
     public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
-        Reason reason = caller != null ? new MethodReachableReason(caller) : rootReasons.empty() ? null : rootReasons.peek();
-
         if(callee.isClassInitializer())
             return; // We later add an edge from type reachability to class initializer
 
-        if(reason == null && callee.getDeclaringClass().getName().contains("ReflectiveClassInitializationWorld") && callee.getName().contains("print"))
-            throw new RuntimeException("Got root!");
-
-        register(reason, new MethodReachableReason(callee));
+        register(caller == null ? null : new MethodReachableReason(caller), new MethodReachableReason(callee));
     }
 
     @Override
     public void register(Reason reason, Reason consequence) {
+        if((reason == null || reason.root()) && !rootReasons.empty())
+            reason = rootReasons.peek();
+
         direct_edges.add(Pair.create(reason, consequence));
     }
 
@@ -164,7 +162,7 @@ public class Impl extends CausalityExport {
 
     @Override
     public void registerTypeReachable(Reason reason, AnalysisType type, boolean instantiated) {
-        if(reason == null && !rootReasons.empty())
+        if((reason == null || reason.root()) && !rootReasons.empty())
             reason = rootReasons.peek();
 
         direct_edges.add(Pair.create(reason, new TypeReachableReason(type)));
@@ -252,15 +250,14 @@ public class Impl extends CausalityExport {
 
     @Override
     public void registerReasonRoot(Reason reason) {
-        Reason from = rootReasons.empty() ? null : rootReasons.peek();
-        direct_edges.add(Pair.create(from, reason));
+        register(null, reason);
     }
 
     private final Stack<Reason> rootReasons = new Stack<>();
 
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
-        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason))
+        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance)
             Thread.dumpStack();
 
         rootReasons.push(reason);

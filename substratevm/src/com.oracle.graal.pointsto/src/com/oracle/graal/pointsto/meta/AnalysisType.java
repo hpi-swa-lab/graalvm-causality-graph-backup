@@ -526,6 +526,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     public boolean registerAsReachable() {
+        CausalityExport.getInstance().registerTypeReachable(null, this, false);
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
             forAllSuperTypes(type -> AtomicUtils.atomicMarkAndRun(type, isReachableUpdater, type::onReachable));
@@ -1130,7 +1131,9 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     @Override
     public AnalysisField[] getStaticFields() {
-        registerAsReachable(); // TODO: Versuchen, zu ignorieren
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+            registerAsReachable();
+        }
         return convertFields(wrapped.getStaticFields(), new ArrayList<>(), false);
     }
 

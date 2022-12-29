@@ -24,7 +24,6 @@
  */
 package com.oracle.svm.hosted.phases;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.core.common.type.StampPair;
 import org.graalvm.compiler.debug.DebugContext;
@@ -124,7 +123,6 @@ public class HostedGraphKit extends SubstrateGraphKit {
         try {
             ResolvedJavaType type = getMetaAccess().lookupJavaType(clazz);
             if (type instanceof AnalysisType) {
-                CausalityExport.getInstance().registerTypeReachable(null, (AnalysisType) type, false);
                 ((AnalysisType) type).registerAsReachable();
             }
             ResolvedJavaField field = getMetaAccess().lookupJavaField(clazz.getDeclaredField(fieldName));

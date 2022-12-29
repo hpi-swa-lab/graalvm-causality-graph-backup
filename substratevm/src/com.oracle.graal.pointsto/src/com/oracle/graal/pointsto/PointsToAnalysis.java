@@ -367,6 +367,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
                     } else {
                         pointsToMethod.registerAsVirtualRootMethod();
                     }
+                    // Causality-TODO: Connect the event of calling addRootMethod and the Reachability of the overridden methods
                     InvokeTypeFlow invoke = pointsToMethod.initAndGetContextInsensitiveInvoke(PointsToAnalysis.this, null, invokeSpecial);
                     /*
                      * Initialize the type flow of the invoke's actual parameters with the
@@ -406,7 +407,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     @Override
     public AnalysisType addRootClass(Class<?> clazz, boolean addFields, boolean addArrayClass) {
         AnalysisType type = metaAccess.lookupJavaType(clazz);
-        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         type.registerAsReachable();
         return addRootClass(type, addFields, addArrayClass);
     }

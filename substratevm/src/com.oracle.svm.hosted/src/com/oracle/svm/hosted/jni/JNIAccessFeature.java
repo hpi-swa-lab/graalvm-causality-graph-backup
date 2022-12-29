@@ -263,9 +263,7 @@ public class JNIAccessFeature implements Feature {
     private static void registerJavaCallTrampoline(BeforeAnalysisAccessImpl access, CallVariant variant, boolean nonVirtual) {
         MetaAccessProvider originalMetaAccess = access.getMetaAccess().getWrapped();
         ResolvedJavaField field = JNIAccessibleMethod.getCallVariantWrapperField(originalMetaAccess, variant, nonVirtual);
-        AnalysisType fieldDeclaringType = access.getUniverse().lookup(field.getDeclaringClass());
-        CausalityExport.getInstance().registerTypeReachable(null, fieldDeclaringType, false);
-        fieldDeclaringType.registerAsReachable();
+        access.getUniverse().lookup(field.getDeclaringClass()).registerAsReachable();
         access.registerAsAccessed(access.getUniverse().lookup(field));
         String name = JNIJavaCallTrampolineHolder.getTrampolineName(variant, nonVirtual);
         Method method = ReflectionUtil.lookupMethod(JNIJavaCallTrampolineHolder.class, name);
@@ -338,7 +336,7 @@ public class JNIAccessFeature implements Feature {
         newMethods.clear();
 
         newFields.forEach((field, writable) -> {
-            // Ignore writable for now... TODO
+            // Ignore writable for now... Causality-TODO
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(field))) {
                 addField(field, writable, access);
             }
@@ -361,7 +359,6 @@ public class JNIAccessFeature implements Feature {
         return JNIReflectionDictionary.singleton().addClassIfAbsent(classObj, c -> {
             AnalysisType analysisClass = access.getMetaAccess().lookupJavaType(classObj);
             if (analysisClass.isInterface() || (analysisClass.isInstanceClass() && analysisClass.isAbstract())) {
-                CausalityExport.getInstance().registerTypeReachable(null, analysisClass, false);
                 analysisClass.registerAsReachable();
             } else {
                 access.getBigBang().markTypeInstantiated(analysisClass);
@@ -430,9 +427,7 @@ public class JNIAccessFeature implements Feature {
     }
 
     private static void addField(Field reflField, boolean writable, DuringAnalysisAccessImpl access) {
-        AnalysisType t = access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass());
-        CausalityExport.getInstance().registerTypeReachable(null, t, false);
-        t.registerAsReachable();
+        access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass()).registerAsReachable();
         if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess(), access.getUniverse())) {
             return;
         }

@@ -159,7 +159,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     private void registerMethods(boolean queriedOnly, Executable[] methods) {
         for (Executable method : methods) {
             CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(method));
-            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(method.getDeclaringClass()));
+            CausalityExport.getInstance().register(new CausalityExport.ReflectionRegistration(method), new CausalityExport.ReflectionRegistration(method.getDeclaringClass()));
 
             ExecutableAccessibility oldValue;
             ExecutableAccessibility newValue;
@@ -186,7 +186,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         // Unsafe and write accesses are always enabled for fields because accessors use Unsafe.
         for (Field field : fields) {
             CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(field));
-            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(field.getDeclaringClass()));
+            CausalityExport.getInstance().register(new CausalityExport.ReflectionRegistration(field), new CausalityExport.ReflectionRegistration(field.getDeclaringClass()));
             if (reflectionFields.add(field)) {
                 modifiedClasses.add(field.getDeclaringClass());
             }
@@ -246,7 +246,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         for (DynamicHub hub : heapDynamicHubs) {
             if (!processedDynamicHubs.contains(hub)) {
                 AnalysisType type = access.getHostVM().lookupType(hub);
-                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.HeapObjectDynamicHub(hub.getHostedJavaClass()))) {
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
                     if (!SubstitutionReflectivityFilter.shouldExclude(type.getJavaClass(), access.getMetaAccess(), access.getUniverse())) {
                         registerTypesForClass(access, type, type.getJavaClass());
                         processedDynamicHubs.add(hub);
@@ -701,7 +701,6 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     }
 
     private static void makeAnalysisTypeReachable(DuringAnalysisAccessImpl access, AnalysisType type) {
-        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         if (type.registerAsReachable()) {
             access.requireAnalysisIteration();
         }
@@ -742,7 +741,6 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
          * Make sure the class is registered as reachable before its fields are accessed below to
          * build the reflection metadata.
          */
-        CausalityExport.getInstance().registerTypeReachable(null, type, false);
         type.registerAsReachable();
         if (unsafeInstantiatedClasses.contains(clazz)) {
             type.registerAsAllocated(null);

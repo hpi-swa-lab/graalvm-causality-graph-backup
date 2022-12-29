@@ -784,8 +784,10 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == LoadFieldNode.class) {
                 LoadFieldNode oLoad = (LoadFieldNode) oNode;
-                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()), aUniverse.lookup(oLoad.field().getDeclaringClass()), false);
-                ResolvedJavaField tTarget = lookup(oLoad.field());
+                ResolvedJavaField tTarget;
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()))) {
+                    tTarget = lookup(oLoad.field());
+                }
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 ValueNode tLoad = b.add(LoadFieldNode.create(null, node(oLoad.object()), tTarget));
                 transplanted.put(oLoad, tLoad);
@@ -793,8 +795,10 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == StoreFieldNode.class) {
                 StoreFieldNode oStore = (StoreFieldNode) oNode;
-                CausalityExport.getInstance().registerTypeReachable(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()), aUniverse.lookup(oStore.field().getDeclaringClass()), false);
-                ResolvedJavaField tTarget = lookup(oStore.field());
+                ResolvedJavaField tTarget;
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()))) {
+                    tTarget = lookup(oStore.field());
+                }
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 b.add(new StoreFieldNode(node(oStore.object()), tTarget, node(oStore.value())));
                 return true;

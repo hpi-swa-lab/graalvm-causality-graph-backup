@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.word.WordBase;
 
 import com.oracle.graal.pointsto.BigBang;
