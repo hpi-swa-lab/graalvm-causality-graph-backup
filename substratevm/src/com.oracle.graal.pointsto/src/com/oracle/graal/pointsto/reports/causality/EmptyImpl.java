@@ -22,11 +22,6 @@ import java.util.function.Consumer;
  Does nothing. Used when CausalityExport isn't enabled.
  */
 public class EmptyImpl extends CausalityExport {
-
-    @Override
-    public void addTypeFlow(TypeFlow<?> flow) {
-    }
-
     @Override
     public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
     }

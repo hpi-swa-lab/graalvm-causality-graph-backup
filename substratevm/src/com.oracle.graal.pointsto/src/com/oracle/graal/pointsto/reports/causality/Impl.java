@@ -30,10 +30,9 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class Impl extends CausalityExport {
-    // All typeflows ever constructed
-    private final HashSet<TypeFlow<?>> typeflows = new HashSet<>();
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
@@ -55,7 +54,6 @@ public class Impl extends CausalityExport {
 
     public Impl(List<Impl> instances, PointsToAnalysis bb) {
         for (Impl i : instances) {
-            typeflows.addAll(i.typeflows);
             interflows.addAll(i.interflows);
             direct_edges.addAll(i.direct_edges);
             mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
@@ -66,11 +64,6 @@ public class Impl extends CausalityExport {
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
-    }
-
-    @Override
-    public void addTypeFlow(TypeFlow<?> flow) {
-        typeflows.add(flow);
     }
 
     @Override
@@ -110,7 +103,7 @@ public class Impl extends CausalityExport {
 
     @Override
     public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {
-        flowingFromHeap.compute(Pair.create(reason, destination), (p, state) -> state == null ? types: TypeState.forUnion(bb, state, types));
+        flowingFromHeap.compute(Pair.create(reason, destination), (p, state) -> state == null ? types : TypeState.forUnion(bb, state, types));
     }
 
     @Override
@@ -248,29 +241,27 @@ public class Impl extends CausalityExport {
         }
     }
 
-
-
-
     public Graph createCausalityGraph(PointsToAnalysis bb) {
         Graph g = new Graph();
 
         HashMap<TypeFlow<?>, Graph.RealFlowNode> flowMapping = new HashMap<>();
 
+        Function<TypeFlow<?>, Graph.RealFlowNode> flowMapper = flow ->
         {
-            for (TypeFlow<?> f : typeflows) {
-                if (f.getState().typesCount() != 0 || f.isSaturated()) {
-                    AnalysisMethod m = typeflowGateMethods.get(f);
+            if(flow.getState().typesCount() == 0 && !flow.isSaturated())
+                return null;
 
-                    MethodReachableReason reason = m == null ? null : new MethodReachableReason(m);
+            return flowMapping.computeIfAbsent(flow, f -> {
+                AnalysisMethod m = typeflowGateMethods.get(f);
 
-                    if(reason != null && reason.unused())
-                        continue;
+                MethodReachableReason reason = m == null ? null : new MethodReachableReason(m);
 
-                    flowMapping.put(f, Graph.RealFlowNode.create(bb, f, reason));
-                }
-            }
-        }
+                if(reason != null && reason.unused())
+                    return null;
 
+                return Graph.RealFlowNode.create(bb, f, reason);
+            });
+        };
 
         for (Pair<Reason, Reason> e : direct_edges) {
             Reason from = e.getLeft();
@@ -297,17 +288,26 @@ public class Impl extends CausalityExport {
             e.getValue().getLeft().stream()
                     .map(originalInvokeReceivers::get)
                     .filter(Objects::nonNull)
-                    .map(flowMapping::get)
+                    .map(flowMapper::apply)
                     .filter(Objects::nonNull)
                     .map(receiverNode -> new Graph.FlowEdge(receiverNode, invocationFlowNode))
                     .forEach(g.interflows::add);
         }
 
         for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows) {
-            if ((e.getLeft() != null && !flowMapping.containsKey(e.getLeft())) || !flowMapping.containsKey(e.getRight()))
+            Graph.RealFlowNode left = null;
+
+            if(e.getLeft() != null) {
+                left = flowMapper.apply(e.getLeft());
+                if(left == null)
+                    continue;
+            }
+
+            Graph.RealFlowNode right = flowMapper.apply(e.getRight());
+            if(right == null)
                 continue;
 
-            g.interflows.add(new Graph.FlowEdge(e.getLeft() == null ? null : flowMapping.get(e.getLeft()), flowMapping.get(e.getRight())));
+            g.interflows.add(new Graph.FlowEdge(left, right));
         }
 
         for (AnalysisType t : bb.getUniverse().getTypes()) {
@@ -336,14 +336,14 @@ public class Impl extends CausalityExport {
                 g.interflows.add(new Graph.FlowEdge(null, vfn));
 
                 t.forAllSuperTypes(t1 -> {
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypes)));
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapping.get(t1.instantiatedTypesNonNull)));
+                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
+                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
                 });
             }
         }
 
         for (Map.Entry<Pair<Reason, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
-            Graph.RealFlowNode fieldNode = flowMapping.get(e.getKey().getRight());
+            Graph.RealFlowNode fieldNode = flowMapper.apply(e.getKey().getRight());
 
             if (fieldNode == null)
                 continue;

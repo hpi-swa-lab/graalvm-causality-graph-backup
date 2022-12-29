@@ -126,8 +126,6 @@ public abstract class TypeFlow<T> {
         this.usedAsAParameter = false;
         this.usedAsAReceiver = false;
 
-        CausalityExport.getInstance().addTypeFlow(this);
-
         assert !(source instanceof Node) : "must not reference Graal node from TypeFlow: " + source;
     }
 

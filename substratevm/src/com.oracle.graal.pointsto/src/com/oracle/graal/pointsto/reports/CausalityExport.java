@@ -52,8 +52,6 @@ public abstract class CausalityExport {
 
 
     // --- Registration ---
-    public abstract void addTypeFlow(TypeFlow<?> flow);
-
     public abstract void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to);
 
     public abstract void setSaturationHappening(boolean currentlySaturating);
