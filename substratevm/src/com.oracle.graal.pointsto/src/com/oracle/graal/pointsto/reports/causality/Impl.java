@@ -168,7 +168,6 @@ public class Impl extends CausalityExport {
 
         if(reason == null) {
             reason = new UnknownHeapObject(o.getClass());
-            direct_edges.add(Pair.create(null, reason));
         }
 
         return reason;
@@ -215,7 +214,7 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback) {
+    public void registerReachabilityNotification(AnalysisElement e, Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
         direct_edges.add(Pair.create(CausalityExport.ReachableReason.create(e), new CausalityExport.ReachabilityNotificationCallback(callback)));
     }
 
@@ -228,7 +227,7 @@ public class Impl extends CausalityExport {
 
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
-        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance)
+        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance && !(rootReasons.peek() instanceof Feature))
             throw new RuntimeException("Stacking Rerooting requests!");
 
         rootReasons.push(reason);
@@ -262,6 +261,13 @@ public class Impl extends CausalityExport {
                 return Graph.RealFlowNode.create(bb, f, reason);
             });
         };
+
+        for (Pair<Reason, Reason> e : direct_edges) {
+            Reason from = e.getLeft();
+
+            if(from != null && !from.unused() && from.root())
+                g.directInvokes.add(new Graph.DirectCallEdge(null, from));
+        }
 
         for (Pair<Reason, Reason> e : direct_edges) {
             Reason from = e.getLeft();

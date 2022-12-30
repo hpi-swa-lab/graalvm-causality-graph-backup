@@ -739,7 +739,11 @@ public class NativeImageGenerator {
         try (Indent ignored = debug.logAndIndent("run analysis")) {
             try (Indent ignored1 = debug.logAndIndent("process analysis initializers")) {
                 BeforeAnalysisAccessImpl config = new BeforeAnalysisAccessImpl(featureHandler, loader, bb, nativeLibraries, debug);
-                featureHandler.forEachFeature(feature -> feature.beforeAnalysis(config));
+                featureHandler.forEachFeature(feature -> {
+                    try(CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+                        feature.beforeAnalysis(config);
+                    }
+                });
                 bb.getHostVM().getClassInitializationSupport().setConfigurationSealed(true);
             }
 
@@ -751,7 +755,11 @@ public class NativeImageGenerator {
                     bb.runAnalysis(debug, (universe) -> {
                         try (StopTimer t2 = TimerCollection.createTimerAndStart(TimerCollection.Registry.FEATURES)) {
                             bb.getHostVM().notifyClassReachabilityListener(universe, config);
-                            featureHandler.forEachFeature(feature -> feature.duringAnalysis(config));
+                            featureHandler.forEachFeature(feature -> {
+                                try(CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+                                    feature.duringAnalysis(config);
+                                }
+                            });
                         }
                         return !config.getAndResetRequireAnalysisIteration();
                     });

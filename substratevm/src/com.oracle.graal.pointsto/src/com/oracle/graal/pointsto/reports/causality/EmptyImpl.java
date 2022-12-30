@@ -70,7 +70,7 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback) {
+    public void registerReachabilityNotification(AnalysisElement e, Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
     }
 
     @Override

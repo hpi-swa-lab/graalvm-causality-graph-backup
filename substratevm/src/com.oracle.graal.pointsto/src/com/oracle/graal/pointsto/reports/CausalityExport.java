@@ -13,7 +13,6 @@ import com.oracle.graal.pointsto.reports.causality.Impl;
 import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
-import org.graalvm.nativeimage.hosted.Feature;
 
 import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Executable;
@@ -46,6 +45,9 @@ public abstract class CausalityExport {
 
     public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException {
         Impl data = new Impl(instancesOfAllThreads, bb);
+        // Let GC collect intermediate data structures
+        instances = null;
+        instancesOfAllThreads = null;
         Graph g = data.createCausalityGraph(bb);
         g.export(bb);
     }
@@ -74,7 +76,7 @@ public abstract class CausalityExport {
 
     public abstract Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value);
 
-    public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<Feature.DuringAnalysisAccess> callback);
+    public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback);
 
     public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
         beginAccountingRootRegistrationsTo(reason);
@@ -270,9 +272,9 @@ public abstract class CausalityExport {
     }
 
     public static class ReachabilityNotificationCallback extends CustomReason {
-        public final Consumer<Feature.DuringAnalysisAccess> callback;
+        public final Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback;
 
-        public ReachabilityNotificationCallback(Consumer<Feature.DuringAnalysisAccess> callback) {
+        public ReachabilityNotificationCallback(Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
             this.callback = callback;
         }
 
@@ -414,6 +416,98 @@ public abstract class CausalityExport {
         @Override
         public String toString() {
             return "Ignored dummy node that never happens";
+        }
+    }
+
+    public static class Feature extends Reason {
+        public final org.graalvm.nativeimage.hosted.Feature f;
+
+        public Feature(org.graalvm.nativeimage.hosted.Feature f) {
+            this.f = f;
+        }
+
+        @Override
+        public String toString() {
+            String str = "Feature: " + f.getClass().getTypeName();
+            String description = f.getDescription();
+            if(description != null)
+                str += " - " + description;
+            return str;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Feature feature = (Feature) o;
+
+            return f.equals(feature.f);
+        }
+
+        @Override
+        public int hashCode() {
+            return f.hashCode();
+        }
+    }
+
+    public static class FeatureRegistration extends Reason {
+        public final Class<?> baseFeatureClass;
+
+        public FeatureRegistration(Class<?> baseFeatureClass) {
+            this.baseFeatureClass = baseFeatureClass;
+        }
+
+        @Override
+        public String toString() {
+            return "Feature Registration: " + baseFeatureClass.getTypeName();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            FeatureRegistration that = (FeatureRegistration) o;
+
+            return baseFeatureClass.equals(that.baseFeatureClass);
+        }
+
+        @Override
+        public int hashCode() {
+            return baseFeatureClass.hashCode();
+        }
+    }
+
+    public static class AutomaticFeatureRegistration extends Reason {
+        public static final AutomaticFeatureRegistration Instance = new AutomaticFeatureRegistration();
+
+        private AutomaticFeatureRegistration() {}
+
+        @Override
+        public String toString() {
+            return "Automatic Feature Registration";
+        }
+
+        @Override
+        public boolean root() {
+            return true;
+        }
+    }
+
+    public static class UserEnabledFeatureRegistration extends Reason {
+        public static final UserEnabledFeatureRegistration Instance = new UserEnabledFeatureRegistration();
+
+        private UserEnabledFeatureRegistration() {}
+
+        @Override
+        public String toString() {
+            return "User-Requested Feature Registration";
+        }
+
+        @Override
+        public boolean root() {
+            return true;
         }
     }
 }

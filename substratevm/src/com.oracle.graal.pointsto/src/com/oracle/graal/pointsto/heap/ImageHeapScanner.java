@@ -585,10 +585,12 @@ public abstract class ImageHeapScanner {
      * in that case we execute the task directly.
      */
     private void maybeRunInExecutor(CompletionExecutor.DebugContextRunnable task) {
-        if (bb.executorIsStarted()) {
-            bb.postTask(task);
-        } else {
-            task.run(null);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            if (bb.executorIsStarted()) {
+                bb.postTask(task);
+            } else {
+                task.run(null);
+            }
         }
     }
 
