@@ -414,6 +414,11 @@ public abstract class CausalityExport {
         private Ignored() {}
 
         @Override
+        public boolean unused() {
+            return true;
+        }
+
+        @Override
         public String toString() {
             return "Ignored dummy node that never happens";
         }
