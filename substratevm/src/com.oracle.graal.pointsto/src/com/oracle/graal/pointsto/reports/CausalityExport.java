@@ -15,12 +15,16 @@ import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
 
 import java.lang.reflect.AccessibleObject;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public abstract class CausalityExport {
     private static final EmptyImpl dummyInstance = new EmptyImpl();
@@ -104,9 +108,44 @@ public abstract class CausalityExport {
         }
     }
 
+
+
+
+    private static String reflectionObjectToString(Object reflectionObject)
+    {
+        if(reflectionObject instanceof Class<?>) {
+            return ((Class<?>) reflectionObject).getTypeName();
+        } else if(reflectionObject instanceof Constructor<?>) {
+            Constructor<?> c = ((Constructor<?>) reflectionObject);
+            return c.getDeclaringClass().getTypeName() + ".<init>(" + Arrays.stream(c.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+        } else if(reflectionObject instanceof Method) {
+            Method m = ((Method) reflectionObject);
+            return m.getDeclaringClass().getTypeName() + '.' + m.getName() + '(' + Arrays.stream(m.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+        } else {
+            Field f = ((Field) reflectionObject);
+            return f.getDeclaringClass().getTypeName() + '.' + f.getName();
+        }
+    }
+
     public static abstract class Reason {
         public boolean unused() {
             return false;
+        }
+
+        private static String reflectionObjectToString(Object reflectionObject)
+        {
+            if(reflectionObject instanceof Class<?>) {
+                return ((Class<?>) reflectionObject).getTypeName();
+            } else if(reflectionObject instanceof Constructor<?>) {
+                Constructor<?> c = ((Constructor<?>) reflectionObject);
+                return c.getDeclaringClass().getTypeName() + ".<init>(" + Arrays.stream(c.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+            } else if(reflectionObject instanceof Method) {
+                Method m = ((Method) reflectionObject);
+                return m.getDeclaringClass().getTypeName() + '.' + m.getName() + '(' + Arrays.stream(m.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+            } else {
+                Field f = ((Field) reflectionObject);
+                return f.getDeclaringClass().getTypeName() + '.' + f.getName();
+            }
         }
 
         public boolean root() { return false; }
@@ -224,7 +263,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "JNI registration of " + element.toString();
+            return "JNI registration: " + reflectionObjectToString(element);
         }
 
         @Override
@@ -254,7 +293,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Reflection registration of " + element.toString();
+            return "Reflection registration: " + reflectionObjectToString(element);
         }
 
         @Override
@@ -280,7 +319,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Reachability callback " + callback;
+            return "Reachability callback: " + callback;
         }
 
         @Override
