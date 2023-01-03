@@ -132,22 +132,6 @@ public abstract class CausalityExport {
             return false;
         }
 
-        private static String reflectionObjectToString(Object reflectionObject)
-        {
-            if(reflectionObject instanceof Class<?>) {
-                return ((Class<?>) reflectionObject).getTypeName();
-            } else if(reflectionObject instanceof Constructor<?>) {
-                Constructor<?> c = ((Constructor<?>) reflectionObject);
-                return c.getDeclaringClass().getTypeName() + ".<init>(" + Arrays.stream(c.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
-            } else if(reflectionObject instanceof Method) {
-                Method m = ((Method) reflectionObject);
-                return m.getDeclaringClass().getTypeName() + '.' + m.getName() + '(' + Arrays.stream(m.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
-            } else {
-                Field f = ((Field) reflectionObject);
-                return f.getDeclaringClass().getTypeName() + '.' + f.getName();
-            }
-        }
-
         public boolean root() { return false; }
     }
 
@@ -492,34 +476,6 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return f.hashCode();
-        }
-    }
-
-    public static class FeatureRegistration extends Reason {
-        public final Class<?> baseFeatureClass;
-
-        public FeatureRegistration(Class<?> baseFeatureClass) {
-            this.baseFeatureClass = baseFeatureClass;
-        }
-
-        @Override
-        public String toString() {
-            return "Feature Registration: " + baseFeatureClass.getTypeName();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            FeatureRegistration that = (FeatureRegistration) o;
-
-            return baseFeatureClass.equals(that.baseFeatureClass);
-        }
-
-        @Override
-        public int hashCode() {
-            return baseFeatureClass.hashCode();
         }
     }
 

@@ -197,13 +197,12 @@ public class FeatureHandler {
      */
     @SuppressWarnings("unchecked")
     private void registerFeature(Class<?> baseFeatureClass, Function<Class<?>, Class<?>> specificClassProvider, IsInConfigurationAccessImpl access) {
-        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.FeatureRegistration(baseFeatureClass));
-
         if (!Feature.class.isAssignableFrom(baseFeatureClass)) {
             throw UserError.abort("Class does not implement %s: %s", Feature.class.getName(), baseFeatureClass.getName());
         }
 
         if (registeredFeatures.contains(baseFeatureClass)) {
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
             return;
         }
 
@@ -243,7 +242,7 @@ public class FeatureHandler {
             }
         }
 
-        CausalityExport.getInstance().register(new CausalityExport.FeatureRegistration(baseFeatureClass), new CausalityExport.Feature(feature));
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(feature));
         featureInstances.add(feature);
     }
 
