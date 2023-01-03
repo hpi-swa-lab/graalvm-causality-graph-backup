@@ -250,7 +250,7 @@ public class ObjectScanner {
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, value))) {
-                bb.markTypeInHeap(type);
+                bb.registerTypeAsInHeap(type, reason);
             }
             return;
         }
@@ -417,7 +417,7 @@ public class ObjectScanner {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, entry.constant))) {
-                type.registerAsReachable();
+                type.registerAsReachable(entry.reason);
             }
 
             if (type.isInstanceClass()) {

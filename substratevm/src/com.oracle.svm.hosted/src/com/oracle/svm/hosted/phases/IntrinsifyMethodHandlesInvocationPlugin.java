@@ -1018,7 +1018,6 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
     }
 
     private ResolvedJavaField lookup(ResolvedJavaField field) {
-        aUniverse.lookup(field.getDeclaringClass()).registerAsReachable();
         ResolvedJavaField result = aUniverse.lookup(field);
         if (hUniverse != null) {
             result = hUniverse.lookup(result);

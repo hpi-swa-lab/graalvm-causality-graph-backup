@@ -24,15 +24,9 @@
  */
 package com.oracle.graal.pointsto.infrastructure;
 
-import com.oracle.graal.pointsto.meta.AnalysisType;
-import com.oracle.graal.pointsto.meta.AnalysisUniverse;
-
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import jdk.vm.ci.meta.ConstantPool;
 import jdk.vm.ci.meta.JavaField;
-import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
-import jdk.vm.ci.meta.ResolvedJavaType;
 
 public class AnalysisConstantPool extends WrappedConstantPool {
 
@@ -44,14 +38,6 @@ public class AnalysisConstantPool extends WrappedConstantPool {
     public JavaField lookupField(int cpi, ResolvedJavaMethod method, int opcode) {
         ResolvedJavaMethod substMethod = universe.resolveSubstitution(((WrappedJavaMethod) method).getWrapped());
         JavaField field = wrapped.lookupField(cpi, substMethod, opcode);
-        JavaType declaringClass = field.getDeclaringClass();
-        if (declaringClass instanceof ResolvedJavaType) {
-            AnalysisType fieldDeclaringType = ((AnalysisUniverse) universe).lookup(declaringClass);
-            // Causality-TODO: Inspect if this causes issues with InlineBeforeAnalysis
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(((AnalysisUniverse)universe).lookup(substMethod)))) {
-                fieldDeclaringType.registerAsReachable();
-            }
-        }
         return universe.lookupAllowUnresolved(field);
     }
 }

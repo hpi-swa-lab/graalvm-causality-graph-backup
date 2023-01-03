@@ -43,7 +43,6 @@ import java.util.function.Function;
 
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.debug.GraalError;
-import org.graalvm.compiler.graph.Node;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 import org.graalvm.word.WordBase;
 
@@ -65,6 +64,7 @@ import com.oracle.graal.pointsto.util.ConcurrentLightHashMap;
 import com.oracle.graal.pointsto.util.ConcurrentLightHashSet;
 import com.oracle.svm.util.UnsafePartitionKind;
 
+import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.Assumptions.AssumptionResult;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
@@ -96,14 +96,14 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     private static final AtomicReferenceFieldUpdater<AnalysisType, Object> instantiatedNotificationsUpdater = AtomicReferenceFieldUpdater
                     .newUpdater(AnalysisType.class, Object.class, "typeInstantiatedNotifications");
 
-    private static final AtomicIntegerFieldUpdater<AnalysisType> isInHeapUpdater = AtomicIntegerFieldUpdater
-                    .newUpdater(AnalysisType.class, "isInHeap");
+    private static final AtomicReferenceFieldUpdater<AnalysisType, Object> isAllocatedUpdater = AtomicReferenceFieldUpdater
+                    .newUpdater(AnalysisType.class, Object.class, "isAllocated");
 
-    private static final AtomicIntegerFieldUpdater<AnalysisType> isAllocatedUpdater = AtomicIntegerFieldUpdater
-                    .newUpdater(AnalysisType.class, "isAllocated");
+    private static final AtomicReferenceFieldUpdater<AnalysisType, Object> isInHeapUpdater = AtomicReferenceFieldUpdater
+                    .newUpdater(AnalysisType.class, Object.class, "isInHeap");
 
-    private static final AtomicIntegerFieldUpdater<AnalysisType> isReachableUpdater = AtomicIntegerFieldUpdater
-                    .newUpdater(AnalysisType.class, "isReachable");
+    private static final AtomicReferenceFieldUpdater<AnalysisType, Object> isReachableUpdater = AtomicReferenceFieldUpdater
+                    .newUpdater(AnalysisType.class, Object.class, "isReachable");
 
     private static final AtomicIntegerFieldUpdater<AnalysisType> isAnySubtypeInstantiatedUpdater = AtomicIntegerFieldUpdater
                     .newUpdater(AnalysisType.class, "isAnySubtypeInstantiated");
@@ -111,9 +111,9 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     protected final AnalysisUniverse universe;
     private final ResolvedJavaType wrapped;
 
-    @SuppressWarnings("unused") private volatile int isInHeap;
-    @SuppressWarnings("unused") private volatile int isAllocated;
-    @SuppressWarnings("unused") private volatile int isReachable;
+    @SuppressWarnings("unused") private volatile Object isInHeap;
+    @SuppressWarnings("unused") private volatile Object isAllocated;
+    @SuppressWarnings("unused") private volatile Object isReachable;
     @SuppressWarnings("unused") private volatile int isAnySubtypeInstantiated;
     private boolean reachabilityListenerNotified;
     private boolean unsafeFieldsRecomputed;
@@ -456,14 +456,20 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
         return true;
     }
 
-    public boolean registerAsInHeap() {
+    /**
+     * @param reason the {@link BytecodePosition} where this type is marked as in-heap, or a
+     *            {@link com.oracle.graal.pointsto.ObjectScanner.ScanReason}, or a {@link String}
+     *            describing why this type was manually marked as in-heap
+     */
+    public boolean registerAsInHeap(Object reason) {
+        assert isValidReason(reason) : "Registering a type as in-heap needs to provide a valid reason.";
         CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
         try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
             try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
-                registerAsReachable();
+                registerAsReachable(reason);
             }
         }
-        if (AtomicUtils.atomicMark(this, isInHeapUpdater)) {
+        if (AtomicUtils.atomicSet(this, reason, isInHeapUpdater)) {
             onInstantiated(UsageKind.InHeap);
             return true;
         }
@@ -471,16 +477,19 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     /**
-     * @param node For future use and debugging
+     * @param reason the {@link BytecodePosition} where this type is marked as allocated, or a
+     *            {@link com.oracle.graal.pointsto.ObjectScanner.ScanReason}, or a {@link String}
+     *            describing why this type was manually marked as allocated
      */
-    public boolean registerAsAllocated(Node node) {
+    public boolean registerAsAllocated(Object reason) {
+        assert isValidReason(reason) : "Registering a type as allocated needs to provide a valid reason.";
         CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
         try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
             try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
-                registerAsReachable();
+                registerAsReachable(reason);
             }
         }
-        if (AtomicUtils.atomicMark(this, isAllocatedUpdater)) {
+        if (AtomicUtils.atomicSet(this, reason, isAllocatedUpdater)) {
             onInstantiated(UsageKind.Allocated);
             return true;
         }
@@ -533,11 +542,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     public void registerAsAssignable(BigBang bb) {
     }
 
-    public boolean registerAsReachable() {
+    public boolean registerAsReachable(Object reason) {
+        assert isValidReason(reason) : "Registering a type as reachable needs to provide a valid reason.";
         CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeReachableReason(this));
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
-            forAllSuperTypes(type -> AtomicUtils.atomicMarkAndRun(type, isReachableUpdater, type::onReachable));
+            forAllSuperTypes(type -> AtomicUtils.atomicSetAndRun(type, reason, isReachableUpdater, type::onReachable));
             return true;
         }
         return false;
@@ -563,7 +573,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
              * types as instantiated too allows more usages of Arrays.newInstance without the need
              * of explicit registration of types for reflection.
              */
-            registerAsAllocated(null);
+            registerAsAllocated("All array types are marked as instantiated eagerly.");
         }
         ensureInitialized();
     }
@@ -1139,9 +1149,6 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     @Override
     public AnalysisField[] getStaticFields() {
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
-            registerAsReachable();
-        }
         return convertFields(wrapped.getStaticFields(), new ArrayList<>(), false);
     }
 

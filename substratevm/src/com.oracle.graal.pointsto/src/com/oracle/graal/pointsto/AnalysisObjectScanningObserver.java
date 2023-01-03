@@ -46,7 +46,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
     @Override
     public boolean forRelocatedPointerFieldValue(JavaConstant receiver, AnalysisField field, JavaConstant fieldValue, ScanReason reason) {
         if (!field.isWritten()) {
-            return field.registerAsWritten(null);
+            return field.registerAsWritten(reason);
         }
         return false;
     }
@@ -130,7 +130,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
         try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject(analysis, value))) {
-            type.registerAsInHeap();
+            type.registerAsInHeap(reason);
         }
     }
 

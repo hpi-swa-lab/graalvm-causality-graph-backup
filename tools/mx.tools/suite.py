@@ -21,7 +21,7 @@
 # questions.
 #
 suite = {
-    "mxversion": "6.9.9",
+    "mxversion": "6.11.4",
     "name": "tools",
     "defaultLicense" : "GPLv2-CPE",
 
@@ -318,40 +318,40 @@ suite = {
     "libraries": {
         "TruffleJWS" : {
           "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/trufflejws-1.5.2.jar"],
-          "sha1" : "9a0b23fb70ec828405ade9252c2e1e946a2eb455",
+          "digest" : "sha512:6435a25bea1335553ce318be089f50ab56bbdd2f2e449b8d7f52dbfa69ee57e7aed4d2cf3225ba7dd63a7bc54ffafdc7ac497dfa64ac09f3552a1fec04016188",
           "sourceUrls": ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/trufflejws-1.5.2-src.jar"],
-          "sourceSha1" : "4b6f04d25ae52ace16f8ff9e7561f965e04f5848",
+          "sourceDigest" : "sha512:a0d6c208a0bdb40a8b5960ba43569cb2b976a1387f0c85d97781704d5df642072b318826715191f6f49df0d981aecbd8a0b83b05dbc84018504554e2887f1a8c",
         },
         "VISUALVM_COMMON" : {
             "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089.tar.gz"],
-            "sha1" : "9be26b4a0767960934ff45416a338b4ae8a82ee6",
+            "digest" : "sha512:404e526e244440f5d7ff470396eb39a011128c97cc8ebe0e750b4f818fd8dff3c1ed4f963417ab68f461a37a6e2f4457c127b516a45879a43887fe146b43827c",
         },
         "VISUALVM_PLATFORM_SPECIFIC" : {
             "os_arch" : {
                 "linux" : {
                     "amd64" : {
                         "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089-linux-amd64.tar.gz"],
-                        "sha1" : "b734a03e6323fb0d6ad7a9a3cbfbf183d46b2298",
+                        "digest" : "sha512:15f43b80ef82cdffeb08e6fce5305a49bc64c6ea4d303921a45d4b1fa5a4acd09dad69bf2323ea0861e189a43cfce4eaca41117e4e0a44c1fe2c4931acd0966d",
                     },
                     "aarch64" : {
                         "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089-linux-aarch64.tar.gz"],
-                        "sha1" : "867ce04e40a963e3b83493e34660b6bcd66b0d10",
+                        "digest" : "sha512:8987f5c0f3922df71dbc33249a15c5840b3e2164a6ace1dd14730542e9536ab11dd332ceff41b6b16900f9bfca9bc779f83e06bec30ec28c1915d1b8830e00ea",
                     }
                 },
                 "darwin" : {
                     "amd64" : {
                         "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089-macos.tar.gz"],
-                        "sha1" : "26770b3113d50be75733384f8e486f1ecbb63878",
+                        "digest" : "sha512:e56d669d88cc580c724ce57b3edec87ec8ead744642e85277da365541e2d2f7b595cbff8a87d2c5cf97e53a35e12a1c26d1c8496021e25bcacdb2b8d8ab845ae",
                     },
                     "aarch64" : {
                         "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089-macos.tar.gz"],
-                        "sha1" : "26770b3113d50be75733384f8e486f1ecbb63878",
+                        "digest" : "sha512:e56d669d88cc580c724ce57b3edec87ec8ead744642e85277da365541e2d2f7b595cbff8a87d2c5cf97e53a35e12a1c26d1c8496021e25bcacdb2b8d8ab845ae",
                     }
                 },
                 "windows" : {
                     "amd64" : {
                         "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm/visualvm-1089-windows-amd64.tar.gz"],
-                        "sha1" : "3b6739fe69a17e921a91eb6b9707a344f8ed067f",
+                        "digest" : "sha512:1c3169ea3dd1acad39aea2a99c49c756945d2714d1fa5f414af62de0d359767117579b8033b9a1365e8fcb71f906c0b75cb87d51697675829941b0564bfd58dc",
                     }
                 },
             }

@@ -20,22 +20,23 @@ Below is the example output when building a native executable of the `HelloWorld
 ================================================================================
 GraalVM Native Image: Generating 'helloworld' (executable)...
 ================================================================================
-[1/7] Initializing...                                            (2.5s @ 0.21GB)
+[1/8] Initializing...                                            (2.5s @ 0.21GB)
  Version info: 'GraalVM dev Java 11 CE'
  C compiler: gcc (linux, x86_64, 9.3.0)
  Garbage collector: Serial GC
-[2/7] Performing analysis...  [*******]                          (5.6s @ 0.46GB)
+[2/8] Performing analysis...  [*******]                          (5.6s @ 0.46GB)
    2,718 (72.93%) of  3,727 types reachable
    3,442 (53.43%) of  6,442 fields reachable
   12,128 (44.82%) of 27,058 methods reachable
       27 types,     0 fields, and   271 methods registered for reflection
       58 types,    59 fields, and    52 methods registered for JNI access
        4 native libraries: dl, pthread, rt, z
-[3/7] Building universe...                                       (0.5s @ 0.61GB)
-[4/7] Parsing methods...      [*]                                (0.5s @ 0.86GB)
-[5/7] Inlining methods...     [****]                             (0.5s @ 0.73GB)
-[6/7] Compiling methods...    [**]                               (3.7s @ 2.38GB)
-[7/7] Creating image...                                          (2.1s @ 1.04GB)
+[3/8] Building universe...                                       (0.5s @ 0.61GB)
+[4/8] Parsing methods...      [*]                                (0.5s @ 0.86GB)
+[5/8] Inlining methods...     [****]                             (0.5s @ 0.73GB)
+[6/8] Compiling methods...    [**]                               (3.7s @ 2.38GB)
+[7/8] Layouting methods...    [*]                                (0.5s @ 0.71GB)
+[8/8] Creating image...                                          (2.1s @ 1.04GB)
    4.00MB (28.31%) for code area:     7,073 compilation units
    5.90MB (41.70%) for image heap:   83,319 objects and 5 resources
    3.24MB (22.91%) for debug info generated in 1.0s
@@ -135,6 +136,10 @@ The progress indicator visualizes the number of inlining iterations.
 In this stage, the Graal compiler compiles all reachable methods to machine code.
 The progress indicator is printed periodically at an increasing interval.
 
+### <a name="stage-layouting"></a>Layouting Methods
+In this stage, compiled methods are layouted.
+The progress indicator is printed periodically at an increasing interval.
+
 ### <a name="stage-creating"></a>Creating Image
 In this stage, the native binary is created and written to disk.
 Debug info is also generated as part of this stage (if requested).
@@ -187,7 +192,7 @@ If the [GC statistics](#glossary-garbage-collection) do not show any problems, t
 
 #### <a name="glossary-cpu-load"></a>CPU load
 The CPU time used by the process divided by the total process time.
-Increase the number of CPU threads to reduce the time to build the native binary.
+Increase the number of CPU cores to reduce the time to build the native binary.
 
 ## Machine-Readable Build Output
 

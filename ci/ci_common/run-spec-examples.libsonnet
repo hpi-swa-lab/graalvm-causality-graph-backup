@@ -62,7 +62,7 @@ local r      = import "run-spec.libsonnet";
           "<all-os>" : r.exclude,
           "linux": {
             "amd64": {
-              "jdk19": r.task_spec({ "name": "task" }) + r.include,
+              "jdk20": r.task_spec({ "name": "task" }) + r.include,
             } +
             r.task_spec({ "target": "gate" }) + r.include,
           }
@@ -71,13 +71,13 @@ local r      = import "run-spec.libsonnet";
       local _result = {
         "linux": {
           "amd64": {
-            "jdk11": r.task_spec({
-              "target": "gate",
-            }),
             "jdk17": r.task_spec({
               "target": "gate",
             }),
             "jdk19": r.task_spec({
+              "target": "gate",
+            }),
+            "jdk20": r.task_spec({
               "name": "task",
               "target": "gate",
             }),
@@ -99,9 +99,9 @@ local r      = import "run-spec.libsonnet";
       local _result = {
         "linux": {
           "amd64": {
-            "jdk11": {},
             "jdk17": {},
             "jdk19": {},
+            "jdk20": {},
           },
         },
       };
@@ -184,7 +184,7 @@ local r      = import "run-spec.libsonnet";
       //
       local _result =
       {
-        "serialgc": {
+        "gc:serialgc": {
           "<all-os>": {
             "<build-config>": {
               "features": "SerialGC"
@@ -197,7 +197,7 @@ local r      = import "run-spec.libsonnet";
             }
           }
         },
-        "serialgc_musl": {
+        "gc:serialgc_libc:musl": {
           "<all-os>": {
             "<build-config>": {
               "features": "SerialGCMusl"
@@ -210,7 +210,7 @@ local r      = import "run-spec.libsonnet";
             }
           }
         },
-        "g1gc": {
+        "gc:g1gc": {
           "<all-os>": {
             "<build-config>": {
               "features": "G1GC"

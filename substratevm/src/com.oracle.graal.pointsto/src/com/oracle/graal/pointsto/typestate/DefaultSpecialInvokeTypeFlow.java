@@ -25,26 +25,28 @@
 package com.oracle.graal.pointsto.typestate;
 
 import java.util.Collection;
-import java.util.Collections;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.AbstractSpecialInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
+import com.oracle.graal.pointsto.flow.MethodFlowsGraphInfo;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
+import com.oracle.graal.pointsto.util.LightImmutableCollection;
+import com.oracle.svm.common.meta.MultiMethod.MultiMethodKey;
 
 import jdk.vm.ci.code.BytecodePosition;
 
 final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
 
-    MethodFlowsGraph calleeFlows = null;
+    private volatile boolean calleesLinked = false;
 
     DefaultSpecialInvokeTypeFlow(BytecodePosition invokeLocation, AnalysisType receiverType, PointsToAnalysisMethod targetMethod,
-                    TypeFlow<?>[] actualParameters, ActualReturnTypeFlow actualReturn) {
-        super(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn);
+                    TypeFlow<?>[] actualParameters, ActualReturnTypeFlow actualReturn, MultiMethodKey callerMultiMethodKey) {
+        super(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, callerMultiMethodKey);
     }
 
     @Override
@@ -53,37 +55,37 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
         /* The receiver state has changed. Process the invoke. */
 
         /*
-         * If this is the first time the invoke is updated then set the callee and link the calee's
+         * If this is the first time the invoke is updated then set the callee and link the callee's
          * type flows. If this invoke is never updated then the callee will never be set, therefore
          * the callee will be unreachable from this call site.
          */
-        initCallee();
+        initializeCallees(bb);
 
-        if(bb.getPurgeInfo().purgeRequested(callee.getMethod()))
-            return;
+        LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
+            if(bb.getPurgeInfo().purgeRequested(callee))
+                return;
 
-        if (calleeFlows == null) {
-            calleeFlows = callee.getOrCreateMethodFlowsGraph(bb, this);
-            linkCallee(bb, false, calleeFlows);
-            CausalityExport.getInstance().addDirectInvoke(this.method(), calleeFlows.getMethod());
-        }
+            MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);
+            assert calleeFlows.getMethod().equals(callee);
 
-        /*
-         * Every time the actual receiver state changes in the caller the formal receiver state
-         * needs to be updated as there is no direct update link between actual and formal
-         * receivers.
-         */
-        TypeState invokeState = filterReceiverState(bb, getReceiver().getState());
-        updateReceiver(bb, calleeFlows, invokeState);
+            if (!calleesLinked) {
+                linkCallee(bb, false, calleeFlows);
+                CausalityExport.getInstance().addDirectInvoke(this.method(), callee);
+            }
+
+            /*
+             * Every time the actual receiver state changes in the caller the formal receiver state
+             * needs to be updated as there is no direct update link between actual and formal
+             * receivers.
+             */
+            TypeState invokeState = filterReceiverState(bb, getReceiver().getState());
+            updateReceiver(bb, calleeFlows, invokeState);
+        });
+        calleesLinked = true;
     }
 
     @Override
-    public Collection<MethodFlowsGraph> getCalleesFlows(PointsToAnalysis bb) {
-        if (callee == null) {
-            /* This static invoke was not updated. */
-            return Collections.emptyList();
-        } else {
-            return Collections.singletonList(callee.getMethodFlowsGraph());
-        }
+    protected Collection<MethodFlowsGraph> getAllCalleesFlows(PointsToAnalysis bb) {
+        return DefaultInvokeTypeFlowUtil.getAllCalleesFlows(this);
     }
 }

@@ -1,11 +1,14 @@
 {
-  local common = import "../../common.jsonnet",
+  local common = import "../../ci/ci_common/common.jsonnet",
   local tools      = import "ci_common/tools.libsonnet",
   local sg         = import "ci_common/svm-gate.libsonnet",
+  local inc        = import "ci_common/include.libsonnet",
   local run_spec   = import "../../ci/ci_common/run-spec.libsonnet",
+  local exclude    = run_spec.exclude,
 
   local task_spec = run_spec.task_spec,
   local platform_spec = run_spec.platform_spec,
+  local evaluate_late = run_spec.evaluate_late,
 
   local t(limit) = task_spec({timelimit: limit}),
 
@@ -16,13 +19,22 @@
   local jdt = task_spec(common.jdt),
   local gate = sg.gate,
   local gdb(version) = task_spec(sg.gdb(version)),
-  local clone_js_benchmarks = sg.clone_js_benchmarks,
+  local use_musl = sg.use_musl,
+  local add_quickbuild = sg.add_quickbuild,
 
-  local maven = task_spec({
+  local maven = task_spec(evaluate_late('05_add_maven', function(b)
+  if b.os == 'windows' then {
+    downloads+: {
+      MAVEN_HOME: {name: 'maven', version: '3.3.9', platformspecific: false},
+    },
+    environment+: {
+      PATH: '$MAVEN_HOME\\bin;$JAVA_HOME\\bin;$PATH',
+    },
+  } else {
     packages+: {
       maven: "==3.6.3",
     },
-  }),
+  })),
 
   local jsonschema = task_spec({
     packages+: {
@@ -30,21 +42,7 @@
     },
   }),
 
-  local musl_toolchain = task_spec({
-    downloads+: {
-      "MUSL_TOOLCHAIN": {
-        "name": "musl-toolchain",
-        "version": "1.0",
-        "platformspecific": true,
-      },
-    },
-    environment+: {
-      # Note that we must add the toolchain to the end of the PATH so that the system gcc still remains the first choice
-      # for building the rest of GraalVM. The musl toolchain also provides a gcc executable that would shadow the system one
-      # if it were added at the start of the PATH.
-      PATH: "$PATH:$MUSL_TOOLCHAIN/bin",
-    },
-  }),
+  local musl_toolchain = task_spec(inc.musl_dependency),
 
   local mx_build_exploded = task_spec({
     environment+: {
@@ -52,17 +50,10 @@
     },
   }),
 
-  local linux_amd64_jdk11 = common.linux_amd64   + common.labsjdk11,
-  local linux_amd64_jdk17 = common.linux_amd64   + common.labsjdk17,
-  local linux_amd64_jdk19 = common.linux_amd64   + common.labsjdk19,
-  local darwin_jdk17      = common.darwin_amd64  + common.labsjdk17,
-  local windows_jdk17     = common.windows_amd64 + common.labsjdk17 + common.devkits["windows-jdk17"],
-
   // JDKs
   local jdk_name_to_dict = {
-    "jdk11"+: common.labsjdk11,
     "jdk17"+: common.labsjdk17,
-    "jdk19"+: common.labsjdk19,
+    "jdk20"+: common.labsjdk20,
   },
 
   local default_os_arch = {
@@ -86,34 +77,53 @@
       tools.delete_timelimit(jdk_name_to_dict[b.jdk] + default_os_arch[b.os][b.arch])
   })),
 
-  local no_jobs = {
-    "<all-os>"+: run_spec.exclude,
+  local all_jobs = {
+    "windows:aarch64"+: exclude,
+    "*:*:jdk19"+: exclude,
   },
+  local no_jobs = all_jobs {
+    "*"+: exclude,
+  },
+
+  local feature_map = {
+    libc: {
+      musl: no_jobs {
+        "*"+: use_musl,
+      },
+    },
+    optlevel: {
+      quickbuild: no_jobs {
+        "*"+: add_quickbuild,
+      },
+    },
+    "java-compiler": {
+      ecj: no_jobs {
+        "*"+: sg.use_ecj,
+      },
+    },
+  },
+  local feature_order = ["libc", "optlevel", "java-compiler"],
+
+  local variants(s) = run_spec.generate_variants(s, feature_map, order=feature_order),
 
   // START MAIN BUILD DEFINITION
   local task_dict = {
-    "js": mxgate("build,js") + clone_js_benchmarks + platform_spec(no_jobs) + platform_spec({
-      "linux:amd64:jdk17": gate + t("35:00"),
-      "darwin:amd64:jdk17": gate + t("45:00"),
+    "style-fullbuild": mxgate("fullbuild,style,nativeimagehelp") + eclipse + jdt + maven + mx_build_exploded + gdb("10.2") + platform_spec(no_jobs) + platform_spec({
+      "linux:amd64:jdk20": gate + t("30:00"),
     }),
-    "js-quickbuild": mxgate("build,js_quickbuild") + clone_js_benchmarks + platform_spec(no_jobs) + platform_spec({
-      "darwin:amd64:jdk17": gate + t("45:00"),
-    }),
-    "build-ce": mxgate("build,checkstubs,helloworld,test,nativeimagehelp,muslcbuild,debuginfotest") + maven + musl_toolchain + gdb("10.2") + platform_spec(no_jobs) + platform_spec({
-      "linux:amd64:jdk11": gate + t("35:00"),
-    }),
-    "modules-basic": mxgate("build,hellomodule,test") + maven + platform_spec(no_jobs) + platform_spec({
-      "linux:amd64:jdk11": gate + t("30:00"),
-    }),
-    "style-fullbuild": mxgate("style,fullbuild,helloworld,test,svmjunit,debuginfotest") + eclipse + jdt + maven + jsonschema + mx_build_exploded + gdb("10.2") + platform_spec(no_jobs) + platform_spec({
-      "linux:amd64:jdk17": gate + t("50:00"),
-    }),
-    "basics": mxgate("build,helloworld,test,svmjunit") + platform_spec(no_jobs) + platform_spec({
-      "linux:amd64:jdk19": gate + t("55:00"),
+    "basics": mxgate("build,helloworld,native_unittests,truffle_unittests,debuginfotest,hellomodule") + maven + jsonschema + platform_spec(no_jobs) + platform_spec({
+      "linux:amd64:jdk20": gate + gdb("10.2") + t("55:00"),
       "windows:amd64:jdk17": gate + t("1:30:00"),
-    }),
-    "basics-quickbuild": mxgate("build,helloworld_quickbuild,test_quickbuild,svmjunit_quickbuild") + platform_spec(no_jobs) + platform_spec({
-      "windows:amd64:jdk17": gate + t("1:30:00"),
+    }) + variants({
+      "optlevel:quickbuild": {
+        "windows:amd64:jdk17": gate + t("1:30:00"),
+      },
+      "libc:musl": {
+        "linux:amd64:jdk17": gate + gdb("10.2") + t("55:00"),
+      },
+      "java-compiler:ecj": {
+        "linux:amd64:jdk17": gate + gdb("10.2") + t("55:00"),
+      },
     }),
   },
   // END MAIN BUILD DEFINITION

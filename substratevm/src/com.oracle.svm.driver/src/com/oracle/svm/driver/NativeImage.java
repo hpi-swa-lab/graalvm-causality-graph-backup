@@ -81,6 +81,7 @@ import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.option.OptionUtils;
 import com.oracle.svm.core.option.SubstrateOptionsParser;
 import com.oracle.svm.core.util.ClasspathUtils;
+import com.oracle.svm.core.util.ExitStatus;
 import com.oracle.svm.core.util.VMError;
 import com.oracle.svm.driver.MacroOption.EnabledOption;
 import com.oracle.svm.driver.MacroOption.Registry;
@@ -110,6 +111,8 @@ public class NativeImage {
 
     static final String graalvmVersion = System.getProperty("org.graalvm.version", "dev");
     static final String graalvmConfig = System.getProperty("org.graalvm.config", "CE");
+    static final String graalvmVendor = System.getProperty("org.graalvm.vendor", "Oracle Corporation");
+    static final String graalvmVendorUrl = System.getProperty("org.graalvm.vendorurl", "https://www.graalvm.org/");
 
     private static Map<String, String[]> getCompilerFlags() {
         Map<String, String[]> result = new HashMap<>();
@@ -214,7 +217,6 @@ public class NativeImage {
     final String oHPath = oH(SubstrateOptions.Path);
     final String oHEnableSharedLibraryFlag = oH + "+" + SubstrateOptions.SharedLibrary.getName();
     final String oHCLibraryPath = oH(SubstrateOptions.CLibraryPath);
-    final String oHOptimize = oH(SubstrateOptions.Optimize);
     final String oHFallbackThreshold = oH(SubstrateOptions.FallbackThreshold);
     final String oHFallbackExecutorJavaArg = oH(FallbackExecutor.Options.FallbackExecutorJavaArg);
     final String oRRuntimeJavaArg = oR(Options.FallbackExecutorRuntimeJavaArg);
@@ -788,6 +790,8 @@ public class NativeImage {
         /* Prevent JVM that runs the image builder to steal focus */
         addImageBuilderJavaArgs("-Djava.awt.headless=true");
         addImageBuilderJavaArgs("-Dorg.graalvm.version=" + graalvmVersion);
+        addImageBuilderJavaArgs("-Dorg.graalvm.vendor=" + graalvmVendor);
+        addImageBuilderJavaArgs("-Dorg.graalvm.vendorurl=" + graalvmVendorUrl);
         if (!NativeImage.IS_AOT) {
             addImageBuilderJavaArgs("-Dorg.graalvm.config=" + graalvmConfig);
         }
@@ -1133,7 +1137,7 @@ public class NativeImage {
 
         if (!config.buildFallbackImage() && imageBuilderArgs.contains(oHFallbackThreshold + SubstrateOptions.ForceFallback)) {
             /* Bypass regular build and proceed with fallback image building */
-            return 2;
+            return ExitStatus.FALLBACK_IMAGE.getValue();
         }
 
         if (!addModules.isEmpty()) {
@@ -1357,10 +1361,10 @@ public class NativeImage {
         }
 
         if (dryRun) {
-            return 0;
+            return ExitStatus.OK.getValue();
         }
 
-        int exitStatus = 1;
+        int exitStatus = ExitStatus.DRIVER_TO_BUILDER_ERROR.getValue();
 
         Process p = null;
         try {
@@ -1430,7 +1434,7 @@ public class NativeImage {
             }
             System.exit(e.exitCode);
         }
-        System.exit(0);
+        System.exit(ExitStatus.OK.getValue());
     }
 
     protected static void build(BuildConfiguration config, Function<BuildConfiguration, NativeImage> nativeImageProvider) {
@@ -1448,18 +1452,25 @@ public class NativeImage {
                 }
             }
             int buildStatus = nativeImage.completeImageBuild();
-            if (buildStatus == 2) {
-                /* Perform fallback build */
-                nativeImage.showMessage("Generating fallback image...");
-                build(new FallbackBuildConfiguration(nativeImage), nativeImageProvider);
-                showWarning("Image '" + nativeImage.imageName +
-                                "' is a fallback image that requires a JDK for execution " +
-                                "(use --" + SubstrateOptions.OptionNameNoFallback +
-                                " to suppress fallback image generation and to print more detailed information why a fallback image was necessary).");
-            } else if (buildStatus != 0) {
-                String message = String.format("Image build request for '%s' (pid: %d, path: %s) failed with exit status %d",
-                                nativeImage.imageName, nativeImage.imageBuilderPid, nativeImage.imagePath, buildStatus);
-                throw showError(message, null, buildStatus);
+            switch (ExitStatus.of(buildStatus)) {
+                case OK:
+                    break;
+                case BUILDER_ERROR:
+                    /* Exit, builder has handled error reporting. */
+                    System.exit(ExitStatus.BUILDER_ERROR.getValue());
+                    break;
+                case FALLBACK_IMAGE:
+                    nativeImage.showMessage("Generating fallback image...");
+                    build(new FallbackBuildConfiguration(nativeImage), nativeImageProvider);
+                    showWarning("Image '" + nativeImage.imageName +
+                                    "' is a fallback image that requires a JDK for execution " +
+                                    "(use --" + SubstrateOptions.OptionNameNoFallback +
+                                    " to suppress fallback image generation and to print more detailed information why a fallback image was necessary).");
+                    break;
+                default:
+                    String message = String.format("Image build request for '%s' (pid: %d, path: %s) failed with exit status %d",
+                                    nativeImage.imageName, nativeImage.imageBuilderPid, nativeImage.imagePath, buildStatus);
+                    throw showError(message, null, buildStatus);
             }
         }
     }
@@ -1744,7 +1755,7 @@ public class NativeImage {
         }
 
         private NativeImageError(String message, Throwable cause) {
-            this(message, cause, 1);
+            this(message, cause, ExitStatus.DRIVER_ERROR.getValue());
         }
 
         public NativeImageError(String message, Throwable cause, int exitCode) {

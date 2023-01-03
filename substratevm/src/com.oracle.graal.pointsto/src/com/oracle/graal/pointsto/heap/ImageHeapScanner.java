@@ -112,10 +112,11 @@ public abstract class ImageHeapScanner {
     public void scanEmbeddedRoot(JavaConstant root, BytecodePosition position) {
         if (isNonNullObjectConstant(root)) {
             AnalysisType type = metaAccess.lookupJavaType(root);
-            type.registerAsReachable();
+            EmbeddedRootScan reason = new EmbeddedRootScan(position, root);
+            type.registerAsReachable(reason);
             // Explicitly don't unroot registrations here. Otherwise, the current method processes by MethodTypeFlowBuilder could be accounted for scanned objects
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
-                getOrCreateConstantReachableTask(root, new EmbeddedRootScan(position, root), null);
+                getOrCreateConstantReachableTask(root, reason, null);
             }
         }
     }
@@ -174,11 +175,11 @@ public abstract class ImageHeapScanner {
         return data;
     }
 
-    void markTypeInstantiated(AnalysisType type) {
+    void markTypeInstantiated(AnalysisType type, ScanReason reason) {
         if (universe.sealed() && !type.isReachable()) {
             throw AnalysisError.shouldNotReachHere("Universe is sealed. New type reachable: " + type.toJavaName());
         }
-        universe.getBigbang().markTypeInHeap(type);
+        universe.getBigbang().registerTypeAsInHeap(type, reason);
     }
 
     JavaConstant markConstantReachable(JavaConstant constant, ScanReason reason, Consumer<ScanReason> onAnalysisModified) {
@@ -257,13 +258,13 @@ public abstract class ImageHeapScanner {
                 }
             }
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
-                markTypeInstantiated(type);
+                markTypeInstantiated(type, reason);
             }
         } else {
             ImageHeapInstance instance = (ImageHeapInstance) object;
             /* We are about to query the type's fields, the type must be marked as reachable. */
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
-                markTypeInstantiated(type);
+                markTypeInstantiated(type, reason);
             }
             for (AnalysisField field : type.getInstanceFields(true)) {
                 if (field.isRead() && isValueAvailable(field)) {
@@ -290,7 +291,7 @@ public abstract class ImageHeapScanner {
                          * 
                          * So for now we just reinstall the original JavaConstant value when the
                          * future is completed.
-                         *
+                         * 
                          * More specifically, the long term plan is that after scanning
                          * instance.field will refer to the `scannedFieldValue`, so any future read
                          * of `instance.field` will return an ImageHeapInstance. Moreover,
@@ -363,7 +364,7 @@ public abstract class ImageHeapScanner {
                 }
             }
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
-                markTypeInstantiated(type);
+                markTypeInstantiated(type, reason);
             }
         } else {
             /*
@@ -373,7 +374,7 @@ public abstract class ImageHeapScanner {
              */
             /* We are about to query the type's fields, the type must be marked as reachable. */
             try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
-                markTypeInstantiated(type);
+                markTypeInstantiated(type, reason);
             }
             AnalysisField[] instanceFields = type.getInstanceFields(true);
             newImageHeapConstant = new ImageHeapInstance(type, constant, instanceFields.length);
@@ -393,12 +394,19 @@ public abstract class ImageHeapScanner {
                     return value;
                 }));
             }
+
+            AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
+            if (typeFromClassConstant != null) {
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) { // Causality-TODO!
+                    typeFromClassConstant.registerAsReachable(reason);
+                }
+            }
         }
 
         /*
          * Following all the array elements and reachable field values can be done asynchronously.
          */
-        postTask(() -> onObjectReachable(newImageHeapConstant));
+        postTask(() -> onObjectReachable(newImageHeapConstant, reason));
         return newImageHeapConstant;
     }
 
@@ -525,12 +533,12 @@ public abstract class ImageHeapScanner {
         return analysisModified;
     }
 
-    protected void onObjectReachable(ImageHeapConstant imageHeapConstant) {
+    protected void onObjectReachable(ImageHeapConstant imageHeapConstant, ScanReason reason) {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.add(objectType, imageHeapConstant);
 
         try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()))) {
-            markTypeInstantiated(objectType);
+            markTypeInstantiated(objectType, reason);
         }
 
         if (imageHeapConstant instanceof ImageHeapInstance) {

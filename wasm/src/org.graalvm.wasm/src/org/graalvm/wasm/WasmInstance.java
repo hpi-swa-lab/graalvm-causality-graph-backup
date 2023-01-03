@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -66,11 +66,15 @@ import com.oracle.truffle.api.profiles.BranchProfile;
 public final class WasmInstance extends RuntimeState implements TruffleObject {
 
     public WasmInstance(WasmContext context, WasmModule module) {
-        this(context, module, module.numFunctions());
+        this(context, module, module.numFunctions(), module.droppedDataInstanceOffset());
     }
 
     public WasmInstance(WasmContext context, WasmModule module, int numberOfFunctions) {
-        super(context, module, numberOfFunctions);
+        super(context, module, numberOfFunctions, 0);
+    }
+
+    private WasmInstance(WasmContext context, WasmModule module, int numberOfFunctions, int droppedDataInstanceAddress) {
+        super(context, module, numberOfFunctions, droppedDataInstanceAddress);
     }
 
     public String name() {
@@ -118,8 +122,10 @@ public final class WasmInstance extends RuntimeState implements TruffleObject {
         if (function != null) {
             return functionInstance(function);
         }
-        if (symbolTable.exportedTableNames().contains(member)) {
-            return table();
+        final Integer tableIndex = symbolTable.exportedTables().get(member);
+        if (tableIndex != null) {
+            final WasmContext context = WasmContext.get(null);
+            return context.tables().table(tableAddress(tableIndex));
         }
         if (symbolTable.exportedMemoryNames().contains(member)) {
             return memory();
@@ -167,7 +173,7 @@ public final class WasmInstance extends RuntimeState implements TruffleObject {
         try {
             return symbolTable.exportedFunctions().containsKey(member) ||
                             symbolTable.exportedMemoryNames().contains(member) ||
-                            symbolTable.exportedTableNames().contains(member) ||
+                            symbolTable.exportedTables().containsKey(member) ||
                             symbolTable.exportedGlobals().containsKey(member);
         } catch (NumberFormatException exc) {
             return false;
@@ -205,6 +211,9 @@ public final class WasmInstance extends RuntimeState implements TruffleObject {
                 return Float.intBitsToFloat(globals.loadAsInt(address));
             case WasmType.F64_TYPE:
                 return Double.longBitsToDouble(globals.loadAsLong(address));
+            case WasmType.FUNCREF_TYPE:
+            case WasmType.EXTERNREF_TYPE:
+                return globals.loadAsReference(address);
             default:
                 CompilerDirectives.transferToInterpreter();
                 throw new RuntimeException("Unknown type: " + type);
@@ -221,7 +230,9 @@ public final class WasmInstance extends RuntimeState implements TruffleObject {
         for (String functionName : symbolTable.exportedFunctions().getKeys()) {
             exportNames.add(functionName);
         }
-        exportNames.addAll(symbolTable.exportedTableNames());
+        for (String tableName : symbolTable.exportedTables().getKeys()) {
+            exportNames.add(tableName);
+        }
         exportNames.addAll(symbolTable.exportedMemoryNames());
         for (String globalName : symbolTable.exportedGlobals().getKeys()) {
             exportNames.add(globalName);

@@ -147,15 +147,19 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
     }
 
     @Override
-    protected void onObjectReachable(ImageHeapConstant imageHeapConstant) {
-        super.onObjectReachable(imageHeapConstant);
+    protected void onObjectReachable(ImageHeapConstant imageHeapConstant, ScanReason reason) {
+        super.onObjectReachable(imageHeapConstant, reason);
 
-        if (metaAccess.isInstanceOf(imageHeapConstant, Field.class) || metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
-            AccessibleObject o = (AccessibleObject) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(o));
-            reflectionSupport.registerHeapReflectionObject(o);
+        if (metaAccess.isInstanceOf(imageHeapConstant, Field.class)) {
+            Field f = (Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
+            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(f));
+            reflectionSupport.registerHeapReflectionField((Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
+        } else if (metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
+            Executable e = (Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
+            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(e));
+            reflectionSupport.registerHeapReflectionExecutable((Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {
-            reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()));
+            reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         }
     }
 }

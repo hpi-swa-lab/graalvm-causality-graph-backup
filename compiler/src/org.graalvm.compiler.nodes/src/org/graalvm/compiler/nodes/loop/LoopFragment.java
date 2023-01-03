@@ -25,8 +25,10 @@
 package org.graalvm.compiler.nodes.loop;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.List;
 
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.MapCursor;
@@ -54,7 +56,7 @@ import org.graalvm.compiler.nodes.ProxyNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.VirtualState;
-import org.graalvm.compiler.nodes.cfg.Block;
+import org.graalvm.compiler.nodes.cfg.HIRBlock;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.java.MonitorEnterNode;
 import org.graalvm.compiler.nodes.spi.NodeWithState;
@@ -201,9 +203,13 @@ public abstract class LoopFragment {
             finishDuplication();
             nodes = new NodeBitMap(graph());
 
-            checkNoNulls(duplicationMap);
-
-            nodes.markAll(duplicationMap.getValues());
+            try {
+                nodes.markAll(duplicationMap.getValues());
+            } catch (Throwable t) {
+                checkNoNulls(duplicationMap);
+                graph().getDebug().forceDump(graph(), "map of type %s has a null key", duplicationMap.getClass());
+                throw GraalError.shouldNotReachHere(t);
+            }
             nodesReady = true;
         } else {
             // TODO (gd) apply fix ?
@@ -211,10 +217,31 @@ public abstract class LoopFragment {
     }
 
     private void checkNoNulls(EconomicMap<Node, Node> dupMap) {
+        List<Node> keyListByIterationOrder = new ArrayList<>();
+        List<Node> valueListByIterationOrder = new ArrayList<>();
+        List<Node> valueListByIterationOrderVALUEAPI = new ArrayList<>();
+
         MapCursor<Node, Node> c = dupMap.getEntries();
         while (c.advance()) {
-            GraalError.guarantee(c.getKey() != null, "Key must not be null when patching nodes for %s", this);
-            GraalError.guarantee(c.getValue() != null, "Value is null for %s when patching nodes for %s", c.getKey(), this);
+            keyListByIterationOrder.add(c.getKey());
+            valueListByIterationOrder.add(c.getValue());
+            GraalError.guarantee(c.getKey() != null, "key == null in %s", this);
+            GraalError.guarantee(c.getValue() != null, "Value == null for %s in %s", c.getKey(), this);
+        }
+
+        for (Node value : dupMap.getValues()) {
+            valueListByIterationOrderVALUEAPI.add(value);
+        }
+
+        final int keyListSize = keyListByIterationOrder.size();
+        final int valueListSize = valueListByIterationOrder.size();
+        final int valueListSizeVALUEAPI = valueListByIterationOrderVALUEAPI.size();
+        GraalError.guarantee(keyListSize == valueListSize, "%d != %d", keyListSize, valueListSize);
+        GraalError.guarantee(keyListSize == valueListSizeVALUEAPI, " %d != %d", keyListSize, valueListSizeVALUEAPI);
+
+        for (int i = 0; i < valueListSize; i++) {
+            GraalError.guarantee(valueListByIterationOrder.get(i) == valueListByIterationOrderVALUEAPI.get(i), "%s != %s for %d", valueListByIterationOrder.get(i),
+                            valueListByIterationOrderVALUEAPI.get(i), i);
         }
     }
 
@@ -448,12 +475,12 @@ public abstract class LoopFragment {
         }
     }
 
-    public static NodeIterable<AbstractBeginNode> toHirBlocks(final Iterable<Block> blocks) {
+    public static NodeIterable<AbstractBeginNode> toHirBlocks(final Iterable<HIRBlock> blocks) {
         return new NodeIterable<>() {
 
             @Override
             public Iterator<AbstractBeginNode> iterator() {
-                final Iterator<Block> it = blocks.iterator();
+                final Iterator<HIRBlock> it = blocks.iterator();
                 return new Iterator<>() {
 
                     @Override
