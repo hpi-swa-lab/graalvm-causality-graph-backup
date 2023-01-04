@@ -80,8 +80,6 @@ public abstract class CausalityExport {
 
     public abstract Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value);
 
-    public abstract void registerReachabilityNotification(AnalysisElement e, Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback);
-
     public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
         beginAccountingRootRegistrationsTo(reason);
         return new ReRootingToken(reason);

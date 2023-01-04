@@ -214,11 +214,6 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerReachabilityNotification(AnalysisElement e, Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
-        direct_edges.add(Pair.create(CausalityExport.ReachableReason.create(e), new CausalityExport.ReachabilityNotificationCallback(callback)));
-    }
-
-    @Override
     public void registerReasonRoot(Reason reason) {
         register(null, reason);
     }
