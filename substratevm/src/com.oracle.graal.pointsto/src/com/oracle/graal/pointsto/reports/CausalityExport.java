@@ -60,7 +60,24 @@ public abstract class CausalityExport {
     // --- Registration ---
     public abstract void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to);
 
-    public abstract void setSaturationHappening(boolean currentlySaturating);
+    protected abstract void beginSaturationHappening();
+
+    protected abstract void endSaturationHappening();
+
+    public final SaturationHappeningToken setSaturationHappening()
+    {
+        beginSaturationHappening();
+        return new SaturationHappeningToken();
+    }
+
+    public class SaturationHappeningToken implements AutoCloseable {
+        @Override
+        public void close() {
+            endSaturationHappening();
+        }
+
+        SaturationHappeningToken() { }
+    }
 
     public abstract void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types);
 

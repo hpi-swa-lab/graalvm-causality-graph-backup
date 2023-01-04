@@ -322,11 +322,8 @@ public abstract class TypeFlow<T> {
         assert !bb.extendedAsserts() || checkTypeState(bb, before, after);
 
         if (checkSaturated(bb, after)) {
-            CausalityExport.getInstance().setSaturationHappening(true);
-            try {
+            try (CausalityExport.SaturationHappeningToken ignored = CausalityExport.getInstance().setSaturationHappening()) {
                 onSaturated(bb);
-            } finally {
-                CausalityExport.getInstance().setSaturationHappening(false);
             }
         } else if (postFlow) {
             bb.postFlow(this);
@@ -383,11 +380,8 @@ public abstract class TypeFlow<T> {
 
         if (isSaturated() && propagateTypeState) {
             /* Let the use know that this flow is already saturated. */
-            CausalityExport.getInstance().setSaturationHappening(true);
-            try {
+            try (CausalityExport.SaturationHappeningToken ignored = CausalityExport.getInstance().setSaturationHappening()) {
                 notifyUseOfSaturation(bb, use);
-            } finally {
-                CausalityExport.getInstance().setSaturationHappening(false);
             }
 
             return false;
@@ -401,11 +395,8 @@ public abstract class TypeFlow<T> {
                      * use would have missed the saturated signal. Let the use know that this flow
                      * became saturated.
                      */
-                    CausalityExport.getInstance().setSaturationHappening(true);
-                    try {
+                    try (CausalityExport.SaturationHappeningToken ignored = CausalityExport.getInstance().setSaturationHappening()) {
                         notifyUseOfSaturation(bb, use);
-                    } finally {
-                        CausalityExport.getInstance().setSaturationHappening(false);
                     }
                     /* And unlink the use. */
                     removeUse(use);
@@ -463,11 +454,8 @@ public abstract class TypeFlow<T> {
     private boolean addObserver(PointsToAnalysis bb, TypeFlow<?> observer, boolean triggerUpdate, boolean registerObservees) {
         if (isSaturated() && triggerUpdate) {
             /* Let the observer know that this flow is already saturated. */
-            CausalityExport.getInstance().setSaturationHappening(true);
-            try {
+            try (CausalityExport.SaturationHappeningToken ignored = CausalityExport.getInstance().setSaturationHappening()) {
                 notifyObserverOfSaturation(bb, observer);
-            } finally {
-                CausalityExport.getInstance().setSaturationHappening(false);
             }
             return false;
         }
@@ -475,11 +463,8 @@ public abstract class TypeFlow<T> {
             if (triggerUpdate) {
                 if (isSaturated()) {
                     /* This flow is already saturated, notify the observer. */
-                    CausalityExport.getInstance().setSaturationHappening(true);
-                    try {
+                    try (CausalityExport.SaturationHappeningToken ignored = CausalityExport.getInstance().setSaturationHappening()) {
                         notifyObserverOfSaturation(bb, observer);
-                    } finally {
-                        CausalityExport.getInstance().setSaturationHappening(false);
                     }
                     removeObserver(observer);
                     return false;

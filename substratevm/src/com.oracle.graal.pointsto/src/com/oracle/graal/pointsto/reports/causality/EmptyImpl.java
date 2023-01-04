@@ -19,7 +19,11 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void setSaturationHappening(boolean currentlySaturating) {
+    public void beginSaturationHappening() {
+    }
+
+    @Override
+    public void endSaturationHappening() {
     }
 
     @Override

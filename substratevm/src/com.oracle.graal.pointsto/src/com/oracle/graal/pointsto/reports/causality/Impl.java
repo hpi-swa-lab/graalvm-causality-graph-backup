@@ -83,12 +83,13 @@ public class Impl extends CausalityExport {
     int currentlySaturatingDepth; // Inhibits the registration of new typeflow edges
 
     @Override
-    public void setSaturationHappening(boolean currentlySaturating) {
-        if (currentlySaturating)
-            currentlySaturatingDepth++;
-        else
-            currentlySaturatingDepth--;
+    public void beginSaturationHappening() {
+        currentlySaturatingDepth++;
+    }
 
+    @Override
+    public void endSaturationHappening() {
+        currentlySaturatingDepth--;
         if (currentlySaturatingDepth < 0)
             throw new RuntimeException();
     }
