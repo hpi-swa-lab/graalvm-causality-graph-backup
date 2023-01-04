@@ -70,7 +70,7 @@ final class DefaultStaticInvokeTypeFlow extends AbstractStaticInvokeTypeFlow {
         LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
             MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);
             linkCallee(bb, true, calleeFlows);
-            CausalityExport.getInstance().addDirectInvoke(this.method(), callee);
+            CausalityExport.getInstance().register(method() == null ? null : new CausalityExport.MethodReachableReason(method()), new CausalityExport.MethodReachableReason(callee));
         });
     }
 

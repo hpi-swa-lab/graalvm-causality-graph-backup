@@ -27,10 +27,6 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
-    }
-
-    @Override
     public void register(Reason reason, Reason consequence) {
     }
 

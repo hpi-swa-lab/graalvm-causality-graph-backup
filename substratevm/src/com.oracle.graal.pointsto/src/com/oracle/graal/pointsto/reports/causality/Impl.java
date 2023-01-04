@@ -107,14 +107,6 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void addDirectInvoke(AnalysisMethod caller, AnalysisMethod callee) {
-        if(callee.isClassInitializer())
-            return; // We later add an edge from type reachability to class initializer
-
-        register(caller == null ? null : new MethodReachableReason(caller), new MethodReachableReason(callee));
-    }
-
-    @Override
     public void register(Reason reason, Reason consequence) {
         if((reason == null || reason.root()) && !rootReasons.empty())
             reason = rootReasons.peek();
@@ -256,6 +248,8 @@ public class Impl extends CausalityExport {
                 return Graph.RealFlowNode.create(bb, f, reason);
             });
         };
+
+        direct_edges.removeIf(pair -> pair.getRight() instanceof MethodReachableReason && ((MethodReachableReason)pair.getRight()).element.isClassInitializer());
 
         for (Pair<Reason, Reason> e : direct_edges) {
             Reason from = e.getLeft();

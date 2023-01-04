@@ -70,7 +70,7 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
 
             if (!calleesLinked) {
                 linkCallee(bb, false, calleeFlows);
-                CausalityExport.getInstance().addDirectInvoke(this.method(), callee);
+                CausalityExport.getInstance().register(method() == null ? null : new CausalityExport.MethodReachableReason(method()), new CausalityExport.MethodReachableReason(callee));
             }
 
             /*

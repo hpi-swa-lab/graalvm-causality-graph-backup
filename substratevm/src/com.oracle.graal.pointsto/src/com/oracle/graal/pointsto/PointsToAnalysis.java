@@ -328,7 +328,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * and return the method flows graph. Then the method parameter type flows are
              * initialized with the corresponding parameter declared type.
              */
-            CausalityExport.getInstance().addDirectInvoke(null, pointsToMethod);
+            CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
             postTask(() -> {
                 pointsToMethod.registerAsDirectRootMethod();
                 pointsToMethod.registerAsImplementationInvoked("root method");
