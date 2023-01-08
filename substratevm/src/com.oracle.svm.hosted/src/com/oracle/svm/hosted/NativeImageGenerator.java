@@ -1064,59 +1064,61 @@ public class NativeImageGenerator {
          * good example.
          */
         try (Indent ignored = debug.logAndIndent("add initial classes/fields/methods")) {
-            bb.registerTypeAsInHeap(bb.addRootClass(Object.class, false, false), "root class");
-            bb.addRootField(DynamicHub.class, "vtable");
-            bb.registerTypeAsInHeap(bb.addRootClass(String.class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(String[].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootField(String.class, "value"), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(long[].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(byte[].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(byte[][].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(Object[].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(CFunctionPointer[].class, false, false), "root class");
-            bb.registerTypeAsInHeap(bb.addRootClass(PointerBase[].class, false, false), "root class");
+            try (CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.InitialRegistration.Instance)) {
+                bb.registerTypeAsInHeap(bb.addRootClass(Object.class, false, false), "root class");
+                bb.addRootField(DynamicHub.class, "vtable");
+                bb.registerTypeAsInHeap(bb.addRootClass(String.class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(String[].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootField(String.class, "value"), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(long[].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(byte[].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(byte[][].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(Object[].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(CFunctionPointer[].class, false, false), "root class");
+                bb.registerTypeAsInHeap(bb.addRootClass(PointerBase[].class, false, false), "root class");
 
-            bb.addRootMethod(ReflectionUtil.lookupMethod(SubstrateArraycopySnippets.class, "doArraycopy", Object.class, int.class, Object.class, int.class, int.class), true);
-            bb.addRootMethod(ReflectionUtil.lookupMethod(Object.class, "getClass"), true);
+                bb.addRootMethod(ReflectionUtil.lookupMethod(SubstrateArraycopySnippets.class, "doArraycopy", Object.class, int.class, Object.class, int.class, int.class), true);
+                bb.addRootMethod(ReflectionUtil.lookupMethod(Object.class, "getClass"), true);
 
-            for (JavaKind kind : JavaKind.values()) {
-                if (kind.isPrimitive() && kind != JavaKind.Void) {
-                    bb.addRootClass(kind.toJavaClass(), false, true);
-                    bb.addRootClass(kind.toBoxedJavaClass(), false, true).registerAsInHeap("root class");
-                    bb.addRootField(kind.toBoxedJavaClass(), "value");
-                    bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), "valueOf", kind.toJavaClass()), true);
-                    bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), kind.getJavaName() + "Value"), true);
-                    /*
-                     * Register the cache location as reachable.
-                     * BoxingSnippets$Templates#getCacheLocation accesses the cache field.
-                     */
-                    Class<?>[] innerClasses = kind.toBoxedJavaClass().getDeclaredClasses();
-                    if (innerClasses != null && innerClasses.length > 0) {
-                        bb.getMetaAccess().lookupJavaType(innerClasses[0]).registerAsReachable("inner class of root class");
+                for (JavaKind kind : JavaKind.values()) {
+                    if (kind.isPrimitive() && kind != JavaKind.Void) {
+                        bb.addRootClass(kind.toJavaClass(), false, true);
+                        bb.addRootClass(kind.toBoxedJavaClass(), false, true).registerAsInHeap("root class");
+                        bb.addRootField(kind.toBoxedJavaClass(), "value");
+                        bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), "valueOf", kind.toJavaClass()), true);
+                        bb.addRootMethod(ReflectionUtil.lookupMethod(kind.toBoxedJavaClass(), kind.getJavaName() + "Value"), true);
+                        /*
+                         * Register the cache location as reachable.
+                         * BoxingSnippets$Templates#getCacheLocation accesses the cache field.
+                         */
+                        Class<?>[] innerClasses = kind.toBoxedJavaClass().getDeclaredClasses();
+                        if (innerClasses != null && innerClasses.length > 0) {
+                            bb.getMetaAccess().lookupJavaType(innerClasses[0]).registerAsReachable("inner class of root class");
+                        }
                     }
                 }
-            }
-            /* SubstrateTemplates#toLocationIdentity accesses the Counter.value field. */
-            bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()).registerAsReachable("root class");
-            bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class).registerAsReachable("root class");
-            bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class).registerAsReachable("root class");
+                /* SubstrateTemplates#toLocationIdentity accesses the Counter.value field. */
+                bb.getMetaAccess().lookupJavaType(JavaKind.Void.toJavaClass()).registerAsReachable("root class");
+                bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.util.Counter.class).registerAsReachable("root class");
+                bb.getMetaAccess().lookupJavaType(com.oracle.svm.core.allocationprofile.AllocationCounter.class).registerAsReachable("root class");
 
-            NativeImageGenerator.registerGraphBuilderPlugins(featureHandler, null, aProviders, aMetaAccess, aUniverse, null, null, nativeLibraries, loader, ParsingReason.PointsToAnalysis,
-                            bb.getAnnotationSubstitutionProcessor(), classInitializationPlugin, ConfigurationValues.getTarget());
-            registerReplacements(debug, featureHandler, null, aProviders, true, initForeignCalls);
+                NativeImageGenerator.registerGraphBuilderPlugins(featureHandler, null, aProviders, aMetaAccess, aUniverse, null, null, nativeLibraries, loader, ParsingReason.PointsToAnalysis,
+                        bb.getAnnotationSubstitutionProcessor(), classInitializationPlugin, ConfigurationValues.getTarget());
+                registerReplacements(debug, featureHandler, null, aProviders, true, initForeignCalls);
 
-            Collection<StructuredGraph> snippetGraphs = aReplacements.getSnippetGraphs(GraalOptions.TrackNodeSourcePosition.getValue(options), options);
-            if (bb instanceof NativeImagePointsToAnalysis) {
-                for (StructuredGraph graph : snippetGraphs) {
-                    HostedConfiguration.instance().registerUsedElements((PointsToAnalysis) bb, graph, false);
+                Collection<StructuredGraph> snippetGraphs = aReplacements.getSnippetGraphs(GraalOptions.TrackNodeSourcePosition.getValue(options), options);
+                if (bb instanceof NativeImagePointsToAnalysis) {
+                    for (StructuredGraph graph : snippetGraphs) {
+                        HostedConfiguration.instance().registerUsedElements((PointsToAnalysis) bb, graph, false);
+                    }
+                } else if (bb instanceof NativeImageReachabilityAnalysisEngine) {
+                    NativeImageReachabilityAnalysisEngine reachabilityAnalysis = (NativeImageReachabilityAnalysisEngine) bb;
+                    for (StructuredGraph graph : snippetGraphs) {
+                        reachabilityAnalysis.processGraph(graph);
+                    }
+                } else {
+                    throw VMError.shouldNotReachHere("Unknown analysis type - please specify how to handle snippets");
                 }
-            } else if (bb instanceof NativeImageReachabilityAnalysisEngine) {
-                NativeImageReachabilityAnalysisEngine reachabilityAnalysis = (NativeImageReachabilityAnalysisEngine) bb;
-                for (StructuredGraph graph : snippetGraphs) {
-                    reachabilityAnalysis.processGraph(graph);
-                }
-            } else {
-                throw VMError.shouldNotReachHere("Unknown analysis type - please specify how to handle snippets");
             }
         }
     }

@@ -229,7 +229,7 @@ public class Graph {
     }
 
     public void export(PointsToAnalysis bb) throws java.io.IOException {
-        Map<Integer, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
+        Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
 
         HashSet<CausalityExport.Reason> methods = new HashSet<>();
@@ -266,6 +266,27 @@ public class Graph {
         try (PrintStream w = new PrintStream(new FileOutputStream("methods.txt"))) {
             for (CausalityExport.Reason method : methodsSorted) {
                 w.println(method);
+            }
+        }
+
+        try (FileOutputStream out = new FileOutputStream("declaring_types.bin")) {
+            FileChannel c = out.getChannel();
+
+            ByteBuffer b = ByteBuffer.allocate(4);
+            b.order(ByteOrder.LITTLE_ENDIAN);
+
+            for (CausalityExport.Reason method : methodsSorted) {
+                int typeId = -1;
+                AnalysisType t = method.getContainingType(bb.getMetaAccess());
+                if(t != null) {
+                    Integer id = typeIdMap.get(t);
+                    if(id != null)
+                        typeId = id;
+                }
+                b.putInt(typeId);
+                b.flip();
+                c.write(b);
+                b.flip();
             }
         }
 
@@ -346,7 +367,7 @@ public class Graph {
                 b.put(zero);
 
                 for (AnalysisType t : state.types(bb)) {
-                    Integer maybeId = typeIdMap.get(t.getId());
+                    Integer maybeId = typeIdMap.get(t);
                     if (maybeId == null)
                         continue;
                     int id = maybeId;
@@ -383,7 +404,7 @@ public class Graph {
     }
 
 
-    private static Map<Integer, Integer> makeDenseTypeIdMap(BigBang bb, Predicate<AnalysisType> shouldBeIncluded) {
+    private static Map<AnalysisType, Integer> makeDenseTypeIdMap(BigBang bb, Predicate<AnalysisType> shouldBeIncluded) {
         ArrayList<AnalysisType> typesInPreorder = new ArrayList<>();
 
         // Execute inorder-tree-traversal on subclass hierarchy in order to have hierarchy subtrees in one contiguous id range
@@ -410,22 +431,22 @@ public class Graph {
             }
         }
 
-        HashMap<Integer, Integer> idMap = new HashMap<>(typesInPreorder.size());
+        HashMap<AnalysisType, Integer> idMap = new HashMap<>(typesInPreorder.size());
 
         int newId = 0;
         for (AnalysisType t : typesInPreorder) {
-            idMap.put(t.getId(), newId);
+            idMap.put(t, newId);
             newId++;
         }
 
         return idMap;
     }
 
-    private static AnalysisType[] getRelevantTypes(PointsToAnalysis bb, Map<Integer, Integer> typeIdMap) {
+    private static AnalysisType[] getRelevantTypes(PointsToAnalysis bb, Map<AnalysisType, Integer> typeIdMap) {
         AnalysisType[] types = new AnalysisType[typeIdMap.size()];
 
         for (AnalysisType t : bb.getAllInstantiatedTypes())
-            types[typeIdMap.get(t.getId())] = t;
+            types[typeIdMap.get(t)] = t;
 
         return types;
     }

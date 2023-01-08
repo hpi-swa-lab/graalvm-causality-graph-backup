@@ -6,6 +6,7 @@ import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisField;
+import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.causality.EmptyImpl;
@@ -146,6 +147,10 @@ public abstract class CausalityExport {
         }
 
         public boolean root() { return false; }
+
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return null;
+        }
     }
 
     public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
@@ -191,6 +196,11 @@ public abstract class CausalityExport {
         public boolean unused() {
             return !element.isImplementationInvoked();
         }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return element.getDeclaringClass();
+        }
     }
 
     public static final class TypeReachableReason extends ReachableReason<AnalysisType> {
@@ -206,6 +216,11 @@ public abstract class CausalityExport {
         @Override
         public boolean unused() {
             return !element.isReachable();
+        }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return element;
         }
     }
 
@@ -238,76 +253,95 @@ public abstract class CausalityExport {
         public int hashCode() {
             return type.hashCode();
         }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return type;
+        }
     }
 
-    public static abstract class CustomReason extends Reason {
-    }
-
-    public static class JNIRegistration extends CustomReason {
+    public static abstract class ReflectionObjectRegistration extends Reason {
         public final Object element;
 
-        public JNIRegistration(Executable method) {
+        public ReflectionObjectRegistration(Executable method) {
             this.element = method;
         }
 
-        public JNIRegistration(Field field) {
+        public ReflectionObjectRegistration(Field field) {
             this.element = field;
         }
 
-        public JNIRegistration(Class<?> clazz) {
+        public ReflectionObjectRegistration(Class<?> clazz) {
             this.element = clazz;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ReflectionObjectRegistration that = (ReflectionObjectRegistration) o;
+            return element.equals(that.element);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ element.hashCode();
+        }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            Class<?> containing;
+            if(element instanceof Class<?>) {
+                containing = (Class<?>) element;
+            } else if (element instanceof Executable) {
+                containing = ((Executable) element).getDeclaringClass();
+            } else {
+                containing = ((Field) element).getDeclaringClass();
+            }
+
+            return metaAccess.optionalLookupJavaType(containing).orElse(null);
+        }
+    }
+
+    public static class JNIRegistration extends ReflectionObjectRegistration {
+        public JNIRegistration(Executable method) {
+            super(method);
+        }
+
+        public JNIRegistration(Field field) {
+            super(field);
+        }
+
+        public JNIRegistration(Class<?> clazz) {
+            super(clazz);
         }
 
         @Override
         public String toString() {
             return "JNI registration: " + reflectionObjectToString(element);
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            JNIRegistration that = (JNIRegistration) o;
-            return element.equals(that.element);
-        }
-
-        @Override
-        public int hashCode() {
-            return element.hashCode();
-        }
     }
 
-    public static class ReflectionRegistration extends CustomReason {
-        public final Object element;
+    public static class ReflectionRegistration extends ReflectionObjectRegistration {
+        public ReflectionRegistration(Executable method) {
+            super(method);
+        }
 
-        public ReflectionRegistration(AccessibleObject methodOrField) {
-            this.element = methodOrField;
+        public ReflectionRegistration(Field field) {
+            super(field);
         }
 
         public ReflectionRegistration(Class<?> clazz) {
-            this.element = clazz;
+            super(clazz);
         }
 
         @Override
         public String toString() {
             return "Reflection registration: " + reflectionObjectToString(element);
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ReflectionRegistration that = (ReflectionRegistration) o;
-            return element.equals(that.element);
-        }
-
-        @Override
-        public int hashCode() {
-            return element.hashCode();
-        }
     }
 
-    public static class ReachabilityNotificationCallback extends CustomReason {
+    public static class ReachabilityNotificationCallback extends Reason {
         public final Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback;
 
         public ReachabilityNotificationCallback(Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
@@ -357,6 +391,11 @@ public abstract class CausalityExport {
         public int hashCode() {
             return Objects.hash(clazz);
         }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return metaAccess.optionalLookupJavaType(clazz).orElse(null);
+        }
     }
 
     public static class HeapObjectClass extends Reason {
@@ -382,6 +421,11 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return clazz.hashCode();
+        }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return metaAccess.optionalLookupJavaType(clazz).orElse(null);
         }
     }
 
@@ -409,6 +453,11 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return forClass.hashCode();
+        }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return metaAccess.optionalLookupJavaType(forClass).orElse(null);
         }
     }
 
@@ -440,6 +489,11 @@ public abstract class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(heapObjectType);
+        }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return metaAccess.optionalLookupJavaType(heapObjectType).orElse(null);
         }
     }
 
@@ -490,6 +544,11 @@ public abstract class CausalityExport {
         public int hashCode() {
             return f.hashCode();
         }
+
+        @Override
+        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+            return metaAccess.optionalLookupJavaType(f.getClass()).orElse(null);
+        }
     }
 
     public static class AutomaticFeatureRegistration extends Reason {
@@ -516,6 +575,22 @@ public abstract class CausalityExport {
         @Override
         public String toString() {
             return "User-Requested Feature Registration";
+        }
+
+        @Override
+        public boolean root() {
+            return true;
+        }
+    }
+
+    public static class InitialRegistration extends Reason {
+        public static InitialRegistration Instance = new InitialRegistration();
+
+        private InitialRegistration() { }
+
+        @Override
+        public String toString() {
+            return "Initial Registrations";
         }
 
         @Override

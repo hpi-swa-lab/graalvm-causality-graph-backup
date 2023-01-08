@@ -215,7 +215,7 @@ public class Impl extends CausalityExport {
 
     @Override
     protected void beginAccountingRootRegistrationsTo(Reason reason) {
-        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance && !(rootReasons.peek() instanceof Feature))
+        if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance && !(rootReasons.peek() instanceof Feature) && !rootReasons.peek().root())
             throw new RuntimeException("Stacking Rerooting requests!");
 
         rootReasons.push(reason);
