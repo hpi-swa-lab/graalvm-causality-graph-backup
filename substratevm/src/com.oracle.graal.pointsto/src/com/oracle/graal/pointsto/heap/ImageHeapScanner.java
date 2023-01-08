@@ -397,9 +397,9 @@ public abstract class ImageHeapScanner {
 
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) { // Causality-TODO!
+                //try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) { // Causality-TODO!
                     typeFromClassConstant.registerAsReachable(reason);
-                }
+                //}
             }
         }
 

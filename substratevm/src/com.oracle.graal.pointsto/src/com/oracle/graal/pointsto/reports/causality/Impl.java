@@ -44,6 +44,8 @@ public final class Impl extends CausalityExport {
     private final HashMap<Pair<Reason, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
 
     public Impl() {
+        for(int i = 0; i < rootReasonsByCategory.length; i++)
+            rootReasonsByCategory[i] = new Stack<>();
     }
 
     private static <K, V> void mergeMap(Map<K, V> dst, Map<K, V> src, BiFunction<V, V, V> merger) {
@@ -110,8 +112,8 @@ public final class Impl extends CausalityExport {
 
     @Override
     public void register(Reason reason, Reason consequence) {
-        if((reason == null || reason.root()) && !rootReasons.empty())
-            reason = rootReasons.peek();
+        if((reason == null || reason.root()) && !rootReasonsByCategory[0].empty())
+            reason = rootReasonsByCategory[0].peek();
 
         direct_edges.add(Pair.create(reason, consequence));
     }
@@ -182,10 +184,17 @@ public final class Impl extends CausalityExport {
         register(null, reason);
     }
 
-    private final Stack<Reason> rootReasons = new Stack<>();
+    @Override
+    public Reason getRootReason(RootCategory category) {
+        Stack<Reason> rootReasons = rootReasonsByCategory[category.ordinal()];
+        return rootReasons.empty() ? null : rootReasons.peek();
+    }
+
+    private final Stack<Reason>[] rootReasonsByCategory = new Stack[RootCategory.values().length];
 
     @Override
-    protected void beginAccountingRootRegistrationsTo(Reason reason) {
+    protected void beginAccountingRootRegistrationsTo(RootCategory category, Reason reason) {
+        Stack<Reason> rootReasons = rootReasonsByCategory[category.ordinal()];
         if(!rootReasons.empty() && reason != null && rootReasons.peek() != null && !rootReasons.peek().equals(reason) && reason != Ignored.Instance && rootReasons.peek() != Ignored.Instance && !(rootReasons.peek() instanceof Feature) && !rootReasons.peek().root())
             throw new RuntimeException("Stacking Rerooting requests!");
 
@@ -193,7 +202,8 @@ public final class Impl extends CausalityExport {
     }
 
     @Override
-    protected void endAccountingRootRegistrationsTo(Reason reason) {
+    protected void endAccountingRootRegistrationsTo(RootCategory category, Reason reason) {
+        Stack<Reason> rootReasons = rootReasonsByCategory[category.ordinal()];
         if(rootReasons.empty() || rootReasons.pop() != reason) {
             throw new RuntimeException("Invalid Call to endAccountingRootRegistrationsTo()");
         }

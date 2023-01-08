@@ -122,8 +122,10 @@ public abstract class AnalysisElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReachabilityNotificationCallback(callback))) {
-                    callback.accept(universe.getConcurrentAnalysisAccess());
+                try(CausalityExport.ReRootingToken ignore0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReachabilityNotificationCallback(callback))) {
+                        callback.accept(universe.getConcurrentAnalysisAccess());
+                    }
                 }
                 return null;
             });

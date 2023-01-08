@@ -26,6 +26,8 @@ package com.oracle.svm.hosted.phases;
 
 import java.util.List;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.core.common.calc.Condition;
 import org.graalvm.compiler.core.common.type.StampPair;
@@ -103,7 +105,11 @@ public abstract class SharedGraphBuilderPhase extends GraphBuilderPhase.Instance
 
     @Override
     protected void run(StructuredGraph graph) {
-        super.run(graph);
+        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, null)) {
+            try (CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()) : null)) {
+                super.run(graph);
+            }
+        }
         assert wordTypes == null || wordTypes.ensureGraphContainsNoWordTypeReferences(graph);
     }
 

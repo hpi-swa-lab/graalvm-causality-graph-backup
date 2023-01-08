@@ -336,7 +336,10 @@ public class AnalysisUniverse implements Universe {
 
     @Override
     public AnalysisField lookup(JavaField field) {
-        JavaField result = lookupAllowUnresolved(field);
+        JavaField result;
+        //try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+            result = lookupAllowUnresolved(field);
+        //}
         if (result == null) {
             return null;
         } else if (result instanceof ResolvedJavaField) {
@@ -368,8 +371,7 @@ public class AnalysisUniverse implements Universe {
              */
             AnalysisType declaringType = lookup(field.getDeclaringClass());
 
-            // Causality-TODO: Track real reason further up
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getRootReason(CausalityExport.RootCategory.METHOD_PARSING))) {
                 declaringType.registerAsReachable(field);
             }
             declaringType.ensureInitialized();
