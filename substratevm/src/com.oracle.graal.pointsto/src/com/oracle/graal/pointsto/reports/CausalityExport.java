@@ -15,7 +15,6 @@ import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
 
-import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
@@ -238,7 +237,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Type Instantiated: " + type.toJavaName();
+            return type.toJavaName() + " [Instantiated]";
         }
 
         @Override
@@ -318,7 +317,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "JNI registration: " + reflectionObjectToString(element);
+            return reflectionObjectToString(element) + " [JNI Registration]";
         }
     }
 
@@ -337,7 +336,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Reflection registration: " + reflectionObjectToString(element);
+            return reflectionObjectToString(element) + " [Reflection Registration]";
         }
     }
 
@@ -350,7 +349,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Reachability callback: " + callback;
+            return callback + " [Reachability Callback]";
         }
 
         @Override
@@ -376,7 +375,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return clazz.getTypeName() + ".<clinit>() [BUILD TIME]";
+            return clazz.getTypeName() + ".<clinit>() [Build-Time]";
         }
 
         @Override
@@ -407,7 +406,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Class in Heap: " + clazz.getTypeName();
+            return clazz.getTypeName() + " [Class in Heap]";
         }
 
         @Override
@@ -439,7 +438,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "DynamicHub in Heap: " + forClass.getTypeName();
+            return forClass.getTypeName() + " [DynamicHub in Heap]";
         }
 
         @Override
@@ -475,7 +474,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Unknown Heap Object: " + heapObjectType.getTypeName();
+            return heapObjectType.getTypeName() + " [Unknown Heap Object]";
         }
 
         @Override
@@ -510,7 +509,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Ignored dummy node that never happens";
+            throw new RuntimeException("[Ignored dummy node that never happens]");
         }
     }
 
@@ -523,10 +522,12 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            String str = "Feature: " + f.getClass().getTypeName();
+            String str = f.getClass().getTypeName();
             String description = f.getDescription();
             if(description != null)
-                str += " - " + description;
+                str += " [Feature: " + description + "]";
+            else
+                str += " [Feature]";
             return str;
         }
 
@@ -558,7 +559,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Automatic Feature Registration";
+            return "[Automatic Feature Registration]";
         }
 
         @Override
@@ -574,7 +575,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "User-Requested Feature Registration";
+            return "[User-Requested Feature Registration]";
         }
 
         @Override
@@ -590,7 +591,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "Initial Registrations";
+            return "[Initial Registrations]";
         }
 
         @Override
