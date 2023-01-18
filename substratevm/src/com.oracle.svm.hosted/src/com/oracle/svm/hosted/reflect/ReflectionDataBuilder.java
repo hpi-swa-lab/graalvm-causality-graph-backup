@@ -754,9 +754,9 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
             throw UserError.abort("Found forbidden %s in the Native Image heap. The class was added with the following reason: %s", javaClass, reason);
         }
         if (heapDynamicHubs.add(hub)) {
-            //try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeReachableReason(metaAccess.lookupJavaType(javaClass)))) {
                 registerTypesForClass(metaAccess.lookupJavaType(javaClass), javaClass);
-            //}
+            }
         }
     }
 

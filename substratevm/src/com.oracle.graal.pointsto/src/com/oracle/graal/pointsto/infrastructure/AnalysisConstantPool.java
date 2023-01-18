@@ -24,7 +24,6 @@
  */
 package com.oracle.graal.pointsto.infrastructure;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import jdk.vm.ci.meta.ConstantPool;
 import jdk.vm.ci.meta.JavaField;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
