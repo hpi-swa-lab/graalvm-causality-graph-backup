@@ -152,11 +152,9 @@ public class Impl extends CausalityExport {
         Reason reason = null;
 
         if(responsible != null) {
-            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
-            if(responsibleType.isPresent()) {
-                reason = new BuildTimeClassInitialization(responsible);
-                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
-            }
+            AnalysisType responsibleType = bb.getMetaAccess().lookupJavaType(responsible);
+            reason = new BuildTimeClassInitialization(responsible);
+            direct_edges.add(Pair.create(new TypeReachableReason(responsibleType), reason));
         }
 
         if(reason == null) {
