@@ -309,6 +309,22 @@ public class Impl extends CausalityExport {
             if(e.getLeft() instanceof BuildTimeClassInitialization) {
                 BuildTimeClassInitialization init = (BuildTimeClassInitialization) e.getLeft();
 
+                boolean hasOuterInit = false;
+
+                {
+                    BuildTimeClassInitialization curInit = init;
+
+                    for(;;) {
+                        Class<?> outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(curInit.clazz);
+                        if (outerInitClazz == null)
+                            break;
+                        hasOuterInit = true;
+                        BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization(outerInitClazz);
+                        g.directInvokes.add(new Graph.DirectCallEdge(outerInit, curInit));
+                        curInit = outerInit;
+                    }
+                }
+
                 Optional<AnalysisType> optT = bb.getMetaAccess().optionalLookupJavaType(init.clazz);
 
                 if(optT.isPresent()) {
@@ -317,9 +333,9 @@ public class Impl extends CausalityExport {
                     if(!tReachable.unused()) {
                         g.directInvokes.add(new Graph.DirectCallEdge(new TypeReachableReason(optT.get()), init));
                     }
-                } else {
+                } else if(!hasOuterInit) {
                     g.directInvokes.add(new Graph.DirectCallEdge(null, init));
-                    System.err.println("Could not lookup type: " + init.clazz.getTypeName());
+                    System.err.println("Could not get reason for build-time clinit of: " + init.clazz.getTypeName());
                 }
             }
         }

@@ -29,6 +29,10 @@ public class HeapAssignmentTracing {
         return null;
     }
 
+    public Class<?> getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz) {
+        return null;
+    }
+
     private static final class NativeImpl extends HeapAssignmentTracing {
         @Override
         public native Class<?> getResponsibleClass(Object imageHeapObject);
@@ -41,5 +45,8 @@ public class HeapAssignmentTracing {
 
         @Override
         public native Class<?> getClassResponsibleForArrayWrite(Object[] array, int index, Object val);
+
+        @Override
+        public native Class<?> getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz);
     }
 }
