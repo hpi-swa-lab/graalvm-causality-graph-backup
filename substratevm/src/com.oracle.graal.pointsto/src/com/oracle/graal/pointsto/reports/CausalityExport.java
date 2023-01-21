@@ -19,6 +19,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -592,6 +593,37 @@ public abstract class CausalityExport {
         @Override
         public String toString() {
             return "[Initial Registrations]";
+        }
+
+        @Override
+        public boolean root() {
+            return true;
+        }
+    }
+
+    public static class ConfigurationFile extends Reason {
+        public final URI uri;
+
+        public ConfigurationFile(URI uri) {
+            this.uri = uri;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ConfigurationFile that = (ConfigurationFile) o;
+            return uri.equals(that.uri);
+        }
+
+        @Override
+        public int hashCode() {
+            return uri.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "[Configuration " + uri + "]";
         }
 
         @Override

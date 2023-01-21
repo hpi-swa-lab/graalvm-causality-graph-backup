@@ -39,6 +39,7 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.impl.ReflectionRegistry;
 import org.graalvm.util.json.JSONParserException;
 
@@ -120,7 +121,9 @@ public final class ConfigurationParserUtils {
             } else {
                 uri = ((URL) location).toURI();
             }
-            parser.parseAndRegister(uri);
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ConfigurationFile(uri))) {
+                parser.parseAndRegister(uri);
+            }
         } catch (IOException | URISyntaxException | JSONParserException e) {
             String errorMessage = e.getMessage();
             if (errorMessage == null || errorMessage.isEmpty()) {
