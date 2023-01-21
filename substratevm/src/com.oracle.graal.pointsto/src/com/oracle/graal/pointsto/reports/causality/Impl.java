@@ -144,64 +144,36 @@ public class Impl extends CausalityExport {
         originalInvokeReceivers.put(invocation, invocation.getReceiver());
     }
 
+    private Reason getResponsibleClassReason(Class<?> responsible, Object o) {
+        return responsible != null ? new BuildTimeClassInitialization(responsible) : new UnknownHeapObject(o.getClass());
+    }
+
     @Override
     public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
         Object o = bb.getSnippetReflectionProvider().asObject(Object.class, heapObject);
         Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
-
-        Reason reason = null;
-
-        if(responsible != null) {
-            AnalysisType responsibleType = bb.getMetaAccess().lookupJavaType(responsible);
-            reason = new BuildTimeClassInitialization(responsible);
-            direct_edges.add(Pair.create(new TypeReachableReason(responsibleType), reason));
-        }
-
-        if(reason == null) {
-            reason = new UnknownHeapObject(o.getClass());
-        }
-
-        return reason;
+        return getResponsibleClassReason(responsible, o);
     }
 
     @Override
     public Reason getReasonForHeapFieldAssignment(PointsToAnalysis bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
         Class<?> responsible;
+        Object o = asObject(bb, Object.class, value);
 
         if(field.isStatic()) {
-            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), asObject(bb, Object.class, value));
+            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), o);
         } else {
-            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(asObject(bb, Object.class, receiver), field.getJavaField(), asObject(bb, Object.class, value));
+            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(asObject(bb, Object.class, receiver), field.getJavaField(), o);
         }
 
-        Reason reason = null;
-
-        if(responsible != null) {
-            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
-            if(responsibleType.isPresent()) {
-                reason = new BuildTimeClassInitialization(responsible);
-                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
-            }
-        }
-
-        return reason;
+        return getResponsibleClassReason(responsible, o);
     }
 
     @Override
     public Reason getReasonForHeapArrayAssignment(PointsToAnalysis bb, JavaConstant array, int elementIndex, JavaConstant value) {
-        Class<?> responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, asObject(bb, Object.class, value));
-
-        Reason reason = null;
-
-        if(responsible != null) {
-            Optional<AnalysisType> responsibleType = bb.getMetaAccess().optionalLookupJavaType(responsible);
-            if(responsibleType.isPresent()) {
-                reason = new BuildTimeClassInitialization(responsible);
-                direct_edges.add(Pair.create(new TypeReachableReason(responsibleType.get()), reason));
-            }
-        }
-
-        return reason;
+        Object o = asObject(bb, Object.class, value);
+        Class<?> responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, o);
+        return getResponsibleClassReason(responsible, o);
     }
 
     @Override
@@ -318,21 +290,37 @@ public class Impl extends CausalityExport {
             if(e.getRight() instanceof TypeInstantiatedReason) {
                 TypeInstantiatedReason reason = (TypeInstantiatedReason) e.getRight();
 
-                if(reason.unused())
-                    continue;
+                if(!reason.unused()) {
+                    AnalysisType t = reason.type;
+                    TypeState state = TypeState.forExactType(bb, t, false);
 
-                AnalysisType t = reason.type;
-                TypeState state = TypeState.forExactType(bb, t, false);
+                    String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
 
-                String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
+                    Graph.FlowNode vfn = new Graph.FlowNode(debugStr, reason, state);
+                    g.interflows.add(new Graph.FlowEdge(null, vfn));
 
-                Graph.FlowNode vfn = new Graph.FlowNode(debugStr, reason, state);
-                g.interflows.add(new Graph.FlowEdge(null, vfn));
+                    t.forAllSuperTypes(t1 -> {
+                        g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
+                        g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
+                    });
+                }
+            }
 
-                t.forAllSuperTypes(t1 -> {
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
-                });
+            if(e.getLeft() instanceof BuildTimeClassInitialization) {
+                BuildTimeClassInitialization init = (BuildTimeClassInitialization) e.getLeft();
+
+                Optional<AnalysisType> optT = bb.getMetaAccess().optionalLookupJavaType(init.clazz);
+
+                if(optT.isPresent()) {
+                    TypeReachableReason tReachable = new TypeReachableReason(optT.get());
+
+                    if(!tReachable.unused()) {
+                        g.directInvokes.add(new Graph.DirectCallEdge(new TypeReachableReason(optT.get()), init));
+                    }
+                } else {
+                    g.directInvokes.add(new Graph.DirectCallEdge(null, init));
+                    System.err.println("Could not lookup type: " + init.clazz.getTypeName());
+                }
             }
         }
 
