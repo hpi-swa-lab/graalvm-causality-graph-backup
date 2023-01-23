@@ -89,6 +89,9 @@ public class ReachabilityExporter implements InternalFeature {
             if(!t.getWrapped().isReachable())
                 continue;
 
+            if(t.isArray())
+                continue;
+
             getTypeMap(map, t.getJavaClass(), classInitKinds);
         }
         for (HostedMethod m : universe.getMethods()) {
@@ -126,7 +129,7 @@ public class ReachabilityExporter implements InternalFeature {
         String moduleName = findModuleName(type);
         EconomicMap<String, Object> module = getChild(modules, moduleName);
         EconomicMap<String, Object> types = getChild(module, "t");
-        EconomicMap<String, Object> typeMap = getChild(types, type.getName());
+        EconomicMap<String, Object> typeMap = getChild(types, type.getTypeName());
         if (typeMap.isEmpty()) {
             int flags = 0;
             InitKind initKind = classInitKinds.get(type);
