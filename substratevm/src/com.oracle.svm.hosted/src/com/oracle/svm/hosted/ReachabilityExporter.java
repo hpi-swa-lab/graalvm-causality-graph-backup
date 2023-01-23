@@ -27,6 +27,7 @@ package com.oracle.svm.hosted;
 import java.io.IOException;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
+import java.net.URL;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.util.Arrays;
@@ -60,6 +61,7 @@ import com.oracle.svm.hosted.meta.HostedUniverse;
 import com.oracle.svm.hosted.reflect.ReflectionHostedSupport;
 
 @AutomaticallyRegisteredFeature
+@SuppressWarnings("unused")
 public class ReachabilityExporter implements InternalFeature {
 
     @Override
@@ -161,17 +163,22 @@ public class ReachabilityExporter implements InternalFeature {
     private static String findTopLevelOriginName(Class<?> clazz) {
         CodeSource codeSource = clazz.getProtectionDomain().getCodeSource();
         if (codeSource != null && codeSource.getLocation() != null) {
-            String path = codeSource.getLocation().getPath();
-            if (path.endsWith(".jar")) {
-                // Use String API to determine basename of path to handle both / and \.
-                return path.substring(Math.max(path.lastIndexOf('/') + 1, path.lastIndexOf('\\') + 1));
+            URL url = codeSource.getLocation();
+            if(url.getProtocol().equals("file")) {
+                String path = codeSource.getLocation().getPath();
+                if (path.endsWith(".jar")) {
+                    // Use String API to determine basename of path to handle both / and \.
+                    return path.substring(Math.max(path.lastIndexOf('/') + 1, path.lastIndexOf('\\') + 1));
+                } else if(path.endsWith("/") || path.endsWith("\\")) {
+                    return "/";
+                }
             }
         }
-        return "unknown";
+        return "";
     }
 
     private static String findModuleName(Class<?> clazz) {
         String name = clazz.getModule().getName();
-        return name != null ? name : "unknown";
+        return name != null ? name : "anonymous";
     }
 }
