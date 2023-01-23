@@ -622,4 +622,8 @@ public class JNIAccessFeature implements Feature {
             return false;
         }
     }
+
+    public ResolvedJavaMethod[] getRegisteredMethods() {
+        return calledJavaMethods.stream().map(cjm -> cjm.targetMethod).toArray(ResolvedJavaMethod[]::new);
+    }
 }

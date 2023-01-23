@@ -29,8 +29,12 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.security.CodeSource;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import com.oracle.svm.hosted.jni.JNIAccessFeature;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.impl.RuntimeClassInitializationSupport;
@@ -72,6 +76,8 @@ public class ReachabilityExporter implements InternalFeature {
         ReflectionHostedSupport reflectionHostedSupport = ImageSingletons.lookup(ReflectionHostedSupport.class);
         Map<AnalysisMethod, Executable> reflectionExecutables = reflectionHostedSupport.getReflectionExecutables();
         Map<AnalysisField, Field> reflectionFields = reflectionHostedSupport.getReflectionFields();
+        JNIAccessFeature jniAccessFeature = JNIAccessFeature.singleton();
+        Set<AnalysisMethod> jniMethods = Arrays.stream(jniAccessFeature.getRegisteredMethods()).map(universe.getBigBang().getUniverse()::lookup).collect(Collectors.toSet());
 
         Path buildPath = NativeImageGenerator.generatedFiles(HostedOptionValues.singleton());
         Path targetPath = buildPath.resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
@@ -85,7 +91,7 @@ public class ReachabilityExporter implements InternalFeature {
             EconomicMap<String, Object> methods = getChild(type, "m");
             String methodName = m.format("%n(%P)");
             EconomicMap<String, Object> methodMap = getChild(methods, methodName);
-            propagateMethodDetails(methodMap, m, compilations, reflectionExecutables);
+            propagateMethodDetails(methodMap, m, compilations, reflectionExecutables, jniMethods);
         }
         for (HostedField f : universe.getFields()) {
             EconomicMap<String, Object> type = getTypeMap(map, f.getDeclaringClass().getJavaClass(), classInitKinds);
@@ -126,17 +132,17 @@ public class ReachabilityExporter implements InternalFeature {
     }
 
     private static void propagateMethodDetails(EconomicMap<String, Object> methodMap, HostedMethod m, Map<HostedMethod, CompileTask> compilations,
-                    Map<AnalysisMethod, Executable> reflectionExecutables) {
+                    Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods) {
         // methodMap.put("c", m.getCodeSize());
         CompileTask compilation = compilations.get(m);
         int targetCodeSize = compilation != null ? compilation.result.getTargetCodeSize() : -1;
         methodMap.put("s", targetCodeSize);
-        int flags = (reflectionExecutables.containsKey(m.wrapped) ? 1 : 0) | (m.isSynthetic() ? 1 : 0) << 2;
+        int flags = (reflectionExecutables.containsKey(m.wrapped) ? 1 : 0) | (jniMethods.contains(m.wrapped) ? 1 : 0) << 1 | (m.isSynthetic() ? 1 : 0) << 2;
         methodMap.put("f", flags);
     }
 
     private static void propagateFieldDetails(EconomicMap<String, Object> fieldMap, HostedField f, Map<AnalysisField, Field> reflectionFields) {
-        int flags = reflectionFields.containsKey(f.wrapped) ? 1 : 0;
+        int flags = (reflectionFields.containsKey(f.wrapped) ? 1 : 0) | (f.wrapped.isJNIAccessed() ? 1 : 0) << 1 | (f.isSynthetic() ? 1 : 0) << 2;
         fieldMap.put("f", flags);
     }
 
