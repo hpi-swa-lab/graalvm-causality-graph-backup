@@ -86,9 +86,15 @@ public class ReachabilityExporter implements InternalFeature {
         EconomicMap<String, Object> map = EconomicMap.create();
 
         for (HostedType t : universe.getTypes()) {
+            if(!t.getWrapped().isReachable())
+                continue;
+
             getTypeMap(map, t.getJavaClass(), classInitKinds);
         }
         for (HostedMethod m : universe.getMethods()) {
+            if(!m.getWrapped().isReachable())
+                continue;
+
             EconomicMap<String, Object> type = getTypeMap(map, m.getDeclaringClass().getJavaClass(), classInitKinds);
             EconomicMap<String, Object> methods = getChild(type, "m");
             String methodName = m.format("%n(%P)");
@@ -96,6 +102,9 @@ public class ReachabilityExporter implements InternalFeature {
             propagateMethodDetails(methodMap, m, compilations, reflectionExecutables, jniMethods);
         }
         for (HostedField f : universe.getFields()) {
+            if(!f.getWrapped().isReachable())
+                continue;
+
             EconomicMap<String, Object> type = getTypeMap(map, f.getDeclaringClass().getJavaClass(), classInitKinds);
             EconomicMap<String, Object> fields = getChild(type, "f");
             EconomicMap<String, Object> fieldMap = getChild(fields, f.getName());
