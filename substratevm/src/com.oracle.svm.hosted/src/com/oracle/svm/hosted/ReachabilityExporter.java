@@ -30,6 +30,7 @@ import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.file.Path;
 import java.security.CodeSource;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -92,14 +93,14 @@ public class ReachabilityExporter implements InternalFeature {
             if(t.isArray())
                 continue;
 
-            getTypeMap(map, t.getJavaClass(), classInitKinds);
+            getTypeMap(map, t, classInitKinds);
         }
         for (HostedMethod m : universe.getMethods()) {
             if(!m.getWrapped().isReachable())
                 continue;
 
-            EconomicMap<String, Object> type = getTypeMap(map, m.getDeclaringClass().getJavaClass(), classInitKinds);
-            EconomicMap<String, Object> methods = getChild(type, "m");
+            EconomicMap<String, Object> type = getTypeMap(map, m.getDeclaringClass(), classInitKinds);
+            EconomicMap<String, Object> methods = getChild(type, "methods");
             String methodName = m.format("%n(%P)");
             EconomicMap<String, Object> methodMap = getChild(methods, methodName);
             propagateMethodDetails(methodMap, m, compilations, reflectionExecutables, jniMethods);
@@ -108,8 +109,8 @@ public class ReachabilityExporter implements InternalFeature {
             if(!f.getWrapped().isReachable())
                 continue;
 
-            EconomicMap<String, Object> type = getTypeMap(map, f.getDeclaringClass().getJavaClass(), classInitKinds);
-            EconomicMap<String, Object> fields = getChild(type, "f");
+            EconomicMap<String, Object> type = getTypeMap(map, f.getDeclaringClass(), classInitKinds);
+            EconomicMap<String, Object> fields = getChild(type, "fields");
             EconomicMap<String, Object> fieldMap = getChild(fields, f.getName());
             propagateFieldDetails(fieldMap, f, reflectionFields);
         }
@@ -122,42 +123,65 @@ public class ReachabilityExporter implements InternalFeature {
         }
     }
 
-    private static EconomicMap<String, Object> getTypeMap(EconomicMap<String, Object> map, Class<?> type, Map<Class<?>, InitKind> classInitKinds) {
-        String topLevelOriginName = findTopLevelOriginName(type);
+    private static EconomicMap<String, Object> getTypeMap(EconomicMap<String, Object> map, HostedType type, Map<Class<?>, InitKind> classInitKinds) {
+        String topLevelOriginName = findTopLevelOriginName(type.getJavaClass());
         EconomicMap<String, Object> topLevelOrigin = getChild(map, topLevelOriginName);
-        EconomicMap<String, Object> modules = getChild(topLevelOrigin, "m");
-        String moduleName = findModuleName(type);
+        EconomicMap<String, Object> modules = getChild(topLevelOrigin, "modules");
+        String moduleName = findModuleName(type.getJavaClass());
         EconomicMap<String, Object> module = getChild(modules, moduleName);
-        EconomicMap<String, Object> types = getChild(module, "t");
-        EconomicMap<String, Object> typeMap = getChild(types, type.getTypeName());
+        EconomicMap<String, Object> packages = getChild(module, "packages");
+        EconomicMap<String, Object> _package = getChild(packages, type.getJavaClass().getPackageName());
+        EconomicMap<String, Object> types = getChild(_package, "types");
+        EconomicMap<String, Object> typeMap = getChild(types, type.getJavaClass().getSimpleName());
         if (typeMap.isEmpty()) {
-            int flags = 0;
-            InitKind initKind = classInitKinds.get(type);
-            if (initKind == InitKind.RUN_TIME) {
-                flags = 1;
-            } else if (initKind == InitKind.BUILD_TIME) {
-                flags = 2;
-            } else if (initKind == InitKind.RERUN) {
-                flags = 3;
+            if(type.getWrapped().getWrapped().getClassInitializer() != null) {
+                ArrayList<String> initKindList = new ArrayList<>();
+                InitKind initKind = classInitKinds.get(type.getJavaClass());
+
+                if (initKind != null) {
+                    if (initKind == InitKind.RUN_TIME || initKind == InitKind.RERUN)
+                        initKindList.add("run-time");
+                    if (initKind == InitKind.BUILD_TIME || initKind == InitKind.RERUN)
+                        initKindList.add("build-time");
+                }
+
+                typeMap.put("init-kind", initKindList.toArray());
             }
-            typeMap.put("i", flags);
         }
         return typeMap;
     }
 
     private static void propagateMethodDetails(EconomicMap<String, Object> methodMap, HostedMethod m, Map<HostedMethod, CompileTask> compilations,
                     Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods) {
-        // methodMap.put("c", m.getCodeSize());
         CompileTask compilation = compilations.get(m);
-        int targetCodeSize = compilation != null ? compilation.result.getTargetCodeSize() : -1;
-        methodMap.put("s", targetCodeSize);
-        int flags = (reflectionExecutables.containsKey(m.wrapped) ? 1 : 0) | (jniMethods.contains(m.wrapped) ? 1 : 0) << 1 | (m.isSynthetic() ? 1 : 0) << 2;
-        methodMap.put("f", flags);
+        int targetCodeSize = compilation != null ? compilation.result.getTargetCodeSize() : 0;
+        methodMap.put("size", targetCodeSize);
+
+        ArrayList<String> flagsList = new ArrayList<>();
+
+        if(reflectionExecutables.containsKey(m.wrapped))
+            flagsList.add("reflection");
+        if(jniMethods.contains(m.wrapped))
+            flagsList.add("jni");
+        if(m.isSynthetic())
+            flagsList.add("synthetic");
+
+        if(!flagsList.isEmpty())
+            methodMap.put("flags", flagsList.toArray());
     }
 
     private static void propagateFieldDetails(EconomicMap<String, Object> fieldMap, HostedField f, Map<AnalysisField, Field> reflectionFields) {
-        int flags = (reflectionFields.containsKey(f.wrapped) ? 1 : 0) | (f.wrapped.isJNIAccessed() ? 1 : 0) << 1 | (f.isSynthetic() ? 1 : 0) << 2;
-        fieldMap.put("f", flags);
+        ArrayList<String> flagsList = new ArrayList<>();
+
+        if(reflectionFields.containsKey(f.wrapped))
+            flagsList.add("reflection");
+        if(f.wrapped.isJNIAccessed())
+            flagsList.add("jni");
+        if(f.isSynthetic())
+            flagsList.add("synthetic");
+
+        if(!flagsList.isEmpty())
+            fieldMap.put("flags", flagsList.toArray());
     }
 
     @SuppressWarnings("unchecked")
@@ -177,13 +201,7 @@ public class ReachabilityExporter implements InternalFeature {
         if (codeSource != null && codeSource.getLocation() != null) {
             URL url = codeSource.getLocation();
             if(url.getProtocol().equals("file")) {
-                String path = codeSource.getLocation().getPath();
-                if (path.endsWith(".jar")) {
-                    // Use String API to determine basename of path to handle both / and \.
-                    return path.substring(Math.max(path.lastIndexOf('/') + 1, path.lastIndexOf('\\') + 1));
-                } else if(path.endsWith("/") || path.endsWith("\\")) {
-                    return "/";
-                }
+                return url.getPath();
             }
         }
         return "";
@@ -191,6 +209,6 @@ public class ReachabilityExporter implements InternalFeature {
 
     private static String findModuleName(Class<?> clazz) {
         String name = clazz.getModule().getName();
-        return name != null ? name : "anonymous";
+        return name != null ? name : "";
     }
 }
