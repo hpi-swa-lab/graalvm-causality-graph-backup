@@ -26,18 +26,20 @@ package com.oracle.svm.hosted;
 
 import java.io.IOException;
 import java.lang.reflect.Executable;
-import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.oracle.svm.hosted.jni.JNIAccessFeature;
 import org.graalvm.collections.EconomicMap;
+import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.impl.RuntimeClassInitializationSupport;
 
@@ -65,6 +67,234 @@ import com.oracle.svm.hosted.reflect.ReflectionHostedSupport;
 @SuppressWarnings("unused")
 public class ReachabilityExporter implements InternalFeature {
 
+    private static class Export {
+        private static class Method {
+            public final boolean reflection;
+            public final boolean jni;
+            public final boolean synthetic;
+            public final int codeSize;
+
+            public Method(HostedMethod m, Map<HostedMethod, CompileTask> compilations,
+                          Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods) {
+                CompileTask compilation = compilations.get(m);
+                codeSize = compilation != null ? compilation.result.getTargetCodeSize() : 0;
+                reflection = reflectionExecutables.containsKey(m.wrapped);
+                jni = jniMethods.contains(m.wrapped);
+                synthetic = m.isSynthetic();
+            }
+
+            EconomicMap<String, Object> serialize() {
+                EconomicMap<String, Object> map = EconomicMap.create();
+                ArrayList<String> flagsList = new ArrayList<>();
+
+                if(reflection)
+                    flagsList.add("reflection");
+                if(jni)
+                    flagsList.add("jni");
+                if(synthetic)
+                    flagsList.add("synthetic");
+
+                if(!flagsList.isEmpty())
+                    map.put("flags", flagsList.toArray());
+
+                map.put("size", codeSize);
+                return map;
+            }
+        }
+
+        private static class Field {
+            public final boolean reflection;
+            public final boolean jni;
+            public final boolean synthetic;
+
+            public Field(HostedField f, Map<AnalysisField, java.lang.reflect.Field> reflectionFields) {
+                reflection = reflectionFields.containsKey(f.wrapped);
+                jni = f.wrapped.isJNIAccessed();
+                synthetic = f.isSynthetic();
+            }
+
+            EconomicMap<String, Object> serialize() {
+                EconomicMap<String, Object> map = EconomicMap.create();
+                ArrayList<String> flagsList = new ArrayList<>();
+
+                if(reflection)
+                    flagsList.add("reflection");
+                if(jni)
+                    flagsList.add("jni");
+                if(synthetic)
+                    flagsList.add("synthetic");
+
+                if(!flagsList.isEmpty())
+                    map.put("flags", flagsList.toArray());
+
+                return map;
+            }
+        }
+
+        private static class Type {
+            public final ArrayList<Pair<String, Method>> methods = new ArrayList<>();
+            public final ArrayList<Pair<String, Export.Field>> fields = new ArrayList<>();
+            public final boolean buildTimeInit;
+            public final boolean runTimeInit;
+
+            public Type(HostedType type, Map<Class<?>, InitKind> classInitKinds) {
+                if(type.getWrapped().getWrapped().getClassInitializer() != null) {
+                    InitKind initKind = classInitKinds.get(type.getJavaClass());
+
+                    if (initKind != null) {
+                        runTimeInit = initKind == InitKind.RUN_TIME || initKind == InitKind.RERUN;
+                        buildTimeInit = initKind == InitKind.BUILD_TIME || initKind == InitKind.RERUN;
+                        return;
+                    }
+                }
+
+                runTimeInit = false;
+                buildTimeInit = false;
+            }
+
+            EconomicMap<String, Object> serialize() {
+                EconomicMap<String, Object> map = EconomicMap.create();
+                ArrayList<String> initKindList = new ArrayList<>();
+
+                if (runTimeInit)
+                    initKindList.add("run-time");
+                if (buildTimeInit)
+                    initKindList.add("build-time");
+
+                if (!initKindList.isEmpty())
+                    map.put("init-kind", initKindList.toArray());
+
+                EconomicMap<String, Object> jsonMethods = EconomicMap.create();
+                EconomicMap<String, Object> jsonFields = EconomicMap.create();
+
+                for(Pair<String, Method> m : methods) {
+                    jsonMethods.put(m.getLeft(), m.getRight().serialize());
+                }
+
+                for(Pair<String, Export.Field> f : fields) {
+                    jsonFields.put(f.getLeft(), f.getRight().serialize());
+                }
+
+                map.put("methods", jsonMethods);
+                map.put("fields", jsonFields);
+
+                return map;
+            }
+        }
+
+        private static class Package {
+            public final HashMap<String, Type> types = new HashMap<>();
+
+            public EconomicMap<String, Object> serialize() {
+                EconomicMap<String, Object> map = EconomicMap.create(1);
+                EconomicMap<String, Object> typeMap = EconomicMap.create(types.size());
+
+                for(Map.Entry<String, Type> t : types.entrySet())
+                    typeMap.put(t.getKey(), t.getValue().serialize());
+
+                map.put("types", typeMap);
+                return map;
+            }
+        }
+
+        private static class TopLevelOrigin {
+            public final String path;
+            public final String module;
+
+            public final HashMap<String, Package> packages = new HashMap<>();
+
+            public TopLevelOrigin(String path, String module) {
+                this.path = path;
+                this.module = module;
+            }
+
+            public EconomicMap<String, Object> serialize() {
+                EconomicMap<String, Object> map = EconomicMap.create();
+                if (path != null)
+                    map.put("path", path);
+                if (module != null)
+                    map.put("module", module);
+
+                EconomicMap<String, Object> packagesMap = EconomicMap.create();
+
+                for(Map.Entry<String, Package> p : packages.entrySet())
+                    packagesMap.put(p.getKey(), p.getValue().serialize());
+
+                map.put("packages", packagesMap);
+                return map;
+            }
+        }
+
+        private static String findTopLevelOriginName(Class<?> clazz) {
+            CodeSource codeSource = clazz.getProtectionDomain().getCodeSource();
+            if (codeSource != null && codeSource.getLocation() != null) {
+                URL url = codeSource.getLocation();
+                if("file".equals(url.getProtocol())) {
+                    return url.getPath();
+                }
+            }
+            return null;
+        }
+
+        private static String findModuleName(Class<?> clazz) {
+            return clazz.getModule().getName();
+        }
+
+        private final HashMap<Pair<String, String>, TopLevelOrigin> topLevelOrigins = new HashMap<>();
+
+        public Export(AfterCompilationAccessImpl accessImpl) {
+            HostedUniverse universe = accessImpl.getUniverse();
+            Map<Class<?>, InitKind> classInitKinds = ((ClassInitializationSupport) ImageSingletons.lookup(RuntimeClassInitializationSupport.class)).getClassInitKinds();
+            Map<HostedMethod, CompileTask> compilations = accessImpl.getCompilations();
+            ReflectionHostedSupport reflectionHostedSupport = ImageSingletons.lookup(ReflectionHostedSupport.class);
+            Map<AnalysisMethod, Executable> reflectionExecutables = reflectionHostedSupport.getReflectionExecutables();
+            Map<AnalysisField, java.lang.reflect.Field> reflectionFields = reflectionHostedSupport.getReflectionFields();
+            JNIAccessFeature jniAccessFeature = JNIAccessFeature.singleton();
+            Set<AnalysisMethod> jniMethods = Arrays.stream(jniAccessFeature.getRegisteredMethods()).map(universe.getBigBang().getUniverse()::lookup).collect(Collectors.toSet());
+
+            Path buildPath = NativeImageGenerator.generatedFiles(HostedOptionValues.singleton());
+            Path targetPath = buildPath.resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
+            ArrayList<Object> top = new ArrayList<>();
+
+            for (HostedType t : universe.getTypes()) {
+                if(!t.getWrapped().isReachable())
+                    continue;
+
+                if(t.isArray())
+                    continue;
+
+                getType(top, t, classInitKinds);
+            }
+            for (HostedMethod m : universe.getMethods()) {
+                if(!m.getWrapped().isReachable())
+                    continue;
+
+                Type t = getType(top, m.getDeclaringClass(), classInitKinds);
+                t.methods.add(Pair.create(m.format("%n(%P)"), new Method(m, compilations, reflectionExecutables, jniMethods)));
+            }
+            for (HostedField f : universe.getFields()) {
+                if(!f.getWrapped().isReachable())
+                    continue;
+
+                Type t = getType(top, f.getDeclaringClass(), classInitKinds);
+                t.fields.add(Pair.create(f.getName(), new Field(f, reflectionFields)));
+            }
+        }
+
+        public void write(JsonWriter writer) throws IOException {
+            writer.print(topLevelOrigins.values().stream().sorted(Comparator.comparing((TopLevelOrigin tlo) -> tlo.path != null ? tlo.path : "").thenComparing(tlo -> tlo.module != null ? tlo.module : "")).map(TopLevelOrigin::serialize).toArray());
+        }
+
+        private Type getType(ArrayList<Object> top, HostedType type, Map<Class<?>, InitKind> classInitKinds) {
+            String topLevelOriginName = findTopLevelOriginName(type.getJavaClass());
+            String moduleName = findModuleName(type.getJavaClass());
+            TopLevelOrigin tlo = topLevelOrigins.computeIfAbsent(Pair.create(topLevelOriginName, moduleName), pair -> new TopLevelOrigin(pair.getLeft(), pair.getRight()));
+            Package p = tlo.packages.computeIfAbsent(type.getJavaClass().getPackageName(), name -> new Package());
+            Type t = p.types.computeIfAbsent(type.getJavaClass().getSimpleName(), name -> new Type(type, classInitKinds));
+            return t;
+        }
+    }
+
     @Override
     public boolean isInConfiguration(IsInConfigurationAccess access) {
         return SubstrateOptions.GenerateReachabilityFile.getValue();
@@ -73,142 +303,16 @@ public class ReachabilityExporter implements InternalFeature {
     @Override
     public void afterCompilation(AfterCompilationAccess access) {
         AfterCompilationAccessImpl accessImpl = (AfterCompilationAccessImpl) access;
-        HostedUniverse universe = accessImpl.getUniverse();
-        Map<Class<?>, InitKind> classInitKinds = ((ClassInitializationSupport) ImageSingletons.lookup(RuntimeClassInitializationSupport.class)).getClassInitKinds();
-        Map<HostedMethod, CompileTask> compilations = accessImpl.getCompilations();
-        ReflectionHostedSupport reflectionHostedSupport = ImageSingletons.lookup(ReflectionHostedSupport.class);
-        Map<AnalysisMethod, Executable> reflectionExecutables = reflectionHostedSupport.getReflectionExecutables();
-        Map<AnalysisField, Field> reflectionFields = reflectionHostedSupport.getReflectionFields();
-        JNIAccessFeature jniAccessFeature = JNIAccessFeature.singleton();
-        Set<AnalysisMethod> jniMethods = Arrays.stream(jniAccessFeature.getRegisteredMethods()).map(universe.getBigBang().getUniverse()::lookup).collect(Collectors.toSet());
+        Export e = new Export(accessImpl);
 
         Path buildPath = NativeImageGenerator.generatedFiles(HostedOptionValues.singleton());
         Path targetPath = buildPath.resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
-        EconomicMap<String, Object> map = EconomicMap.create();
-
-        for (HostedType t : universe.getTypes()) {
-            if(!t.getWrapped().isReachable())
-                continue;
-
-            if(t.isArray())
-                continue;
-
-            getTypeMap(map, t, classInitKinds);
-        }
-        for (HostedMethod m : universe.getMethods()) {
-            if(!m.getWrapped().isReachable())
-                continue;
-
-            EconomicMap<String, Object> type = getTypeMap(map, m.getDeclaringClass(), classInitKinds);
-            EconomicMap<String, Object> methods = getChild(type, "methods");
-            String methodName = m.format("%n(%P)");
-            EconomicMap<String, Object> methodMap = getChild(methods, methodName);
-            propagateMethodDetails(methodMap, m, compilations, reflectionExecutables, jniMethods);
-        }
-        for (HostedField f : universe.getFields()) {
-            if(!f.getWrapped().isReachable())
-                continue;
-
-            EconomicMap<String, Object> type = getTypeMap(map, f.getDeclaringClass(), classInitKinds);
-            EconomicMap<String, Object> fields = getChild(type, "fields");
-            EconomicMap<String, Object> fieldMap = getChild(fields, f.getName());
-            propagateFieldDetails(fieldMap, f, reflectionFields);
-        }
 
         try (JsonWriter writer = new JsonWriter(targetPath)) {
-            writer.print(map);
+            e.write(writer);
             BuildArtifacts.singleton().add(ArtifactType.BUILD_INFO, targetPath);
-        } catch (IOException e) {
-            throw VMError.shouldNotReachHere("Unable to create " + SubstrateOptions.REACHABILITY_FILE_NAME, e);
+        } catch (IOException ex) {
+            throw VMError.shouldNotReachHere("Unable to create " + SubstrateOptions.REACHABILITY_FILE_NAME, ex);
         }
-    }
-
-    private static EconomicMap<String, Object> getTypeMap(EconomicMap<String, Object> map, HostedType type, Map<Class<?>, InitKind> classInitKinds) {
-        String topLevelOriginName = findTopLevelOriginName(type.getJavaClass());
-        EconomicMap<String, Object> topLevelOrigin = getChild(map, topLevelOriginName);
-        EconomicMap<String, Object> modules = getChild(topLevelOrigin, "modules");
-        String moduleName = findModuleName(type.getJavaClass());
-        EconomicMap<String, Object> module = getChild(modules, moduleName);
-        EconomicMap<String, Object> packages = getChild(module, "packages");
-        EconomicMap<String, Object> _package = getChild(packages, type.getJavaClass().getPackageName());
-        EconomicMap<String, Object> types = getChild(_package, "types");
-        EconomicMap<String, Object> typeMap = getChild(types, type.getJavaClass().getSimpleName());
-        if (typeMap.isEmpty()) {
-            if(type.getWrapped().getWrapped().getClassInitializer() != null) {
-                ArrayList<String> initKindList = new ArrayList<>();
-                InitKind initKind = classInitKinds.get(type.getJavaClass());
-
-                if (initKind != null) {
-                    if (initKind == InitKind.RUN_TIME || initKind == InitKind.RERUN)
-                        initKindList.add("run-time");
-                    if (initKind == InitKind.BUILD_TIME || initKind == InitKind.RERUN)
-                        initKindList.add("build-time");
-                }
-
-                typeMap.put("init-kind", initKindList.toArray());
-            }
-        }
-        return typeMap;
-    }
-
-    private static void propagateMethodDetails(EconomicMap<String, Object> methodMap, HostedMethod m, Map<HostedMethod, CompileTask> compilations,
-                    Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods) {
-        CompileTask compilation = compilations.get(m);
-        int targetCodeSize = compilation != null ? compilation.result.getTargetCodeSize() : 0;
-        methodMap.put("size", targetCodeSize);
-
-        ArrayList<String> flagsList = new ArrayList<>();
-
-        if(reflectionExecutables.containsKey(m.wrapped))
-            flagsList.add("reflection");
-        if(jniMethods.contains(m.wrapped))
-            flagsList.add("jni");
-        if(m.isSynthetic())
-            flagsList.add("synthetic");
-
-        if(!flagsList.isEmpty())
-            methodMap.put("flags", flagsList.toArray());
-    }
-
-    private static void propagateFieldDetails(EconomicMap<String, Object> fieldMap, HostedField f, Map<AnalysisField, Field> reflectionFields) {
-        ArrayList<String> flagsList = new ArrayList<>();
-
-        if(reflectionFields.containsKey(f.wrapped))
-            flagsList.add("reflection");
-        if(f.wrapped.isJNIAccessed())
-            flagsList.add("jni");
-        if(f.isSynthetic())
-            flagsList.add("synthetic");
-
-        if(!flagsList.isEmpty())
-            fieldMap.put("flags", flagsList.toArray());
-    }
-
-    @SuppressWarnings("unchecked")
-    private static EconomicMap<String, Object> getChild(EconomicMap<String, Object> map, String key) {
-        Object value = map.get(key);
-        if (value != null) {
-            return (EconomicMap<String, Object>) value;
-        } else {
-            EconomicMap<String, Object> childMap = EconomicMap.create();
-            map.put(key, childMap);
-            return childMap;
-        }
-    }
-
-    private static String findTopLevelOriginName(Class<?> clazz) {
-        CodeSource codeSource = clazz.getProtectionDomain().getCodeSource();
-        if (codeSource != null && codeSource.getLocation() != null) {
-            URL url = codeSource.getLocation();
-            if(url.getProtocol().equals("file")) {
-                return url.getPath();
-            }
-        }
-        return "";
-    }
-
-    private static String findModuleName(Class<?> clazz) {
-        String name = clazz.getModule().getName();
-        return name != null ? name : "";
     }
 }
