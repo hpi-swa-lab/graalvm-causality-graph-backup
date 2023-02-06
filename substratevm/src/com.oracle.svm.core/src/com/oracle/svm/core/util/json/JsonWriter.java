@@ -33,6 +33,8 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Map;
 
+import org.graalvm.collections.EconomicMap;
+
 public class JsonWriter implements AutoCloseable {
     private final Writer writer;
 
@@ -56,7 +58,6 @@ public class JsonWriter implements AutoCloseable {
         return this;
     }
 
-    @SuppressWarnings("unchecked")
     public void print(Map<String, Object> map) throws IOException {
         if (map.isEmpty()) {
             append("{}");
@@ -68,16 +69,55 @@ public class JsonWriter implements AutoCloseable {
             String key = keySetIter.next();
             Object value = map.get(key);
             quote(key).append(':');
-            if (value instanceof Map) {
-                print((Map<String, Object>) value); // Must always be <String, Object>
-            } else {
-                quote(value);
-            }
+            print(value);
             if (keySetIter.hasNext()) {
                 append(',');
             }
         }
         append('}');
+    }
+
+    public void print(EconomicMap<String, Object> map) throws IOException {
+        if (map.isEmpty()) {
+            append("{}");
+            return;
+        }
+        append('{');
+        Iterator<String> keySetIter = map.getKeys().iterator();
+        while (keySetIter.hasNext()) {
+            String key = keySetIter.next();
+            Object value = map.get(key);
+            quote(key).append(':');
+            print(value);
+            if (keySetIter.hasNext()) {
+                append(',');
+            }
+        }
+        append('}');
+    }
+
+    public void print(Object[] array) throws IOException {
+        append('[');
+        for(int i = 0; i < array.length; i++) {
+            Object e = array[i];
+            print(e);
+            if(i < array.length - 1)
+                append(',');
+        }
+        append(']');
+    }
+    
+    @SuppressWarnings("unchecked")
+    public void print(Object value) throws IOException {
+        if (value instanceof Map) {
+            print((Map<String, Object>) value);
+        } else if (value instanceof EconomicMap) {
+            print((EconomicMap<String, Object>) value);
+        } else if (value instanceof Object[]) {
+            print((Object[]) value);
+        } else {
+            quote(value);
+        }
     }
 
     public JsonWriter quote(Object o) throws IOException {
