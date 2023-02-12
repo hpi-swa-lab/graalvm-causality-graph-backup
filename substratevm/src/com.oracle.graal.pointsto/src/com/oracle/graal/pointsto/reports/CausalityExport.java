@@ -54,6 +54,7 @@ public abstract class CausalityExport {
         instances = null;
         instancesOfAllThreads = null;
         Graph g = data.createCausalityGraph(bb);
+        HeapAssignmentTracing.getInstance().dispose();
         g.export(bb);
     }
 
@@ -623,7 +624,7 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return "[Configuration " + uri + "]";
+            return uri.getPath() +  " [Configuration File]";
         }
 
         @Override
