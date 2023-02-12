@@ -624,7 +624,18 @@ public abstract class CausalityExport {
 
         @Override
         public String toString() {
-            return uri.getPath() +  " [Configuration File]";
+            String path;
+
+            if(uri.getPath() != null)
+                path = uri.getPath();
+            else
+            {
+                path = uri.toString();
+                if(path.startsWith("jar:file:"))
+                    path = path.substring(9);
+            }
+
+            return path + " [Configuration File]";
         }
 
         @Override
