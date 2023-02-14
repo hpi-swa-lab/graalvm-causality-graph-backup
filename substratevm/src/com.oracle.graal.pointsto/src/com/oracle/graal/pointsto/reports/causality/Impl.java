@@ -1,6 +1,7 @@
 package com.oracle.graal.pointsto.reports.causality;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
@@ -325,13 +326,18 @@ public class Impl extends CausalityExport {
                     }
                 }
 
-                Optional<AnalysisType> optT = bb.getMetaAccess().optionalLookupJavaType(init.clazz);
+                AnalysisType t;
+                try {
+                    t = bb.getMetaAccess().optionalLookupJavaType(init.clazz).orElse(null);
+                } catch (UnsupportedFeatureException ex) {
+                    t = null;
+                }
 
-                if(optT.isPresent()) {
-                    TypeReachableReason tReachable = new TypeReachableReason(optT.get());
+                if(t != null) {
+                    TypeReachableReason tReachable = new TypeReachableReason(t);
 
                     if(!tReachable.unused()) {
-                        g.directInvokes.add(new Graph.DirectCallEdge(new TypeReachableReason(optT.get()), init));
+                        g.directInvokes.add(new Graph.DirectCallEdge(tReachable, init));
                     }
                 } else if(!hasOuterInit) {
                     g.directInvokes.add(new Graph.DirectCallEdge(null, init));

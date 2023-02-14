@@ -2,6 +2,7 @@ package com.oracle.graal.pointsto.reports.causality;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AccessFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
@@ -277,7 +278,18 @@ public class Graph {
 
             for (CausalityExport.Reason method : methodsSorted) {
                 int typeId = -1;
-                AnalysisType t = method.getContainingType(bb.getMetaAccess());
+                Class<?> clazz = method.getContainingType();
+                AnalysisType t;
+                if (clazz != null) {
+                    try {
+                        t = bb.getMetaAccess().optionalLookupJavaType(clazz).orElse(null);
+                    } catch(UnsupportedFeatureException ex) {
+                        t = null;
+                    }
+                } else {
+                    t = null;
+                }
+
                 if(t != null) {
                     Integer id = typeIdMap.get(t);
                     if(id != null)

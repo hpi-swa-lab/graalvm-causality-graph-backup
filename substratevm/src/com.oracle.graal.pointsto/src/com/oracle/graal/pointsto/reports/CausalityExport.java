@@ -149,7 +149,7 @@ public abstract class CausalityExport {
 
         public boolean root() { return false; }
 
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
+        public Class<?> getContainingType() {
             return null;
         }
     }
@@ -199,8 +199,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return element.getDeclaringClass();
+        public Class<?> getContainingType() {
+            return element.getDeclaringClass().getJavaClass();
         }
     }
 
@@ -220,8 +220,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return element;
+        public Class<?> getContainingType() {
+            return element.getJavaClass();
         }
     }
 
@@ -256,8 +256,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return type;
+        public Class<?> getContainingType() {
+            return type.getJavaClass();
         }
     }
 
@@ -290,17 +290,14 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            Class<?> containing;
+        public Class<?> getContainingType() {
             if(element instanceof Class<?>) {
-                containing = (Class<?>) element;
+                return (Class<?>) element;
             } else if (element instanceof Executable) {
-                containing = ((Executable) element).getDeclaringClass();
+                return ((Executable) element).getDeclaringClass();
             } else {
-                containing = ((Field) element).getDeclaringClass();
+                return ((Field) element).getDeclaringClass();
             }
-
-            return metaAccess.optionalLookupJavaType(containing).orElse(null);
         }
     }
 
@@ -394,8 +391,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return metaAccess.optionalLookupJavaType(clazz).orElse(null);
+        public Class<?> getContainingType() {
+            return clazz;
         }
     }
 
@@ -425,8 +422,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return metaAccess.optionalLookupJavaType(clazz).orElse(null);
+        public Class<?> getContainingType() {
+            return clazz;
         }
     }
 
@@ -457,8 +454,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return metaAccess.optionalLookupJavaType(forClass).orElse(null);
+        public Class<?> getContainingType() {
+            return forClass;
         }
     }
 
@@ -493,8 +490,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return metaAccess.optionalLookupJavaType(heapObjectType).orElse(null);
+        public Class<?> getContainingType() {
+            return heapObjectType;
         }
     }
 
@@ -549,8 +546,8 @@ public abstract class CausalityExport {
         }
 
         @Override
-        public AnalysisType getContainingType(AnalysisMetaAccess metaAccess) {
-            return metaAccess.optionalLookupJavaType(f.getClass()).orElse(null);
+        public Class<?> getContainingType() {
+            return f.getClass();
         }
     }
 
