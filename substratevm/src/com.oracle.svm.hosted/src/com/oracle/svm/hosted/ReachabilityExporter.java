@@ -136,8 +136,11 @@ public class ReachabilityExporter implements InternalFeature {
             public final ArrayList<Pair<String, Export.Field>> fields = new ArrayList<>();
             public final boolean buildTimeInit;
             public final boolean runTimeInit;
+            public final boolean synthetic;
 
             public Type(HostedType type, Map<Class<?>, InitKind> classInitKinds) {
+                synthetic = type.getJavaClass().isSynthetic();
+
                 if(type.getWrapped().getWrapped().getClassInitializer() != null) {
                     InitKind initKind = classInitKinds.get(type.getJavaClass());
 
@@ -177,6 +180,9 @@ public class ReachabilityExporter implements InternalFeature {
 
                 map.put("methods", jsonMethods);
                 map.put("fields", jsonFields);
+
+                if(synthetic)
+                    map.put("flags", new String[] { "synthetic" });
 
                 return map;
             }
