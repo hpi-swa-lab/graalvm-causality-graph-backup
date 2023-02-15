@@ -290,7 +290,7 @@ public class ReachabilityExporter implements InternalFeature {
             String moduleName = findModuleName(type.getJavaClass());
             TopLevelOrigin tlo = topLevelOrigins.computeIfAbsent(Pair.create(topLevelOriginName, moduleName), pair -> new TopLevelOrigin(pair.getLeft(), pair.getRight()));
             Package p = tlo.packages.computeIfAbsent(type.getJavaClass().getPackageName(), name -> new Package());
-            Type t = p.types.computeIfAbsent(type.getJavaClass().getSimpleName(), name -> new Type(type, classInitKinds));
+            Type t = p.types.computeIfAbsent(type.toJavaName(false), name -> new Type(type, classInitKinds));
             return t;
         }
     }
