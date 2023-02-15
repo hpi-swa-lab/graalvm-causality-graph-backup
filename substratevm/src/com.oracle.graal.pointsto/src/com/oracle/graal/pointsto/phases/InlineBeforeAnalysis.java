@@ -28,6 +28,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.bytecode.BytecodeProvider;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
@@ -280,6 +281,7 @@ class InlineBeforeAnalysisGraphDecoder<S extends InlineBeforeAnalysisPolicy.Scop
         }
         Object reason = graph.currentNodeSourcePosition() != null ? graph.currentNodeSourcePosition() : graph.method();
 
+        CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()), new CausalityExport.MethodReachableReason((AnalysisMethod) invokeData.callTarget.targetMethod()));
         ((AnalysisMethod) invokeData.callTarget.targetMethod()).registerAsInlined(reason);
 
         super.finishInlining(inlineScope);

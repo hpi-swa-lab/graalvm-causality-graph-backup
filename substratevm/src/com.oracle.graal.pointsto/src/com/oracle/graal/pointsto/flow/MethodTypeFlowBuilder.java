@@ -1576,11 +1576,14 @@ public class MethodTypeFlowBuilder {
 
             MultiMethod.MultiMethodKey multiMethodKey = method.getMultiMethodKey();
             InvokeTypeFlow invokeFlow;
+            AnalysisMethod logicalCaller = (AnalysisMethod) invoke.getNodeSourcePosition().getMethod();
             switch (invokeKind) {
                 case Static:
+                    CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createStaticInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
                 case Special:
+                    CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createSpecialInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
                 case Virtual:

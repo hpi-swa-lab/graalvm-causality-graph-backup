@@ -195,7 +195,7 @@ public abstract class CausalityExport {
 
         @Override
         public boolean unused() {
-            return !element.isImplementationInvoked();
+            return !element.isReachable();
         }
 
         @Override

@@ -37,7 +37,6 @@ public class Impl extends CausalityExport {
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
-    private final HashMap<TypeFlow<?>, AnalysisMethod> typeflowGateMethods = new HashMap<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
     private final HashMap<Pair<Reason, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
@@ -61,7 +60,6 @@ public class Impl extends CausalityExport {
                 p1.getLeft().addAll(p2.getLeft());
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
             });
-            typeflowGateMethods.putAll(i.typeflowGateMethods);
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
@@ -131,14 +129,7 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerMethodFlow(MethodTypeFlow method) {
-        for (TypeFlow<?> flow : method.getMethodFlowsGraph().flows()) {
-            if (method.getMethod() == null)
-                throw new RuntimeException("Null method registered");
-            if (flow.method() != null)
-                typeflowGateMethods.put(flow, method.getMethod());
-        }
-    }
+    public void registerMethodFlow(MethodTypeFlow method) {}
 
     @Override
     public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {
@@ -210,7 +201,7 @@ public class Impl extends CausalityExport {
                 return null;
 
             return flowMapping.computeIfAbsent(flow, f -> {
-                AnalysisMethod m = typeflowGateMethods.get(f);
+                AnalysisMethod m = f.method();
 
                 MethodReachableReason reason = m == null ? null : new MethodReachableReason(m);
 
