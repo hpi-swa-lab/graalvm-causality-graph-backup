@@ -136,8 +136,11 @@ public class ReachabilityExporter implements InternalFeature {
             public final ArrayList<Pair<String, Export.Field>> fields = new ArrayList<>();
             public final boolean buildTimeInit;
             public final boolean runTimeInit;
+            public final boolean synthetic;
 
             public Type(HostedType type, Map<Class<?>, InitKind> classInitKinds) {
+                synthetic = type.getJavaClass().isSynthetic();
+
                 if(type.getWrapped().getWrapped().getClassInitializer() != null) {
                     InitKind initKind = classInitKinds.get(type.getJavaClass());
 
@@ -177,6 +180,9 @@ public class ReachabilityExporter implements InternalFeature {
 
                 map.put("methods", jsonMethods);
                 map.put("fields", jsonFields);
+
+                if(synthetic)
+                    map.put("flags", new String[] { "synthetic" });
 
                 return map;
             }
@@ -290,7 +296,7 @@ public class ReachabilityExporter implements InternalFeature {
             String moduleName = findModuleName(type.getJavaClass());
             TopLevelOrigin tlo = topLevelOrigins.computeIfAbsent(Pair.create(topLevelOriginName, moduleName), pair -> new TopLevelOrigin(pair.getLeft(), pair.getRight()));
             Package p = tlo.packages.computeIfAbsent(type.getJavaClass().getPackageName(), name -> new Package());
-            Type t = p.types.computeIfAbsent(type.getJavaClass().getSimpleName(), name -> new Type(type, classInitKinds));
+            Type t = p.types.computeIfAbsent(type.toJavaName(false), name -> new Type(type, classInitKinds));
             return t;
         }
     }
