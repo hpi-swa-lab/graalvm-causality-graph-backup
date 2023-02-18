@@ -361,6 +361,11 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * the actual parameter type state is propagated to the formal parameters. Then the
              * callee is linked and registered as implementation-invoked.
              */
+
+            if(invokeSpecial) {
+                CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
+            }
+
             postTask(() -> {
                 if (invokeSpecial) {
                     pointsToMethod.registerAsDirectRootMethod();

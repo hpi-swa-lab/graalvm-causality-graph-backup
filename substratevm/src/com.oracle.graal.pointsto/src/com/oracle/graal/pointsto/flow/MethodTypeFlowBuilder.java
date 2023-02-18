@@ -36,7 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.oracle.graal.pointsto.reports.CausalityExport;
-import com.oracle.graal.pointsto.reports.CausalityExport;
+import jdk.vm.ci.code.BytecodeFrame;
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.core.common.type.ObjectStamp;
 import org.graalvm.compiler.core.common.type.TypeReference;
@@ -1519,6 +1519,14 @@ public class MethodTypeFlowBuilder {
         return invokePosition;
     }
 
+    private static AnalysisMethod getPotentiallyInlinedCaller(ValueNode invoke) {
+        NodeSourcePosition nsp = invoke.getNodeSourcePosition();
+        while (nsp.getCaller() != null && nsp.getBCI() == BytecodeFrame.UNWIND_BCI) {
+            nsp = nsp.getCaller();
+        }
+        return (AnalysisMethod) nsp.getMethod();
+    }
+
     protected void processMethodInvocation(TypeFlowsOfNodes state, ValueNode invoke, InvokeKind invokeKind, PointsToAnalysisMethod targetMethod, NodeInputList<ValueNode> arguments,
                     boolean installResult, BytecodePosition invokeLocation) {
         // check if the call is allowed
@@ -1576,13 +1584,14 @@ public class MethodTypeFlowBuilder {
 
             MultiMethod.MultiMethodKey multiMethodKey = method.getMultiMethodKey();
             InvokeTypeFlow invokeFlow;
-            AnalysisMethod logicalCaller = (AnalysisMethod) invoke.getNodeSourcePosition().getMethod();
+            AnalysisMethod logicalCaller = getPotentiallyInlinedCaller(invoke);
             switch (invokeKind) {
                 case Static:
                     CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createStaticInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
                 case Special:
+                    // Causality-TODO: This adds one kind of overapproximation: When the DefaultSpecialInvokeTypeFlow can prove that the receiver is null, it won't make the target reachable.
                     CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createSpecialInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
