@@ -257,13 +257,13 @@ public abstract class ImageHeapScanner {
                     onArrayElementReachable(array, type, elementValue, idx, arrayReason, onAnalysisModified);
                 }
             }
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject(), reason))) {
                 markTypeInstantiated(type, reason);
             }
         } else {
             ImageHeapInstance instance = (ImageHeapInstance) object;
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject()))) {
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, object.getHostedObject(), reason))) {
                 markTypeInstantiated(type, reason);
             }
             for (AnalysisField field : type.getInstanceFields(true)) {
@@ -363,7 +363,7 @@ public abstract class ImageHeapScanner {
                     array.setElement(idx, arrayElement);
                 }
             }
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant, reason))) {
                 markTypeInstantiated(type, reason);
             }
         } else {
@@ -373,7 +373,7 @@ public abstract class ImageHeapScanner {
              * thread before all instanceFieldValues are filled in.
              */
             /* We are about to query the type's fields, the type must be marked as reachable. */
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant))) {
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant, reason))) {
                 markTypeInstantiated(type, reason);
             }
             AnalysisField[] instanceFields = type.getInstanceFields(true);
@@ -537,7 +537,7 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.add(objectType, imageHeapConstant);
 
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()))) {
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason))) {
             markTypeInstantiated(objectType, reason);
         }
 

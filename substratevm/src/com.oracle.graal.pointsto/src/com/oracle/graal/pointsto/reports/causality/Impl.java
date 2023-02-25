@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.reports.causality;
 
+import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
@@ -141,7 +142,11 @@ public class Impl extends CausalityExport {
     }
 
     @Override
-    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
+    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+        if(reason instanceof ObjectScanner.EmbeddedRootScan) {
+            return new CausalityExport.MethodReachableReason(((ObjectScanner.EmbeddedRootScan)reason).getMethod());
+        }
+
         Object o = bb.getSnippetReflectionProvider().asObject(Object.class, heapObject);
         Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
         return getResponsibleClassReason(responsible, o);

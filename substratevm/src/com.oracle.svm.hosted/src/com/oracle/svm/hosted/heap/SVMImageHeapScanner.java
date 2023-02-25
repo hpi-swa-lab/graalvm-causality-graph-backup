@@ -152,11 +152,11 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
 
         if (metaAccess.isInstanceOf(imageHeapConstant, Field.class)) {
             Field f = (Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(f));
+            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason), new CausalityExport.ReflectionRegistration(f));
             reflectionSupport.registerHeapReflectionField((Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
             Executable e = (Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject()), new CausalityExport.ReflectionRegistration(e));
+            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason), new CausalityExport.ReflectionRegistration(e));
             reflectionSupport.registerHeapReflectionExecutable((Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {
             reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);

@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.reports.causality;
 
+import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
@@ -47,7 +48,7 @@ public class EmptyImpl extends CausalityExport {
     }
 
     @Override
-    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject) {
+    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
         return null;
     }
 

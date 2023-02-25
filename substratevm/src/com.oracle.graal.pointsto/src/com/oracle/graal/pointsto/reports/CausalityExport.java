@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.reports;
 
+import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
@@ -91,7 +92,7 @@ public abstract class CausalityExport {
 
     public abstract void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation);
 
-    public abstract Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject);
+    public abstract Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason);
 
     public abstract Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value);
 
