@@ -773,6 +773,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
             throw UserError.abort("Found forbidden field %s in the Native Image heap. The field was added with the following reason: %s", reflectField, reason);
         }
 
+        CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject(reflectField, reason), new CausalityExport.ReflectionRegistration(reflectField));
         try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(reflectField))) {
             AnalysisField analysisField = metaAccess.lookupJavaField(reflectField);
             if (heapFields.put(analysisField, reflectField) == null) {
@@ -790,6 +791,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         if (SubstitutionReflectivityFilter.shouldExclude(reflectExecutable, metaAccess, universe)) {
             throw UserError.abort("Found forbidden method %s in the Native Image heap. The method was added with the following reason: %s", reflectExecutable, reason);
         }
+
+        CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject(reflectExecutable, reason), new CausalityExport.ReflectionRegistration(reflectExecutable));
         try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(reflectExecutable))) {
             AnalysisMethod analysisMethod = metaAccess.lookupJavaMethod(reflectExecutable);
             if (heapMethods.put(analysisMethod, reflectExecutable) == null) {

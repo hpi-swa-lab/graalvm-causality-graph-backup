@@ -94,6 +94,10 @@ public class CausalityExport {
 
     public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {}
 
+    public Reason getReasonForHeapObject(Object heapObject, ObjectScanner.ScanReason reason) {
+        return null;
+    }
+
     public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
         return null;
     }

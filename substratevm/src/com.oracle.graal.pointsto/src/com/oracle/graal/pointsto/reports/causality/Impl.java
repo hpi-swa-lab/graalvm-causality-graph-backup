@@ -143,13 +143,17 @@ public final class Impl extends CausalityExport {
     }
 
     @Override
-    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+    public Reason getReasonForHeapObject(Object heapObject, ObjectScanner.ScanReason reason) {
         if(reason instanceof ObjectScanner.EmbeddedRootScan) {
             return new CausalityExport.MethodReachableReason(((ObjectScanner.EmbeddedRootScan)reason).getMethod());
         }
-        Object o = asObject(bb, Object.class, heapObject);
-        Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(o);
-        return getResponsibleClassReason(responsible, o);
+        Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(heapObject);
+        return getResponsibleClassReason(responsible, heapObject);
+    }
+
+    @Override
+    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+        return getReasonForHeapObject(asObject(bb, Object.class, heapObject), reason);
     }
 
     @Override

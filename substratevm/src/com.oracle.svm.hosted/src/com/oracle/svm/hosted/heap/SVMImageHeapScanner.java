@@ -24,13 +24,10 @@
  */
 package com.oracle.svm.hosted.heap;
 
-import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.util.function.Consumer;
 
-import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.type.TypedConstant;
@@ -151,12 +148,8 @@ public class SVMImageHeapScanner extends ImageHeapScanner {
         super.onObjectReachable(imageHeapConstant, reason);
 
         if (metaAccess.isInstanceOf(imageHeapConstant, Field.class)) {
-            Field f = (Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason), new CausalityExport.ReflectionRegistration(f));
             reflectionSupport.registerHeapReflectionField((Field) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, Executable.class)) {
-            Executable e = (Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject());
-            CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason), new CausalityExport.ReflectionRegistration(e));
             reflectionSupport.registerHeapReflectionExecutable((Executable) SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
         } else if (metaAccess.isInstanceOf(imageHeapConstant, DynamicHub.class)) {
             reflectionSupport.registerHeapDynamicHub(SubstrateObjectConstant.asObject(imageHeapConstant.getHostedObject()), reason);
