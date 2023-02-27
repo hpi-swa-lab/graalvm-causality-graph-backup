@@ -10,7 +10,6 @@ import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
-import com.oracle.graal.pointsto.reports.causality.EmptyImpl;
 import com.oracle.graal.pointsto.reports.causality.Impl;
 import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.typestate.TypeState;
@@ -28,8 +27,11 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-public abstract class CausalityExport {
-    private static final EmptyImpl dummyInstance = new EmptyImpl();
+public class CausalityExport {
+    protected CausalityExport() {
+    }
+
+    private static final CausalityExport dummyInstance = new CausalityExport();
     private static ThreadLocal<Impl> instances;
     private static List<Impl> instancesOfAllThreads;
 
@@ -61,11 +63,11 @@ public abstract class CausalityExport {
 
 
     // --- Registration ---
-    public abstract void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to);
+    public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {}
 
-    protected abstract void beginSaturationHappening();
+    protected void beginSaturationHappening() {}
 
-    protected abstract void endSaturationHappening();
+    protected void endSaturationHappening() {}
 
     public final SaturationHappeningToken setSaturationHappening()
     {
@@ -82,21 +84,27 @@ public abstract class CausalityExport {
         SaturationHappeningToken() { }
     }
 
-    public abstract void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types);
+    public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {}
 
-    public abstract void register(Reason reason, Reason consequence);
+    public void register(Reason reason, Reason consequence) {}
 
-    public abstract void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes);
+    public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {}
 
-    public abstract void registerMethodFlow(MethodTypeFlow method);
+    public void registerMethodFlow(MethodTypeFlow method) {}
 
-    public abstract void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation);
+    public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {}
 
-    public abstract Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason);
+    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+        return null;
+    }
 
-    public abstract Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value);
+    public Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value) {
+        return null;
+    }
 
-    public abstract Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value);
+    public Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value) {
+        return null;
+    }
 
     public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
         beginAccountingRootRegistrationsTo(reason);
@@ -104,11 +112,11 @@ public abstract class CausalityExport {
     }
 
     // May be unrooted due to an ongoing accountRootRegistrationsTo(...)
-    public abstract void registerReasonRoot(Reason reason);
+    public void registerReasonRoot(Reason reason) {}
 
-    protected abstract void beginAccountingRootRegistrationsTo(Reason reason);
+    protected void beginAccountingRootRegistrationsTo(Reason reason) {}
 
-    protected abstract void endAccountingRootRegistrationsTo(Reason reason);
+    protected void endAccountingRootRegistrationsTo(Reason reason) {}
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
     public class ReRootingToken implements AutoCloseable {

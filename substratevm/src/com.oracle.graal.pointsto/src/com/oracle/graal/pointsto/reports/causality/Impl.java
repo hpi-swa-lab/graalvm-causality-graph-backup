@@ -35,7 +35,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class Impl extends CausalityExport {
+public final class Impl extends CausalityExport {
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
