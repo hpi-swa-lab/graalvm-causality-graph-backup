@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicSet;
@@ -642,5 +643,9 @@ public class JNIAccessFeature implements Feature {
 
     public ResolvedJavaMethod[] getRegisteredMethods() {
         return calledJavaMethods.stream().map(cjm -> cjm.targetMethod).toArray(ResolvedJavaMethod[]::new);
+    }
+
+    public Class<?>[] getRegisteredClasses() {
+        return StreamSupport.stream(JNIReflectionDictionary.singleton().getClasses().spliterator(), false).map(JNIAccessibleClass::getClassObject).toArray(Class<?>[]::new);
     }
 }
