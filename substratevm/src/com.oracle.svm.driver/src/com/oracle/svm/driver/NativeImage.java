@@ -227,7 +227,9 @@ public class NativeImage {
     final String oHInspectServerContentPath = oH(PointstoOptions.InspectServerContentPath);
     final String oHDeadlockWatchdogInterval = oH(SubstrateOptions.DeadlockWatchdogInterval);
 
-    final String oHHeapAssignmentTracingAgentPath = oH(AnalysisReportsOptions.HeapAssignmentTracingAgentPath);
+    final String oHEnableHeapAssignmentTracingAgent = oH + "+" + AnalysisReportsOptions.HeapAssignmentTracingAgent.getName();
+    final String oHDisableHeapAssignmentTracingAgent = oH + "-" + AnalysisReportsOptions.HeapAssignmentTracingAgent.getName();
+    final String oHPrintCausalityGraph = oH + "+" + AnalysisReportsOptions.PrintCausalityGraph.getName();
 
     static final String oXmx = "-Xmx";
     static final String oXms = "-Xms";
@@ -1195,7 +1197,9 @@ public class NativeImage {
         String agentOptions = "";
         List<String> traceClassInitializationOpts = getHostedOptionArgumentValues(imageBuilderArgs, oHTraceClassInitialization);
         List<String> traceObjectInstantiationOpts = getHostedOptionArgumentValues(imageBuilderArgs, oHTraceObjectInstantiation);
-        String heapAssignmentTracingPath = getHostedOptionFinalArgumentValue(imageBuilderArgs, oHHeapAssignmentTracingAgentPath);
+
+
+
         if (!traceClassInitializationOpts.isEmpty()) {
             agentOptions = getAgentOptions(traceClassInitializationOpts, "c");
         }
@@ -1206,8 +1210,12 @@ public class NativeImage {
             agentOptions += getAgentOptions(traceObjectInstantiationOpts, "o");
         }
 
-        if(heapAssignmentTracingPath != null && !heapAssignmentTracingPath.isEmpty()) {
-            args.add("-agentpath:" + heapAssignmentTracingPath);
+        boolean heapAssignmentTracingAgentManuallyActivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHEnableHeapAssignmentTracingAgent));
+        boolean heapAssignmentTracingAgentManuallyDeactivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHDisableHeapAssignmentTracingAgent));
+        boolean causalityExportActivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHPrintCausalityGraph));
+
+        if(heapAssignmentTracingAgentManuallyActivated || (!heapAssignmentTracingAgentManuallyDeactivated && causalityExportActivated)) {
+            args.add("-agentlib:heap-assignment-tracing-agent");
         }
 
         if (!agentOptions.isEmpty()) {

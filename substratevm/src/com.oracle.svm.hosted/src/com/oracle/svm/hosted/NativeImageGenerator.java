@@ -921,8 +921,11 @@ public class NativeImageGenerator {
                     aScanningObserver = new ReachabilityObjectScanner(bb, aMetaAccess);
                 }
 
-                if(!AnalysisReportsOptions.HeapAssignmentTracingAgentPath.getValue(options).isEmpty())
+                Object heapAssignmentTracingAgentValue = AnalysisReportsOptions.HeapAssignmentTracingAgent.getValue(options);
+                if (heapAssignmentTracingAgentValue == null && AnalysisReportsOptions.PrintCausalityGraph.getValue(options)
+                    || heapAssignmentTracingAgentValue == Boolean.TRUE) {
                     HeapAssignmentTracing.activate();
+                }
 
                 ImageHeapScanner heapScanner = new SVMImageHeapScanner(bb, imageHeap, loader, aMetaAccess, aSnippetReflection, aConstantReflection, aScanningObserver);
                 aUniverse.setHeapScanner(heapScanner);

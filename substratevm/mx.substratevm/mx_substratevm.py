@@ -53,6 +53,9 @@ from mx_compiler import GraalArchiveParticipant
 from mx_gate import Task
 from mx_unittest import _run_tests, _VMLauncher
 
+# re-export custom mx project classes so they can be used from suite.py
+from mx_cmake import CMakeNinjaProject #pylint: disable=unused-import
+
 import sys
 
 if sys.version_info[0] < 3:
@@ -894,6 +897,18 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
     jlink=False,
     installable=True,
 ))
+
+mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmComponent(
+    suite=suite,
+    name='HeapAssignmentTracingAgent',
+    short_name='hat-agent',
+    installable_id='native-image',
+    license_files=[],
+    third_party_license_files=[],
+    support_libraries_distributions=['substratevm:HEAP_ASSIGNMENT_TRACING_AGENT'],
+    stability="experimental-earlyadopter",
+    installable=False,
+    ))
 
 mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmLanguage(
     suite=suite,

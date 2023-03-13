@@ -169,6 +169,18 @@ suite = {
     },
 
     "projects": {
+        "heap-assignment-tracing-agent": {
+            "class" : "CMakeNinjaProject",
+            "subDir": "native-src",
+            "vpath": True,
+            "platformDependent": True,
+            "ninja_targets" : ["all"],
+            "results" : [
+                "<lib:heap-assignment-tracing-agent>",
+                "heap-assignment-tracing-agent-hooks.jar"
+                ],
+            "defaultBuild" : False,
+        },
         "com.oracle.svm.util": {
             "subDir": "src",
             "sourceDirs": ["src"],
@@ -1249,6 +1261,21 @@ suite = {
     },
 
     "distributions": {
+        "HEAP_ASSIGNMENT_TRACING_AGENT" : {
+            "fileListPurpose": 'native-image-resources',
+            "native": True,
+            "relpath": False,
+            "license": "MIT",
+            "layout" : {
+                "./" : [
+                "dependency:heap-assignment-tracing-agent/<lib:heap-assignment-tracing-agent>",
+                "dependency:heap-assignment-tracing-agent/heap-assignment-tracing-agent-hooks.jar",
+                ],
+            },
+        },
+
+
+
         #
         # External Distributions
         #
