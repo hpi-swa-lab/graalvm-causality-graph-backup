@@ -55,14 +55,6 @@ public class AnalysisReporter {
                 AnalysisHeapHistogramPrinter.print(bb, reportsPath, ReportUtils.extractImageName(imageName));
             }
 
-            if(bb instanceof PointsToAnalysis && AnalysisReportsOptions.PrintCausalityGraph.getValue(options)) {
-                try {
-                    CausalityExport.getInstance().dump((PointsToAnalysis) bb);
-                } catch (IOException ex) {
-                    System.err.println(ex);
-                }
-            }
-
             if (PointstoOptions.PrintPointsToStatistics.getValue(options)) {
                 PointsToStats.report(bb, ReportUtils.extractImageName(imageName));
             }

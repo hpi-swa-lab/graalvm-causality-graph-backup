@@ -861,9 +861,6 @@ public class NativeImageGenerator {
                 Providers originalProviders = GraalAccess.getOriginalProviders();
                 MetaAccessProvider originalMetaAccess = originalProviders.getMetaAccess();
 
-                if(AnalysisReportsOptions.PrintCausalityGraph.getValue(options))
-                    CausalityExport.activate();
-
                 ClassLoaderSupportImpl classLoaderSupport = new ClassLoaderSupportImpl(loader.classLoaderSupport);
                 ImageSingletons.add(ClassLoaderSupport.class, classLoaderSupport);
                 ImageSingletons.add(LinkAtBuildTimeSupport.class, new LinkAtBuildTimeSupport(loader, classLoaderSupport));
@@ -919,12 +916,6 @@ public class NativeImageGenerator {
                     aScanningObserver = new AnalysisObjectScanningObserver(bb);
                 } else {
                     aScanningObserver = new ReachabilityObjectScanner(bb, aMetaAccess);
-                }
-
-                Object heapAssignmentTracingAgentValue = AnalysisReportsOptions.HeapAssignmentTracingAgent.getValue(options);
-                if (heapAssignmentTracingAgentValue == null && AnalysisReportsOptions.PrintCausalityGraph.getValue(options)
-                    || heapAssignmentTracingAgentValue == Boolean.TRUE) {
-                    HeapAssignmentTracing.activate();
                 }
 
                 ImageHeapScanner heapScanner = new SVMImageHeapScanner(bb, imageHeap, loader, aMetaAccess, aSnippetReflection, aConstantReflection, aScanningObserver);

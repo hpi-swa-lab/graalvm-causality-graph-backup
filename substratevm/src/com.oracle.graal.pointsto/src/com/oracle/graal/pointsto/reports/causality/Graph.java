@@ -23,7 +23,10 @@ import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.Channel;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -33,6 +36,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Stack;
 import java.util.function.Predicate;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public class Graph {
     static abstract class Node implements Comparable<Node> {
@@ -229,7 +234,7 @@ public class Graph {
         }
     }
 
-    public void export(PointsToAnalysis bb) throws java.io.IOException {
+    public void export(PointsToAnalysis bb, ZipOutputStream zip) throws java.io.IOException {
         Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
 
@@ -258,59 +263,25 @@ public class Graph {
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
 
-        try (PrintStream w = new PrintStream(new FileOutputStream("types.txt"))) {
+        zip.putNextEntry(new ZipEntry("types.txt"));
+        {
+            PrintStream w = new PrintStream(zip);
             for (AnalysisType type : typesSorted) {
                 w.println(type.toJavaName());
             }
         }
 
-        try (PrintStream w = new PrintStream(new FileOutputStream("methods.txt"))) {
+        zip.putNextEntry(new ZipEntry("methods.txt"));
+        {
+            PrintStream w = new PrintStream(zip);
             for (CausalityExport.Reason method : methodsSorted) {
                 w.println(method);
             }
         }
 
-        try (FileOutputStream out = new FileOutputStream("declaring_types.bin")) {
-            FileChannel c = out.getChannel();
-
-            ByteBuffer b = ByteBuffer.allocate(4);
-            b.order(ByteOrder.LITTLE_ENDIAN);
-
-            for (CausalityExport.Reason method : methodsSorted) {
-                int typeId = -1;
-                Class<?> clazz = method.getContainingType();
-                AnalysisType t;
-                if (clazz != null) {
-                    try {
-                        t = bb.getMetaAccess().optionalLookupJavaType(clazz).orElse(null);
-                    } catch(UnsupportedFeatureException ex) {
-                        t = null;
-                    }
-                } else {
-                    t = null;
-                }
-
-                if(t != null) {
-                    Integer id = typeIdMap.get(t);
-                    if(id != null)
-                        typeId = id;
-                }
-                b.putInt(typeId);
-                b.flip();
-                c.write(b);
-                b.flip();
-            }
-        }
-
-        try (PrintStream w = new PrintStream(new FileOutputStream("typeflows.txt"))) {
-            for (FlowNode flow : flowsSorted) {
-                w.println(flow);
-            }
-        }
-
-        try (FileOutputStream out = new FileOutputStream("direct_invokes.bin")) {
-            FileChannel c = out.getChannel();
-
+        zip.putNextEntry(new ZipEntry("direct_invokes.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
             ByteBuffer b = ByteBuffer.allocate(8);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
@@ -326,17 +297,11 @@ public class Graph {
             }
         }
 
-        try (PrintStream out = new PrintStream(new FileOutputStream("direct_invokes.txt"))) {
-            for (DirectCallEdge e : directInvokes) {
-                out.println(e);
-            }
-        }
-
         SeenTypestates typestates = new SeenTypestates();
 
-        try (FileOutputStream out = new FileOutputStream("interflows.bin")) {
-            FileChannel c = out.getChannel();
-
+        zip.putNextEntry(new ZipEntry("interflows.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
             ByteBuffer b = ByteBuffer.allocate(8);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
@@ -349,9 +314,9 @@ public class Graph {
             }
         }
 
-        try (FileOutputStream out = new FileOutputStream("typeflow_filters.bin")) {
-            FileChannel c = out.getChannel();
-
+        zip.putNextEntry(new ZipEntry("typeflow_filters.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
             ByteBuffer b = ByteBuffer.allocate(4);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
@@ -364,8 +329,9 @@ public class Graph {
             }
         }
 
-        try (FileOutputStream out = new FileOutputStream("typestates.bin")) {
-            FileChannel c = out.getChannel();
+        zip.putNextEntry(new ZipEntry("typestates.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
             int bytesPerTypestate = (typesSorted.length + 7) / 8;
 
             ByteBuffer zero = ByteBuffer.allocate(bytesPerTypestate);
@@ -395,9 +361,9 @@ public class Graph {
             }
         }
 
-        try (FileOutputStream out = new FileOutputStream("typeflow_methods.bin")) {
-            FileChannel c = out.getChannel();
-
+        zip.putNextEntry(new ZipEntry("typeflow_methods.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
             ByteBuffer b = ByteBuffer.allocate(4);
             b.order(ByteOrder.LITTLE_ENDIAN);
 

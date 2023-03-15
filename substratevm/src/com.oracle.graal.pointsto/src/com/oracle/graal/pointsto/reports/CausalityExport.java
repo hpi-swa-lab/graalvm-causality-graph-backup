@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.zip.ZipOutputStream;
 
 public class CausalityExport {
     protected CausalityExport() {
@@ -51,14 +52,13 @@ public class CausalityExport {
         return instances != null ? instances.get() : dummyInstance;
     }
 
-    public synchronized void dump(PointsToAnalysis bb) throws java.io.IOException {
+    public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip) throws java.io.IOException {
         Impl data = new Impl(instancesOfAllThreads, bb);
         // Let GC collect intermediate data structures
         instances = null;
         instancesOfAllThreads = null;
         Graph g = data.createCausalityGraph(bb);
-        HeapAssignmentTracing.getInstance().dispose();
-        g.export(bb);
+        g.export(bb, zip);
     }
 
 

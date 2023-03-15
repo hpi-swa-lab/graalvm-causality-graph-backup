@@ -73,6 +73,11 @@ import com.oracle.svm.hosted.reflect.ReflectionHostedSupport;
 @SuppressWarnings("unused")
 public class ReachabilityExporter implements InternalFeature {
 
+    public final Path reachabilityJsonPath =
+            NativeImageGenerator
+            .generatedFiles(HostedOptionValues.singleton())
+            .resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
+
     private static class Export {
         private static class Method {
             public final boolean reflection;
@@ -351,12 +356,9 @@ public class ReachabilityExporter implements InternalFeature {
         AfterCompilationAccessImpl accessImpl = (AfterCompilationAccessImpl) access;
         Export e = new Export(accessImpl);
 
-        Path buildPath = NativeImageGenerator.generatedFiles(HostedOptionValues.singleton());
-        Path targetPath = buildPath.resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
-
-        try (JsonWriter writer = new JsonWriter(targetPath)) {
+        try (JsonWriter writer = new JsonWriter(reachabilityJsonPath)) {
             e.write(writer);
-            BuildArtifacts.singleton().add(ArtifactType.BUILD_INFO, targetPath);
+            BuildArtifacts.singleton().add(ArtifactType.BUILD_INFO, reachabilityJsonPath);
         } catch (IOException ex) {
             throw VMError.shouldNotReachHere("Unable to create " + SubstrateOptions.REACHABILITY_FILE_NAME, ex);
         }
