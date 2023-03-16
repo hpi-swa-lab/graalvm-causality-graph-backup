@@ -2,11 +2,13 @@ package com.oracle.graal.pointsto.reports;
 
 import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisField;
+import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.causality.Impl;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.zip.ZipOutputStream;
@@ -154,12 +157,26 @@ public class CausalityExport {
         }
     }
 
+    private static String reflectionObjectToGraalLikeString(AnalysisMetaAccess metaAccess, Object reflectionObject) {
+        if(reflectionObject instanceof Class<?>) {
+            return metaAccess.lookupJavaType((Class<?>) reflectionObject).toJavaName();
+        } else if(reflectionObject instanceof Executable) {
+            return metaAccess.lookupJavaMethod((Executable) reflectionObject).getQualifiedName();
+        } else {
+            return metaAccess.lookupJavaField((Field) reflectionObject).format("%h.%n");
+        }
+    }
+
     public static abstract class Reason {
         public boolean unused() {
             return false;
         }
 
         public boolean root() { return false; }
+
+        public String toString(AnalysisMetaAccess metaAccess) {
+            return this.toString();
+        }
     }
 
     public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
@@ -281,6 +298,18 @@ public class CausalityExport {
         public int hashCode() {
             return getClass().hashCode() ^ element.hashCode();
         }
+
+        protected abstract String getSuffix();
+
+        @Override
+        public String toString() {
+            return reflectionObjectToString(element) + getSuffix();
+        }
+
+        @Override
+        public String toString(AnalysisMetaAccess metaAccess) {
+            return reflectionObjectToGraalLikeString(metaAccess, element) + getSuffix();
+        }
     }
 
     public static class JNIRegistration extends ReflectionObjectRegistration {
@@ -297,8 +326,8 @@ public class CausalityExport {
         }
 
         @Override
-        public String toString() {
-            return reflectionObjectToString(element) + " [JNI Registration]";
+        protected String getSuffix() {
+            return " [JNI Registration]";
         }
     }
 
@@ -316,8 +345,8 @@ public class CausalityExport {
         }
 
         @Override
-        public String toString() {
-            return reflectionObjectToString(element) + " [Reflection Registration]";
+        protected String getSuffix() {
+            return " [Reflection Registration]";
         }
     }
 
@@ -370,6 +399,24 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(clazz);
+        }
+
+        private String getTypeName(AnalysisMetaAccess metaAccess) {
+            try {
+                Optional<AnalysisType> ot = metaAccess.optionalLookupJavaType(clazz);
+                if(ot.isPresent())
+                    return ot.get().toJavaName();
+            } catch (UnsupportedFeatureException ex) {
+                // Ignore
+            }
+
+            // Best-effort approach to get a graal-like name
+            return clazz.getTypeName();
+        }
+
+        @Override
+        public String toString(AnalysisMetaAccess metaAccess) {
+            return getTypeName(metaAccess) + ".<clinit>() [Build-Time]";
         }
     }
 
@@ -454,6 +501,11 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(heapObjectType);
+        }
+
+        @Override
+        public String toString(AnalysisMetaAccess metaAccess) {
+            return metaAccess.lookupJavaType(heapObjectType).toJavaName() + " [Unknown Heap Object]";
         }
     }
 

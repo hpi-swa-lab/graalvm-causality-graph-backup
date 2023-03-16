@@ -18,6 +18,7 @@ import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import org.graalvm.collections.Pair;
 
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -258,7 +259,11 @@ public class Graph {
                 methods.add(e.to.containing);
         }
 
-        CausalityExport.Reason[] methodsSorted = methods.stream().filter(m -> !m.unused()).sorted(Comparator.comparing(CausalityExport.Reason::toString)).toArray(CausalityExport.Reason[]::new);
+
+        CausalityExport.Reason[] methodsSorted = methods.stream()
+                .filter(m -> !m.unused())
+                .map(reason -> Pair.create(reason.toString(bb.getMetaAccess()), reason))
+                .sorted(Comparator.comparing(Pair::getLeft)).map(Pair::getRight).toArray(CausalityExport.Reason[]::new);
         HashMap<CausalityExport.Reason, Integer> methodIdMap = inverse(methodsSorted, 1);
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
@@ -275,7 +280,7 @@ public class Graph {
         {
             PrintStream w = new PrintStream(zip);
             for (CausalityExport.Reason method : methodsSorted) {
-                w.println(method);
+                w.println(method.toString(bb.getMetaAccess()));
             }
         }
 
