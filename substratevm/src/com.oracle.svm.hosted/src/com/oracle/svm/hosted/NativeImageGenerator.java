@@ -861,6 +861,12 @@ public class NativeImageGenerator {
                 Providers originalProviders = GraalAccess.getOriginalProviders();
                 MetaAccessProvider originalMetaAccess = originalProviders.getMetaAccess();
 
+                if(AnalysisReportsOptions.PrintCausalityGraph.getValue(options)) {
+                    // This cannot be done in the "CausalityExporter"-Feature since Feature-registration should already
+                    // be logged by CausalityExport...
+                    CausalityExport.activate();
+                }
+
                 ClassLoaderSupportImpl classLoaderSupport = new ClassLoaderSupportImpl(loader.classLoaderSupport);
                 ImageSingletons.add(ClassLoaderSupport.class, classLoaderSupport);
                 ImageSingletons.add(LinkAtBuildTimeSupport.class, new LinkAtBuildTimeSupport(loader, classLoaderSupport));

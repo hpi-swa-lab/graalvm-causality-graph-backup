@@ -46,7 +46,7 @@ public class CausalityExporter implements InternalFeature {
 
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
-        CausalityExport.activate();
+        // The activation has to be done outside of this feature in order to be able to log feature registrations themselves.
     }
 
     @Override
