@@ -178,7 +178,10 @@ suite = {
             "results" : [
                 "<lib:heap-assignment-tracing-agent>",
                 "heap-assignment-tracing-agent-hooks.jar"
-                ],
+            ],
+            "cmakeConfig" : {
+                "CMAKE_BUILD_TYPE" : "Release"
+            },
             "defaultBuild" : False,
         },
         "com.oracle.svm.util": {
