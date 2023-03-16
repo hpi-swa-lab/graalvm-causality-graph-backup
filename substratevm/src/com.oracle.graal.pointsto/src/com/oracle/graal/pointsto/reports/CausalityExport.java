@@ -7,7 +7,6 @@ import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisField;
-import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.causality.Impl;
@@ -161,10 +160,6 @@ public class CausalityExport {
         }
 
         public boolean root() { return false; }
-
-        public Class<?> getContainingType() {
-            return null;
-        }
     }
 
     public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
@@ -210,11 +205,6 @@ public class CausalityExport {
         public boolean unused() {
             return !element.isReachable();
         }
-
-        @Override
-        public Class<?> getContainingType() {
-            return element.getDeclaringClass().getJavaClass();
-        }
     }
 
     public static final class TypeReachableReason extends ReachableReason<AnalysisType> {
@@ -230,11 +220,6 @@ public class CausalityExport {
         @Override
         public boolean unused() {
             return !element.isReachable();
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            return element.getJavaClass();
         }
     }
 
@@ -267,11 +252,6 @@ public class CausalityExport {
         public int hashCode() {
             return type.hashCode();
         }
-
-        @Override
-        public Class<?> getContainingType() {
-            return type.getJavaClass();
-        }
     }
 
     public static abstract class ReflectionObjectRegistration extends Reason {
@@ -300,17 +280,6 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return getClass().hashCode() ^ element.hashCode();
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            if(element instanceof Class<?>) {
-                return (Class<?>) element;
-            } else if (element instanceof Executable) {
-                return ((Executable) element).getDeclaringClass();
-            } else {
-                return ((Field) element).getDeclaringClass();
-            }
         }
     }
 
@@ -402,11 +371,6 @@ public class CausalityExport {
         public int hashCode() {
             return Objects.hash(clazz);
         }
-
-        @Override
-        public Class<?> getContainingType() {
-            return clazz;
-        }
     }
 
     public static class HeapObjectClass extends Reason {
@@ -432,11 +396,6 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return clazz.hashCode();
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            return clazz;
         }
     }
 
@@ -464,11 +423,6 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return forClass.hashCode();
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            return forClass;
         }
     }
 
@@ -500,11 +454,6 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return Objects.hash(heapObjectType);
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            return heapObjectType;
         }
     }
 
@@ -556,11 +505,6 @@ public class CausalityExport {
         @Override
         public int hashCode() {
             return f.hashCode();
-        }
-
-        @Override
-        public Class<?> getContainingType() {
-            return f.getClass();
         }
     }
 
