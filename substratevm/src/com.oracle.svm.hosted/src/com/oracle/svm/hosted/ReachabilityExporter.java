@@ -340,6 +340,7 @@ public class ReachabilityExporter implements InternalFeature {
             String moduleName = findModuleName(type.getJavaClass());
             boolean isSystemCode = !ImageSingletons.lookup(ClassLoaderSupport.class).isNativeImageClassLoader(type.getJavaClass().getClassLoader());
             TopLevelOrigin tlo = topLevelOrigins.computeIfAbsent(Pair.create(topLevelOriginName, moduleName), pair -> new TopLevelOrigin(pair.getLeft(), pair.getRight(), isSystemCode));
+            assert tlo.isSystem == isSystemCode : "Class loader is expected to be the same for all classes of the module.";
             Package p = tlo.packages.computeIfAbsent(type.getJavaClass().getPackageName(), name -> new Package());
             Type t = p.types.computeIfAbsent(type.toJavaName(false), name -> new Type(type, classInitKinds, reflectionTypes, jniTypes));
             return t;
