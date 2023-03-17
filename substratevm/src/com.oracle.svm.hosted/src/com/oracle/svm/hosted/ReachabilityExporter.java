@@ -76,7 +76,7 @@ public class ReachabilityExporter implements InternalFeature {
     public final Path reachabilityJsonPath =
             NativeImageGenerator
             .generatedFiles(HostedOptionValues.singleton())
-            .resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
+            .resolve(SubstrateOptions.Name.getValue() + "." + SubstrateOptions.REACHABILITY_FILE_NAME);
 
     private static class Export {
         private static class Method {

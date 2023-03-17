@@ -28,7 +28,7 @@ public class CausalityExporter implements InternalFeature {
 
     public final Path targetPath = NativeImageGenerator
             .generatedFiles(HostedOptionValues.singleton())
-            .resolve("export.cg.zip");
+            .resolve(SubstrateOptions.Name.getValue() + ".cg.zip");
 
     private ZipOutputStream zip;
 
