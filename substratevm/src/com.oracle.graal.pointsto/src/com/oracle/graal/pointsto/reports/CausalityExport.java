@@ -88,6 +88,9 @@ public class CausalityExport {
 
     public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {}
 
+    public void registerTwoReasons(Reason reason1, Reason reason2, Reason consequence) {
+    }
+
     public void register(Reason reason, Reason consequence) {}
 
     public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {}

@@ -38,6 +38,7 @@ import java.util.function.Function;
 public final class Impl extends CausalityExport {
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
     private final HashSet<Pair<Reason, Reason>> direct_edges = new HashSet<>();
+    private final HashSet<Pair<Pair<Reason, Reason>, Reason>> direct_edges_2 = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
@@ -60,6 +61,7 @@ public final class Impl extends CausalityExport {
         for (Impl i : instances) {
             interflows.addAll(i.interflows);
             direct_edges.addAll(i.direct_edges);
+            direct_edges_2.addAll(i.direct_edges_2);
             mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
                 p1.getLeft().addAll(p2.getLeft());
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
@@ -108,6 +110,17 @@ public final class Impl extends CausalityExport {
     @Override
     public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {
         flowingFromHeap.compute(Pair.create(reason, destination), (p, state) -> state == null ? types : TypeState.forUnion(bb, state, types));
+    }
+
+    @Override
+    public void registerTwoReasons(Reason reason1, Reason reason2, Reason consequence) {
+        if(reason1 == null) {
+            register(reason2, consequence);
+        } else if(reason2 == null) {
+            register(reason1, consequence);
+        } else {
+            direct_edges_2.add(Pair.create(Pair.create(reason1, reason2), consequence));
+        }
     }
 
     @Override
@@ -356,6 +369,28 @@ public final class Impl extends CausalityExport {
             Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), e.getKey().getLeft(), e.getValue());
             g.interflows.add(new Graph.FlowEdge(null, intermediate));
             g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+        }
+
+        {
+            // For the regular part of the graph, there is no such thing as a conjunctive hyper-edge.
+            // But we can emulate this behavior using typeflow nodes.
+            // The objectTypeState could be any non-empty type.
+            // A singleton typeflow can be processed faster in causality-query.
+
+            TypeState objectTypeState = TypeState.forType(bb, bb.getObjectType(), false);
+
+            for(Pair<Pair<Reason, Reason>, Reason> andEdge : direct_edges_2) {
+                if(andEdge.getLeft().getLeft().unused() || andEdge.getLeft().getRight().unused() || andEdge.getRight().unused())
+                    continue;
+
+                Graph.FlowNode a = new Graph.FlowNode("And 1 input: " + andEdge.getLeft().getLeft().toString(bb.getMetaAccess()), andEdge.getLeft().getLeft(), objectTypeState);
+                Graph.FlowNode b = new Graph.FlowNode("And 2 input: " + andEdge.getLeft().getRight().toString(bb.getMetaAccess()), andEdge.getLeft().getRight(), objectTypeState);
+                Graph.FlowNode c = new Graph.InvocationFlowNode(andEdge.getRight(), objectTypeState);
+
+                g.interflows.add(new Graph.FlowEdge(null, a));
+                g.interflows.add(new Graph.FlowEdge(a, b));
+                g.interflows.add(new Graph.FlowEdge(b, c));
+            }
         }
 
         return g;
