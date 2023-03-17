@@ -214,7 +214,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return Objects.hash(element);
+            return getClass().hashCode() ^ element.hashCode();
         }
     }
 
@@ -231,6 +231,32 @@ public class CausalityExport {
         @Override
         public boolean unused() {
             return !element.isReachable();
+        }
+    }
+
+    public static final class MethodSnippetReason extends Reason {
+        public final AnalysisMethod method;
+
+        public MethodSnippetReason(AnalysisMethod method) {
+            this.method = method;
+        }
+
+        @Override
+        public String toString() {
+            return method.getQualifiedName() + " [Snippet]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MethodSnippetReason that = (MethodSnippetReason) o;
+            return method.equals(that.method);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ method.hashCode();
         }
     }
 
@@ -277,7 +303,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return type.hashCode();
+            return getClass().hashCode() ^ type.hashCode();
         }
     }
 
@@ -382,7 +408,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return Objects.hash(callback);
+            return getClass().hashCode() ^ callback.hashCode();
         }
     }
 
@@ -408,7 +434,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return Objects.hash(clazz);
+            return getClass().hashCode() ^ clazz.hashCode();
         }
 
         private String getTypeName(AnalysisMetaAccess metaAccess) {
@@ -452,7 +478,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return clazz.hashCode();
+            return getClass().hashCode() ^  clazz.hashCode();
         }
     }
 
@@ -479,7 +505,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return forClass.hashCode();
+            return getClass().hashCode() ^ forClass.hashCode();
         }
     }
 
@@ -510,7 +536,7 @@ public class CausalityExport {
 
         @Override
         public int hashCode() {
-            return Objects.hash(heapObjectType);
+            return getClass().hashCode() ^ heapObjectType.hashCode();
         }
 
         @Override

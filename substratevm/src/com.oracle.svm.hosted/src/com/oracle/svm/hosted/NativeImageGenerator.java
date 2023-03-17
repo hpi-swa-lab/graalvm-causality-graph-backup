@@ -1109,7 +1109,11 @@ public class NativeImageGenerator {
                 Collection<StructuredGraph> snippetGraphs = aReplacements.getSnippetGraphs(GraalOptions.TrackNodeSourcePosition.getValue(options), options);
                 if (bb instanceof NativeImagePointsToAnalysis) {
                     for (StructuredGraph graph : snippetGraphs) {
-                        HostedConfiguration.instance().registerUsedElements((PointsToAnalysis) bb, graph, false);
+                        CausalityExport.Reason snippetRegistrationReason = new CausalityExport.MethodSnippetReason((AnalysisMethod) graph.method());
+                        CausalityExport.getInstance().registerReasonRoot(snippetRegistrationReason); // Is directly catching the "[Initial Registrations]" reason from above
+                        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(snippetRegistrationReason)) {
+                            HostedConfiguration.instance().registerUsedElements((PointsToAnalysis) bb, graph, false);
+                        }
                     }
                 } else if (bb instanceof NativeImageReachabilityAnalysisEngine) {
                     NativeImageReachabilityAnalysisEngine reachabilityAnalysis = (NativeImageReachabilityAnalysisEngine) bb;
