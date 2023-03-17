@@ -309,41 +309,43 @@ public final class Impl extends CausalityExport {
             }
         });
 
-        direct_edges.stream().map(Pair::getLeft).filter(l -> l instanceof BuildTimeClassInitialization).map(l -> (BuildTimeClassInitialization)l).distinct().sorted(Comparator.comparing(init -> init.clazz.getTypeName())).forEach(init -> {
-            boolean hasOuterInit = false;
+        {
+            Set<BuildTimeClassInitialization> buildTimeClinits = new HashSet<>();
+            Set<BuildTimeClassInitialization> buildTimeClinitsWithReason = new HashSet<>();
 
-            {
-                BuildTimeClassInitialization curInit = init;
+            direct_edges.stream().map(Pair::getLeft).filter(l -> l instanceof BuildTimeClassInitialization).map(l -> (BuildTimeClassInitialization) l).forEach(init -> {
+                if (buildTimeClinits.contains(init))
+                    return;
 
-                for(;;) {
-                    Class<?> outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(curInit.clazz);
+                for (;;) {
+                    buildTimeClinits.add(init);
+                    Class<?> outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(init.clazz);
                     if (outerInitClazz == null)
                         break;
-                    hasOuterInit = true;
+                    buildTimeClinitsWithReason.add(init);
                     BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization(outerInitClazz);
-                    g.directInvokes.add(new Graph.DirectCallEdge(outerInit, curInit));
-                    curInit = outerInit;
+                    g.directInvokes.add(new Graph.DirectCallEdge(outerInit, init));
+                    init = outerInit;
                 }
-            }
+            });
 
-            AnalysisType t;
-            try {
-                t = bb.getMetaAccess().optionalLookupJavaType(init.clazz).orElse(null);
-            } catch (UnsupportedFeatureException ex) {
-                t = null;
-            }
+            buildTimeClinits.stream().sorted(Comparator.comparing(init -> init.clazz.getTypeName())).forEach(init -> {
+                AnalysisType t;
+                try {
+                    t = bb.getMetaAccess().optionalLookupJavaType(init.clazz).orElse(null);
+                } catch (UnsupportedFeatureException ex) {
+                    t = null;
+                }
 
-            if(t != null) {
-                TypeReachableReason tReachable = new TypeReachableReason(t);
-
-                if(!tReachable.unused()) {
+                if (t != null && t.isReachable()) {
+                    TypeReachableReason tReachable = new TypeReachableReason(t);
                     g.directInvokes.add(new Graph.DirectCallEdge(tReachable, init));
+                } else if(!buildTimeClinitsWithReason.contains(init)) {
+                    g.directInvokes.add(new Graph.DirectCallEdge(null, init));
+                    System.err.println("Could not get reason for build-time clinit of: " + init.clazz.getTypeName());
                 }
-            } else if(!hasOuterInit) {
-                g.directInvokes.add(new Graph.DirectCallEdge(null, init));
-                System.err.println("Could not get reason for build-time clinit of: " + init.clazz.getTypeName());
-            }
-        });
+            });
+        }
 
         for (Map.Entry<Pair<Reason, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
             Graph.RealFlowNode fieldNode = flowMapper.apply(e.getKey().getRight());
