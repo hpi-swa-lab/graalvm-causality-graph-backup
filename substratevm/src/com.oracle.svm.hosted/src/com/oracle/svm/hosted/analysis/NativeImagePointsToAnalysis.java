@@ -26,6 +26,8 @@ package com.oracle.svm.hosted.analysis;
 
 import java.util.concurrent.ForkJoinPool;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
+import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
@@ -110,7 +112,9 @@ public class NativeImagePointsToAnalysis extends PointsToAnalysis implements Inf
 
     @Override
     public void initializeMetaData(AnalysisType type) {
-        dynamicHubInitializer.initializeMetaData(universe.getHeapScanner(), type);
+        try (HeapAssignmentTracing.CustomTracingToken ignored = HeapAssignmentTracing.getInstance().trace(new CausalityExport.TypeReachableReason(type))) {
+            dynamicHubInitializer.initializeMetaData(universe.getHeapScanner(), type);
+        }
     }
 
     public static ResolvedJavaType toWrappedType(ResolvedJavaType type) {

@@ -13,43 +13,75 @@ public class HeapAssignmentTracing {
         instance = new NativeImpl();
     }
 
-    public Class<?> getResponsibleClass(Object imageHeapObject) {
+    public Object getResponsibleClass(Object imageHeapObject) {
         return null;
     }
 
-    public Class<?> getClassResponsibleForNonstaticFieldWrite(Object receiver, Field field, Object val) {
+    public Object getClassResponsibleForNonstaticFieldWrite(Object receiver, Field field, Object val) {
         return null;
     }
 
-    public Class<?> getClassResponsibleForStaticFieldWrite(Class<?> declaring, Field field, Object val) {
+    public Object getClassResponsibleForStaticFieldWrite(Class<?> declaring, Field field, Object val) {
         return null;
     }
 
-    public Class<?> getClassResponsibleForArrayWrite(Object[] array, int index, Object val) {
+    public Object getClassResponsibleForArrayWrite(Object[] array, int index, Object val) {
         return null;
     }
 
-    public Class<?> getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz) {
+    public Object getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz) {
         return null;
+    }
+
+
+    protected void beginTracing(Object customReason) {
+    }
+
+    protected void endTracing(Object customReason) {
+    }
+
+    public final CustomTracingToken trace(Object customReason) {
+        beginTracing(customReason);
+        return new CustomTracingToken(customReason);
+    }
+
+    // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
+    public class CustomTracingToken implements AutoCloseable {
+        private final Object reason;
+
+        CustomTracingToken(Object reason) {
+            this.reason = reason;
+        }
+
+        @Override
+        public void close() {
+            endTracing(reason);
+        }
     }
 
     public void dispose() {}
 
     private static final class NativeImpl extends HeapAssignmentTracing {
         @Override
-        public native Class<?> getResponsibleClass(Object imageHeapObject);
+        public native Object getResponsibleClass(Object imageHeapObject);
 
         @Override
-        public native Class<?> getClassResponsibleForNonstaticFieldWrite(Object receiver, Field field, Object val);
+        public native Object getClassResponsibleForNonstaticFieldWrite(Object receiver, Field field, Object val);
 
         @Override
-        public native Class<?> getClassResponsibleForStaticFieldWrite(Class<?> declaring, Field field, Object val);
+        public native Object getClassResponsibleForStaticFieldWrite(Class<?> declaring, Field field, Object val);
 
         @Override
-        public native Class<?> getClassResponsibleForArrayWrite(Object[] array, int index, Object val);
+        public native Object getClassResponsibleForArrayWrite(Object[] array, int index, Object val);
 
         @Override
-        public native Class<?> getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz);
+        public native Object getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz);
+
+        @Override
+        protected native void beginTracing(Object customReason);
+
+        @Override
+        protected native void endTracing(Object customReason);
 
         @Override
         public native void dispose();

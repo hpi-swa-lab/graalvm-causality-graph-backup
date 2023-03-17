@@ -18,6 +18,7 @@ import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import com.oracle.graal.pointsto.util.AnalysisError;
 import jdk.vm.ci.meta.JavaConstant;
 import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.hosted.Feature;
@@ -153,8 +154,16 @@ public final class Impl extends CausalityExport {
         originalInvokeReceivers.put(invocation, invocation.getReceiver());
     }
 
-    private Reason getResponsibleClassReason(Class<?> responsible, Object o) {
-        return responsible != null ? new BuildTimeClassInitialization(responsible) : new UnknownHeapObject(o.getClass());
+    private Reason getResponsibleClassReason(Object customReason, Object o) {
+        if (customReason == null) {
+            return new UnknownHeapObject(o.getClass());
+        } else if (customReason instanceof Reason) {
+            return (Reason) customReason;
+        } else if (customReason instanceof Class<?>) {
+            return new BuildTimeClassInitialization((Class<?>) customReason);
+        } else {
+            throw AnalysisError.shouldNotReachHere("Heap Assignment Tracing Reason should not be of type " + customReason.getClass().getTypeName());
+        }
     }
 
     @Override
@@ -162,7 +171,7 @@ public final class Impl extends CausalityExport {
         if(reason instanceof ObjectScanner.EmbeddedRootScan) {
             return new CausalityExport.MethodReachableReason(((ObjectScanner.EmbeddedRootScan)reason).getMethod());
         }
-        Class<?> responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(heapObject);
+        Object responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(heapObject);
         return getResponsibleClassReason(responsible, heapObject);
     }
 
@@ -173,7 +182,7 @@ public final class Impl extends CausalityExport {
 
     @Override
     public Reason getReasonForHeapFieldAssignment(PointsToAnalysis bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
-        Class<?> responsible;
+        Object responsible;
         Object o = asObject(bb, Object.class, value);
 
         if(field.isStatic()) {
@@ -188,7 +197,7 @@ public final class Impl extends CausalityExport {
     @Override
     public Reason getReasonForHeapArrayAssignment(PointsToAnalysis bb, JavaConstant array, int elementIndex, JavaConstant value) {
         Object o = asObject(bb, Object.class, value);
-        Class<?> responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, o);
+        Object responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, o);
         return getResponsibleClassReason(responsible, o);
     }
 
@@ -332,11 +341,11 @@ public final class Impl extends CausalityExport {
 
                 for (;;) {
                     buildTimeClinits.add(init);
-                    Class<?> outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(init.clazz);
-                    if (outerInitClazz == null)
+                    Object outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(init.clazz);
+                    if (!(outerInitClazz instanceof Class<?>))
                         break;
                     buildTimeClinitsWithReason.add(init);
-                    BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization(outerInitClazz);
+                    BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization((Class<?>) outerInitClazz);
                     g.directInvokes.add(new Graph.DirectCallEdge(outerInit, init));
                     init = outerInit;
                 }
