@@ -9,6 +9,8 @@
 #include <ranges>
 #include <unordered_map>
 #include <memory>
+#include <atomic>
+#include <iterator>
 
 #define check_code(retcode, result) if((result)) { cerr << (#result) << "Error!!! code " << result << ":" << endl; return retcode; }
 #define check(result) if((result)) { cerr << (#result) << "Error!!! code " << result << ":" << endl; assert(false); exit(1); }
@@ -134,13 +136,20 @@ public:
 
 struct ObjectContext
 {
+    static uint64_t next_id;
+    static mutex creation_mutex;
+
+    // This id is unique even after collection by GC
+    uint64_t id;
     jobject allocReason;
+
+    static ObjectContext* create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason);
 
 protected:
     ObjectContext(jobject allocReason) : allocReason(allocReason) {}
 
 public:
-    static ObjectContext* create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason);
+    virtual ~ObjectContext() = default;
 
     static ObjectContext* get(jvmtiEnv* jvmti_env, jobject o)
     {
@@ -160,30 +169,108 @@ public:
     }
 };
 
+uint64_t ObjectContext::next_id = 0;
+mutex ObjectContext::creation_mutex;
+
 struct Write
 {
-    ObjectContext* val;
+    uint64_t object_id;
     jobject reason;
+};
+
+template<typename T>
+class MonotonicConcurrentList
+{
+    struct Element
+    {
+        Element* prev;
+        T data;
+
+        Element(T data) : data(data) {}
+    };
+
+    atomic<Element*> head = nullptr;
+
+public:
+    class iterator
+    {
+        friend class MonotonicConcurrentList;
+        Element* cur;
+
+        iterator(Element* cur) : cur(cur) {}
+
+    public:
+        using value_type = T;
+        using difference_type = std::ptrdiff_t;
+        using iterator_category = std::input_iterator_tag;
+
+        bool operator==(default_sentinel_t sentinel)
+        {
+            return cur == nullptr;
+        }
+
+        bool operator!=(default_sentinel_t sentinel)
+        {
+            return cur != nullptr;
+        }
+
+        iterator& operator++()
+        {
+            cur = cur->prev;
+            return *this;
+        }
+
+        void operator++(int) { (*this)++; }
+
+        T& operator*() { return cur->data; }
+        T& operator->() { return cur->data; }
+    };
+
+    static_assert(std::input_or_output_iterator<iterator>);
+
+    MonotonicConcurrentList() = default;
+
+    void push(T data)
+    {
+        Element* new_elem = new Element(data);
+        Element* cur_head = head;
+
+        do
+        {
+            new_elem->prev = cur_head;
+        }
+        while(!head.compare_exchange_weak(cur_head, new_elem));
+    }
+
+    iterator begin()
+    {
+        return {head};
+    }
+
+    default_sentinel_t end()
+    {
+        return {};
+    }
 };
 
 class WriteHistory
 {
-    vector<Write> history;
+    MonotonicConcurrentList<Write> history;
 
 public:
-    void add(ObjectContext* val, jobject reason)
+    void add(ObjectContext* o, jobject reason)
     {
-        history.push_back({val, reason});
+        history.push({o->id, reason});
     }
 
     jobject lookup(ObjectContext* writtenVal)
     {
-        for(const Write& write : views::reverse(history))
+        uint64_t id = writtenVal->id;
+        for(const Write& write : history)
         {
-            if(write.val == writtenVal)
+            if(write.object_id == id)
                 return write.reason;
         }
-
         return nullptr;
     }
 };
@@ -240,17 +327,19 @@ class ClassContext
         }
         while(klass);
 
-        fields_history.resize(static_field_indices.size());
+        fields_history = vector<WriteHistory>(static_field_indices.size());
     }
 
 public:
     void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
     {
+        assert(static_field_indices.contains(field));
         fields_history.at(static_field_indices[field]).add(newVal, reason);
     }
 
     jobject getFieldReason(jfieldID field, ObjectContext* writtenVal)
     {
+        assert(static_field_indices.contains(field));
         return fields_history.at(static_field_indices[field]).lookup(writtenVal);
     }
 
@@ -294,10 +383,10 @@ struct NonArrayObjectContext : public ObjectContext
     vector<WriteHistory> fields_history;
 
 public:
-    NonArrayObjectContext(jobject allocReason, ClassContext* cc) : ObjectContext(allocReason), cc(cc)
-    {
-        fields_history.resize(cc->get_nonstatic_field_count());
-    }
+    ~NonArrayObjectContext() override = default;
+
+    NonArrayObjectContext(jobject allocReason, ClassContext* cc) : ObjectContext(allocReason), cc(cc), fields_history(cc->get_nonstatic_field_count())
+    {}
 
     void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
     {
@@ -318,13 +407,17 @@ public:
     ArrayObjectContext(jobject allocReason, size_t array_length) : ObjectContext(allocReason), elements_history(array_length)
     { }
 
+    ~ArrayObjectContext() override = default;
+
     void registerWrite(jint index, ObjectContext* newVal, jobject reason)
     {
+        assert(index >= 0 && index < elements_history.size());
         elements_history[index].add(newVal, reason);
     }
 
     jobject getWriteReason(jint index, ObjectContext* writtenVal)
     {
+        assert(index >= 0 && index < elements_history.size());
         return elements_history[index].lookup(writtenVal);
     }
 };
@@ -354,8 +447,122 @@ ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o
         assert(false);
     }
 
-    check(jvmti_env->SetTag(o, (jlong)oc));
+    {
+        lock_guard<mutex> l(ObjectContext::creation_mutex);
+        jlong oldTag;
+        check(jvmti_env->GetTag(o, &oldTag));
+
+        if(oldTag)
+        {
+#if LOG
+            cerr << "Concurrent ObjectContext creation!\n";
+#endif
+            delete oc;
+            oc = (ObjectContext*)oldTag;
+        }
+        else
+        {
+            oc->id = next_id++;
+            check(jvmti_env->SetTag(o, (jlong)oc));
+        }
+    }
+
     return oc;
+}
+
+
+
+static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, jobject reason)
+{
+    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+
+#if BREAKPOINTS_ENABLE
+    if(tc->clinit_empty())
+    {
+        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
+#if LOG_METHOD_ENTRY_EXIT_EVENTS
+        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
+        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_EXIT, thread));
+#endif
+    }
+#endif
+
+#if LOG || PRINT_CLINIT_HEAP_WRITES
+
+    char inner_clinit_name[1024];
+    get_class_name(jvmti_env, type, inner_clinit_name);
+
+    char outer_clinit_name[1024];
+
+    if(tc->clinit_empty())
+        outer_clinit_name[0] = 0;
+    else
+        get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
+
+    if(LOG || (strcmp(inner_clinit_name, outer_clinit_name) != 0))
+    {
+        cerr << outer_clinit_name << ": " << inner_clinit_name << ".<clinit>()\n";
+    }
+#endif
+
+    jobject made_reachable_by = tc->clinit_empty() ? nullptr : tc->clinit_top();
+    tc->clinit_push(env, reason);
+
+    if(made_reachable_by)
+    {
+        // Use tc->clinit_top because thats a global ref now...
+        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, (jclass)tc->clinit_top());
+        if(cc->made_reachable_by)
+        {
+            cerr << "FAILURE" << endl;
+            exit(1);
+        }
+        cc->made_reachable_by = made_reachable_by;
+    }
+}
+
+static void removeFromTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, jobject reason)
+{
+    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+
+    jobject topReason = tc->clinit_top();
+    assert(env->IsSameObject(topReason, reason));
+    tc->clinit_pop(env);
+
+#if BREAKPOINTS_ENABLE
+    if(tc->clinit_empty())
+    {
+        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
+#if LOG_METHOD_ENTRY_EXIT_EVENTS
+        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
+        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_EXIT, thread));
+#endif
+    }
+#endif
+
+#if LOG
+    char inner_clinit_name[1024];
+    get_class_name(jvmti_env, type, inner_clinit_name);
+    cerr << inner_clinit_name << ".<clinit>() ENDED\n";
+#endif
+}
+
+class JniString
+{
+
+};
+
+static u16string getReasonDebugString(JNIEnv* env, jthread thread, jobject reason)
+{
+    assert(reason);
+    jclass clazz = env->GetObjectClass(reason);
+    jmethodID m = env->GetMethodID(clazz, "toString", "()V");
+    jstring str = (jstring)env->CallObjectMethod(reason, m);
+    jboolean isCopy;
+    const jchar* chars = env->GetStringChars(str, &isCopy);
+    u16string res(reinterpret_cast<const char16_t*>(chars));
+    env->ReleaseStringChars(str, chars);
+    return res;
 }
 
 
@@ -397,8 +604,18 @@ public:
     jvmtiEnv* jvmti_env() const { return env; }
 };
 
-static shared_ptr<Environment> _jvmti_env;
+static shared_ptr<Environment> _jvmti_env_backing;
+static weak_ptr<Environment> _jvmti_env;
 
+static atomic<uint64_t> log_cnt;
+
+static void increase_log_cnt()
+{
+    uint64_t cnt = ++log_cnt;
+
+    if(cnt % 10000 == 0)
+        cerr << "Log-count" << cnt << endl;
+}
 
 
 #include <unistd.h>
@@ -441,7 +658,8 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     own_path.append("/" HOOK_JAR_NAME);
     check_code(1, env->AddToBootstrapClassLoaderSearch(own_path.c_str()));
 
-    _jvmti_env = std::make_shared<Environment>(env);
+    _jvmti_env_backing = std::make_shared<Environment>(env);
+    _jvmti_env = _jvmti_env_backing;
 
     jvmtiCapabilities cap{ 0 };
     cap.can_generate_frame_pop_events = true;
@@ -533,7 +751,7 @@ static void get_class_name(jvmtiEnv *jvmti_env, jclass clazz, span<char> buffer)
 
 static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -551,6 +769,7 @@ static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject va
         ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val, tc->clinit_top());
         ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr, tc->clinit_top());
         ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->clinit_top());
+        increase_log_cnt();
     }
 
 #if LOG || PRINT_CLINIT_HEAP_WRITES
@@ -590,7 +809,7 @@ static void JNICALL setObjectArrayElement(JNIEnv *env, jobjectArray array, jsize
 
 static void JNICALL onVMInit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -717,7 +936,7 @@ static void onFieldModification(
         char signature_type,
         jvalue new_value)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -741,11 +960,13 @@ static void onFieldModification(
         {
             auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object, tc->clinit_top());
             object_oc->registerWrite(field, val_oc, tc->clinit_top());
+            increase_log_cnt();
         }
         else
         {
             ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
             cc->registerWrite(field, val_oc, tc->clinit_top());
+            increase_log_cnt();
         }
     }
 
@@ -790,33 +1011,14 @@ static void JNICALL onFramePop(
         jmethodID method,
         jboolean was_popped_by_exception)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
     jclass type;
     check(jvmti_env->GetMethodDeclaringClass(method, &type));
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-    tc->clinit_pop(jni_env);
-
-#if BREAKPOINTS_ENABLE
-    if(tc->clinit_empty())
-    {
-        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
-        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_EXIT, thread));
-#endif
-    }
-#endif
-
-#if LOG
-    char inner_clinit_name[1024];
-    get_class_name(jvmti_env, type, inner_clinit_name);
-    cerr << inner_clinit_name << ".<clinit>() ENDED\n";
-#endif
+    removeFromTracingStack(jvmti_env, jni_env, thread, type);
 }
 
 static void JNICALL onClassPrepare(
@@ -825,7 +1027,7 @@ static void JNICALL onClassPrepare(
         jthread thread,
         jclass klass)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -844,7 +1046,7 @@ static void JNICALL onClassFileLoad(
         jint* new_class_data_len,
         unsigned char** new_class_data)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -861,7 +1063,7 @@ static void JNICALL onClassFileLoad(
 
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onClinitStart(JNIEnv* env, jobject self)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -875,8 +1077,6 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onClinitStart(
     jthread thread;
     check(jvmti_env->GetCurrentThread(&thread));
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
     jmethodID method;
     jlocation location;
     check(jvmti_env->GetFrameLocation(thread, 1, &method, &location));
@@ -884,55 +1084,14 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onClinitStart(
     jclass type;
     check(jvmti_env->GetMethodDeclaringClass(method, &type));
 
-#if BREAKPOINTS_ENABLE
-    if(tc->clinit_empty())
-    {
-        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
-        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_EXIT, thread));
-#endif
-    }
-#endif
-
-#if LOG || PRINT_CLINIT_HEAP_WRITES
-    char inner_clinit_name[1024];
-    get_class_name(jvmti_env, type, inner_clinit_name);
-
-    char outer_clinit_name[1024];
-
-    if(tc->clinit_empty())
-        outer_clinit_name[0] = 0;
-    else
-        get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
-
-    if(LOG || (strcmp(inner_clinit_name, outer_clinit_name) != 0))
-    {
-        cerr << outer_clinit_name << ": " << inner_clinit_name << ".<clinit>()\n";
-    }
-#endif
-
-    jobject made_reachable_by = tc->clinit_empty() ? nullptr : tc->clinit_top();
-    tc->clinit_push(env, type);
-
-    if(made_reachable_by)
-    {
-        // Use tc->clinit_top because thats a global ref now...
-        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, (jclass)tc->clinit_top());
-        if(cc->made_reachable_by)
-        {
-            cerr << "FAILURE" << endl;
-            exit(1);
-        }
-        cc->made_reachable_by = made_reachable_by;
-    }
+    addToTracingStack(jvmti_env, env, thread, type);
 
     check(jvmti_env->NotifyFramePop(thread, 1));
 }
 
 static void JNICALL onThreadStart(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -942,7 +1101,7 @@ static void JNICALL onThreadStart(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread 
 
 static void JNICALL onThreadEnd(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -952,7 +1111,7 @@ static void JNICALL onThreadEnd(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread th
 
 void onObjectFree(jvmtiEnv *jvmti_env, jlong tag)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -970,7 +1129,7 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_notifyArrayWri
 
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onThreadStart(JNIEnv* env, jobject self, jthread newThread)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1002,7 +1161,7 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onThreadStart(
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getResponsibleClass(JNIEnv* env, jobject thisClass, jobject imageHeapObject)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return nullptr;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1017,7 +1176,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForNonstaticFieldWrite(JNIEnv* env, jobject thisClass, jobject receiver, jobject field, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     auto jvmti_env = jvmti_env_guard->jvmti_env();
 
     auto receiver_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, receiver);
@@ -1067,7 +1226,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForStaticFieldWrite(JNIEnv* env, jobject thisClass, jclass declaring, jobject field, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return nullptr;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1116,7 +1275,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForArrayWrite(JNIEnv* env, jobject thisClass, jobjectArray array, jint index, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return nullptr;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1150,7 +1309,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getBuildTimeClinitResponsibleForBuildTimeClinit(JNIEnv* env, jobject thisClass, jclass clazz)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return nullptr;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1161,7 +1320,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_beginTracing(JNIEnv* env, jobject thisClass, jobject customReason)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1169,14 +1328,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAss
     jthread thread;
     check(jvmti_env->GetCurrentThread(&thread));
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-    tc->clinit_push(env, customReason);
+    addToTracingStack(jvmti_env, env, thread, customReason);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_endTracing(JNIEnv* env, jobject thisClass, jobject customReason)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
     auto jvmti_env = jvmti_env_guard->jvmti_env();
@@ -1184,23 +1341,19 @@ extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAss
     jthread thread;
     check(jvmti_env->GetCurrentThread(&thread));
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-    jobject topReason = tc->clinit_top();
-    assert(env->IsSameObject(topReason, customReason));
-    tc->clinit_pop(env);
+    removeFromTracingStack(jvmti_env, env, thread, customReason);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_dispose(JNIEnv* env, jobject thisClass)
 {
-    _jvmti_env.reset();
+    _jvmti_env_backing.reset();
 }
 
 
 #if LOG_METHOD_ENTRY_EXIT_EVENTS
 static void JNICALL onMethodEntry(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jmethodID method)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
@@ -1226,7 +1379,7 @@ static void JNICALL onMethodEntry(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread 
 
 static void JNICALL onMethodExit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jmethodID method, jboolean was_popped_by_exception, jvalue return_value)
 {
-    auto jvmti_env_guard = _jvmti_env;
+    auto jvmti_env_guard = _jvmti_env.lock();
     if(!jvmti_env_guard)
         return;
 
