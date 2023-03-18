@@ -199,7 +199,11 @@ public class MethodTypeFlowBuilder {
         if (analysisParsedGraph.getEncodedGraph() == null) {
             return false;
         }
-        graph = InlineBeforeAnalysis.decodeGraph(bb, method, analysisParsedGraph);
+
+        // This is for capturing sideeffects e.g. by SubstrateGraphBuilderPlugin.interceptUpdaterInvoke(...) which adds reflection
+        try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(method))) {
+            graph = InlineBeforeAnalysis.decodeGraph(bb, method, analysisParsedGraph);
+        }
 
         try (DebugContext.Scope s = graph.getDebug().scope("MethodTypeFlowBuilder", graph)) {
             if (!bb.strengthenGraalGraphs()) {
