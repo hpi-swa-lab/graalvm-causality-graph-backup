@@ -235,7 +235,7 @@ public class Graph {
         }
     }
 
-    public void export(PointsToAnalysis bb, ZipOutputStream zip) throws java.io.IOException {
+    public void export(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
         Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
 
@@ -382,6 +382,16 @@ public class Graph {
                 b.flip();
                 c.write(b);
                 b.flip();
+            }
+        }
+
+        if(exportTypeflowNames) {
+            zip.putNextEntry(new ZipEntry("typeflows.txt"));
+            {
+                PrintStream w = new PrintStream(zip);
+                for (FlowNode flow : flowsSorted) {
+                    w.println(flow);
+                }
             }
         }
     }

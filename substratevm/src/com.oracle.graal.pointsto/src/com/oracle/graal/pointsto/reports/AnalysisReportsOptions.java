@@ -83,6 +83,9 @@ public class AnalysisReportsOptions {
     @Option(help = "Causality Graph for Offline-Analysis of reachability.")
     public static final OptionKey<Boolean> PrintCausalityGraph = new OptionKey<>(false);
 
+    @Option(help = "Include debug-string for each typeflow.")
+    public static final OptionKey<Boolean> CausalityGraphVerbose = new OptionKey<>(false);
+
     enum CallTreeType {
         TXT,
         CSV;

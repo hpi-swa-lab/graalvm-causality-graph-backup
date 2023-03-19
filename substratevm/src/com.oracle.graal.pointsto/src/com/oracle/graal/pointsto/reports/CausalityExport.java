@@ -54,13 +54,13 @@ public class CausalityExport {
         return instances != null ? instances.get() : dummyInstance;
     }
 
-    public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip) throws java.io.IOException {
+    public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
         Impl data = new Impl(instancesOfAllThreads, bb);
         // Let GC collect intermediate data structures
         instances = null;
         instancesOfAllThreads = null;
         Graph g = data.createCausalityGraph(bb);
-        g.export(bb, zip);
+        g.export(bb, zip, exportTypeflowNames);
     }
 
 

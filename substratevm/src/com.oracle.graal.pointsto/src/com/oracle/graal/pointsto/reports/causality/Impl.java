@@ -375,9 +375,31 @@ public final class Impl extends CausalityExport {
             if (fieldNode == null)
                 continue;
 
-            Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap: " + e.getValue(), e.getKey().getLeft(), e.getValue());
-            g.interflows.add(new Graph.FlowEdge(null, intermediate));
-            g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+            // The causality-query implementation saturates at 20 types.
+            // Saturation will happen even if the types don't pass the filter
+            // Therefore, as soon as a typeflow connected to the source (represented by null) allows for more than 20 types,
+            // These will be added to allInstantiated immeadiatly.
+            // In practice this only shows in big projects and rarely (e.g. 3 times in 170MB spring-petclinic)
+            // Therefore we simply employ this quick fix:
+            if(e.getValue().typesCount() <= 20) {
+                Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), e.getValue());
+                g.interflows.add(new Graph.FlowEdge(null, intermediate));
+                g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+            } else {
+                AnalysisType[] types = e.getValue().typesStream(bb).toArray(AnalysisType[]::new);
+
+                for(int i = 0; i < types.length; i += 20) {
+                    TypeState state = TypeState.forEmpty();
+
+                    for(int j = i; j < i + 20 && j < types.length; j++) {
+                        state = TypeState.forUnion(bb, state, TypeState.forExactType(bb, types[j], false));
+                    }
+
+                    Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), state);
+                    g.interflows.add(new Graph.FlowEdge(null, intermediate));
+                    g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+                }
+            }
         }
 
         {

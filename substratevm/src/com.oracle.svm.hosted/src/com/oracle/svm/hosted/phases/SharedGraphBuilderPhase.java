@@ -105,9 +105,13 @@ public abstract class SharedGraphBuilderPhase extends GraphBuilderPhase.Instance
 
     @Override
     protected void run(StructuredGraph graph) {
-        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, null)) {
-            try (CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()) : null)) {
-                super.run(graph);
+        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.GENERAL, null)) {
+            try (CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.GENERAL, graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()) : null)) {
+                try (CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, null)) {
+                    try (CausalityExport.ReRootingToken ignored3 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.RootCategory.METHOD_PARSING, graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()) : null)) {
+                        super.run(graph);
+                    }
+                }
             }
         }
         assert wordTypes == null || wordTypes.ensureGraphContainsNoWordTypeReferences(graph);

@@ -50,13 +50,22 @@ public class CausalityExporter implements InternalFeature {
     }
 
     @Override
+    public void beforeAnalysis(BeforeAnalysisAccess access) {
+        if(!(((FeatureImpl.BeforeAnalysisAccessImpl)access).bb instanceof PointsToAnalysis))
+            VMError.unsupportedFeature("CausalityExport only works with the PointsToAnalysis");
+
+        if(((FeatureImpl.BeforeAnalysisAccessImpl)access).bb.analysisPolicy().isContextSensitiveAnalysis())
+            VMError.unsupportedFeature("CausalityExport only works with context insensitive analysis");
+    }
+
+    @Override
     public void onAnalysisExit(OnAnalysisExitAccess access) {
         BigBang bb = ((FeatureImpl.OnAnalysisExitAccessImpl)access).bb;
 
         try {
             try {
                 zip = new ZipOutputStream(new FileOutputStream(targetPath.toFile()));
-                CausalityExport.dump((PointsToAnalysis) bb, zip);
+                CausalityExport.dump((PointsToAnalysis) bb, zip, AnalysisReportsOptions.CausalityGraphVerbose.getValue(HostedOptionValues.singleton()));
             } catch(IOException ex) {
                 if(zip != null) {
                     zip.close();
