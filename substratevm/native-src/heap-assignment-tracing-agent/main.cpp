@@ -12,10 +12,63 @@
 #include <atomic>
 #include <iterator>
 
-#define check_code(retcode, result) if((result)) { cerr << (#result) << "Error!!! code " << result << ":" << endl; return retcode; }
-#define check(result) if((result)) { cerr << (#result) << "Error!!! code " << result << ":" << endl; assert(false); exit(1); }
+static bool check_jvmti_error(jvmtiError errorcode, const char* code, const char* filename, int line)
+{
+    bool error = errorcode != JVMTI_ERROR_NONE;
+    if (error)
+        std::cerr << "JVMTI ERROR " << errorcode << " at " << filename << ':' << line << ": \"" << code << '"' << std::endl;
+    return error;
+}
+
+#define check_code(retcode, expr) if(check_jvmti_error(expr, #expr, __FILE__, __LINE__)) { return retcode; }
+#define check(expr) if(check_jvmti_error(expr, #expr, __FILE__, __LINE__)) { exit(1); }
 
 using namespace std;
+
+
+
+
+class JniString
+{
+    JNIEnv* env;
+    jstring o;
+    const char* chars;
+
+public:
+    JniString(JNIEnv* env, jstring o) : env(env), o(o)
+    {
+        jboolean isCopy;
+        chars = env->GetStringUTFChars(o, &isCopy);
+    }
+
+    friend std::ostream& operator<<(std::ostream& out, const JniString& str)
+    {
+        out << str.chars;
+    }
+
+    operator bool() const
+    {
+        return chars != nullptr;
+    }
+
+    operator string() const
+    {
+        return {chars};
+    }
+
+    ~JniString()
+    {
+        env->ReleaseStringUTFChars(o, chars);
+    }
+};
+
+static string javaObjectToString(JNIEnv* env, jobject o)
+{
+    jclass clazz = env->GetObjectClass(o);
+    jmethodID m = env->GetMethodID(clazz, "toString", "()Ljava/lang/String;");
+    jstring str = (jstring)env->CallObjectMethod(o, m);
+    return JniString(env, str);
+}
 
 bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src, jint src_len, unsigned char** dst_ptr, jint* dst_len_ptr);
 
@@ -136,17 +189,17 @@ public:
 
 struct ObjectContext
 {
-    static uint64_t next_id;
-    static mutex creation_mutex;
+    static inline uint64_t next_id = 0;
+    static inline mutex creation_mutex;
 
     // This id is unique even after collection by GC
     uint64_t id;
-    jobject allocReason;
+    jobject allocReason = nullptr;
 
-    static ObjectContext* create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason);
+    static ObjectContext* create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o);
 
 protected:
-    ObjectContext(jobject allocReason) : allocReason(allocReason) {}
+    ObjectContext() = default;
 
 public:
     virtual ~ObjectContext() = default;
@@ -158,19 +211,16 @@ public:
         return oc;
     }
 
-    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason)
+    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o)
     {
         ObjectContext* oc = get(jvmti_env, o);
 
         if(!oc)
-            oc = create(jvmti_env, env, o, allocReason);
+            oc = create(jvmti_env, env, o);
 
         return oc;
     }
 };
-
-uint64_t ObjectContext::next_id = 0;
-mutex ObjectContext::creation_mutex;
 
 struct Write
 {
@@ -275,32 +325,19 @@ public:
     }
 };
 
-struct ClassContext;
 
-static unordered_map<string, ClassContext*> all_class_contexts;
-
-class ClassContext
+struct ClassInfo
 {
-    string internal_name;
-    vector<WriteHistory> fields_history;
     unordered_map<jfieldID, size_t> nonstatic_field_indices;
     unordered_map<jfieldID, size_t> static_field_indices;
 
-    static string get_internal_name(jvmtiEnv* jvmti_env, jclass klass)
-    {
-        char* signature;
-        char* generic;
-        check(jvmti_env->GetClassSignature(klass, &signature, &generic));
-        return signature;
-    }
-
-    ClassContext(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass) : internal_name(get_internal_name(jvmti_env, klass))
+    ClassInfo(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
     {
         do
         {
             jint count;
             jfieldID* fields;
-            jvmti_env->GetClassFields(klass, &count, &fields);
+            check(jvmti_env->GetClassFields(klass, &count, &fields));
 
             for(size_t i = 0; i < count; i++)
             {
@@ -326,85 +363,164 @@ class ClassContext
             klass = jni_env->GetSuperclass(klass);
         }
         while(klass);
-
-        fields_history = vector<WriteHistory>(static_field_indices.size());
     }
 
-public:
-    void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
-    {
-        assert(static_field_indices.contains(field));
-        fields_history.at(static_field_indices[field]).add(newVal, reason);
-    }
-
-    jobject getFieldReason(jfieldID field, ObjectContext* writtenVal)
-    {
-        assert(static_field_indices.contains(field));
-        return fields_history.at(static_field_indices[field]).lookup(writtenVal);
-    }
-
-    static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
-    {
-        string internal_name = get_internal_name(jvmti_env, klass);
-        auto it = all_class_contexts.find(internal_name);
-        ClassContext* cc;
-
-        if(it == all_class_contexts.end())
-        {
-            cc = new ClassContext(jvmti_env, jni_env, klass);
-            all_class_contexts.emplace(internal_name, cc);
-        }
-        else
-        {
-            cc = it->second;
-        }
-
-        return cc;
-    }
-
-    size_t get_nonstatic_field_index(jfieldID field)
+    size_t get_nonstatic_field_index(jfieldID field) const
     {
         auto it = nonstatic_field_indices.find(field);
         assert(it != nonstatic_field_indices.end());
         return it->second;
     }
-
-    size_t get_nonstatic_field_count() const
-    {
-        return nonstatic_field_indices.size();
-    }
-
-    jobject made_reachable_by = nullptr;
 };
+
 
 struct NonArrayObjectContext : public ObjectContext
 {
-    ClassContext* cc;
+    const ClassInfo* cc;
     vector<WriteHistory> fields_history;
 
 public:
     ~NonArrayObjectContext() override = default;
 
-    NonArrayObjectContext(jobject allocReason, ClassContext* cc) : ObjectContext(allocReason), cc(cc), fields_history(cc->get_nonstatic_field_count())
+    NonArrayObjectContext(const ClassInfo* cc);
+
+    void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason);
+
+    jobject getWriteReason(jfieldID field, ObjectContext* writtenVal);
+};
+
+class ClassContext : public NonArrayObjectContext
+{
+    jweak class_object;
+    const ClassInfo* _info;
+    WriteHistory* fields_history = nullptr;
+public:
+    ClassContext(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass, const ClassInfo* declaring_info, const ClassInfo* own_info = nullptr) :
+        NonArrayObjectContext(declaring_info),
+        _info(own_info),
+        class_object(jni_env->NewWeakGlobalRef(klass))
     {}
 
-    void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
+    ~ClassContext() override
     {
-        fields_history.at(cc->get_nonstatic_field_index(field)).add(newVal, reason);
+        // TODO: Remove leak of class_object
+        delete[] fields_history;
     }
 
-    jobject getWriteReason(jfieldID field, ObjectContext* writtenVal)
+    void registerStaticWrite(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jfieldID field, ObjectContext* newVal, jobject reason)
     {
-        return fields_history.at(cc->get_nonstatic_field_index(field)).lookup(writtenVal);
+        auto local_info = info(jvmti_env, jni_env);
+        auto lookup_res = local_info.static_field_indices.find(field);
+
+        if(lookup_res != local_info.static_field_indices.end())
+        {
+            assert(lookup_res->second < local_info.static_field_indices.size());
+            fields_history[lookup_res->second].add(newVal, reason);
+        }
+        else
+        {
+#if LOG
+            cerr << "!static_field_indices.contains(field) for class " << internal_name << " and field " << (uint64_t)field << endl;
+#endif
+        }
     }
+
+    jobject getStaticFieldReason(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jfieldID field, ObjectContext* writtenVal)
+    {
+        auto local_info = info(jvmti_env, jni_env);
+        auto it = local_info.static_field_indices.find(field);
+        assert(it != local_info.static_field_indices.end());
+        assert(it->second < local_info.static_field_indices.size());
+        return fields_history[it->second].lookup(writtenVal);
+    }
+
+    static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
+    {
+        auto* cc = dynamic_cast<ClassContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, klass));
+
+        /*
+        // If it has alredy been created, assert its unique!
+        string internal_name = get_internal_name(jvmti_env, klass);
+        auto res = all_class_contexts.insert({internal_name, cc});
+
+        if(res.first->second != cc)
+        {
+            cerr << "Duplicate class: " << internal_name << endl;
+
+            if(jni_env->IsSameObject(cc->class_object, nullptr))
+                std::cerr << "cc class has been collected!" << std::endl;
+            if(jni_env->IsSameObject(res.first->second->class_object, nullptr))
+                std::cerr << "new class has been collected!" << std::endl;
+            if(!jni_env->IsSameObject(cc->class_object, res.first->second->class_object))
+            {
+                jclass c1 = (jclass)jni_env->NewGlobalRef(cc->class_object);
+                jclass c2 = (jclass)jni_env->NewGlobalRef(res.first->second->class_object);
+
+                if(c1 && c2)
+                {
+                    jobject c1loader, c2loader;
+                    check(jvmti_env->GetClassLoader(c1, &c1loader));
+                    check(jvmti_env->GetClassLoader(c2, &c2loader));
+
+                    if(jni_env->IsSameObject(cc->class_object, res.first->second->class_object))
+                        std::cerr << "Same classloader" << std::endl;
+                    else
+                        std::cerr << "Different classloader: " << javaObjectToString(jni_env, c1loader) << " vs " << javaObjectToString(jni_env, c2loader) << std::endl;
+                }
+
+                jni_env->DeleteGlobalRef(c1);
+                jni_env->DeleteGlobalRef(c2);
+
+                std::cerr << "new and cc differ!" << std::endl;
+            }
+        }
+
+        assert(res.first->second == cc);
+        */
+
+        return cc;
+    }
+
+    const ClassInfo& info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
+    {
+        if(!_info)
+        {
+            jclass clazz = (jclass)jni_env->NewGlobalRef(class_object);
+            assert(clazz && "Class object has been collected!");
+
+            // Race condition: Since pointer types are atomically assignable, the worst case is a (minor) memory leak here.
+            _info = new ClassInfo(jvmti_env, jni_env, clazz);
+
+            auto local_fields_history = new WriteHistory[_info->static_field_indices.size()]();
+            fields_history = local_fields_history;
+            jni_env->DeleteGlobalRef(clazz);
+        }
+        return *_info;
+    }
+
+    jobject made_reachable_by = nullptr;
 };
+
+NonArrayObjectContext::NonArrayObjectContext(const ClassInfo* cc) : cc(cc), fields_history(cc->nonstatic_field_indices.size())
+{}
+
+void NonArrayObjectContext::registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
+{
+    fields_history.at(cc->get_nonstatic_field_index(field)).add(newVal, reason);
+}
+
+jobject NonArrayObjectContext::getWriteReason(jfieldID field, ObjectContext* writtenVal)
+{
+    return fields_history.at(cc->get_nonstatic_field_index(field)).lookup(writtenVal);
+}
+
 
 struct ArrayObjectContext : public ObjectContext
 {
     vector<WriteHistory> elements_history;
 
 public:
-    ArrayObjectContext(jobject allocReason, size_t array_length) : ObjectContext(allocReason), elements_history(array_length)
+    ArrayObjectContext(size_t array_length) : elements_history(array_length)
     { }
 
     ~ArrayObjectContext() override = default;
@@ -422,25 +538,38 @@ public:
     }
 };
 
-ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason)
+ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o)
 {
     jclass oClass = env->GetObjectClass(o);
     char* signature;
     char* generic;
     check(jvmti_env->GetClassSignature(oClass, &signature, &generic));
 
-    ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, oClass);
-
     ObjectContext* oc;
 
-    if(signature[0] == 'L')
+    if(env->IsSameObject(oClass, o))
     {
-        oc = new NonArrayObjectContext(allocReason, cc);
+        auto info = new ClassInfo(jvmti_env, env, oClass);
+        oc = new ClassContext(jvmti_env, env, oClass, info, info);
+    }
+    else if(signature[0] == 'L')
+    {
+        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, oClass);
+        const ClassInfo& ci = cc->info(jvmti_env, env);
+
+        if(std::strcmp(signature, "Ljava/lang/Class;") == 0)
+        {
+            oc = new ClassContext(jvmti_env, env, (jclass)o, &ci);
+        }
+        else
+        {
+            oc = new NonArrayObjectContext(&ci);
+        }
     }
     else if(signature[0] == '[')
     {
         size_t array_length = env->GetArrayLength((jarray)o);
-        oc = new ArrayObjectContext(allocReason, array_length);
+        oc = new ArrayObjectContext(array_length);
     }
     else
     {
@@ -547,24 +676,6 @@ static void removeFromTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thr
 #endif
 }
 
-class JniString
-{
-
-};
-
-static u16string getReasonDebugString(JNIEnv* env, jthread thread, jobject reason)
-{
-    assert(reason);
-    jclass clazz = env->GetObjectClass(reason);
-    jmethodID m = env->GetMethodID(clazz, "toString", "()V");
-    jstring str = (jstring)env->CallObjectMethod(reason, m);
-    jboolean isCopy;
-    const jchar* chars = env->GetStringChars(str, &isCopy);
-    u16string res(reinterpret_cast<const char16_t*>(chars));
-    env->ReleaseStringChars(str, chars);
-    return res;
-}
-
 
 
 
@@ -593,10 +704,6 @@ public:
             // May happen e.g. on normal process exit, when Destructor is called from c++ stdlib.
             return;
         }
-
-        // Free ClassContexts
-        all_class_contexts.clear();
-        all_class_contexts.reserve(0);
 
         check(env->DisposeEnvironment());
     }
@@ -652,7 +759,9 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     //iostream::sync_with_stdio(false);
 
     jvmtiEnv* env;
-    check_code(1, vm->GetEnv(reinterpret_cast<void **>(&env), JVMTI_VERSION_1_2));
+    jint res = vm->GetEnv(reinterpret_cast<void **>(&env), JVMTI_VERSION_1_2);
+    if(res)
+        return 1;
 
     auto own_path = get_own_path();
     own_path.append("/" HOOK_JAR_NAME);
@@ -766,8 +875,12 @@ static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject va
 
     if(val)
     {
-        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val, tc->clinit_top());
-        ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr, tc->clinit_top());
+        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val);
+        if(!val_oc->allocReason)
+            val_oc->allocReason = tc->clinit_top();
+        ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr);
+        if(!arr_oc->allocReason)
+            arr_oc->allocReason = tc->clinit_top();
         ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->clinit_top());
         increase_log_cnt();
     }
@@ -954,18 +1067,22 @@ static void onFieldModification(
 
     if(!tc->clinit_empty())
     {
-        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l, tc->clinit_top());
+        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l);
+        if(!val_oc->allocReason)
+            val_oc->allocReason = tc->clinit_top();
 
         if(object)
         {
-            auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object, tc->clinit_top());
+            auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object);
+            if(!object_oc->allocReason)
+                object_oc->allocReason = tc->clinit_top();
             object_oc->registerWrite(field, val_oc, tc->clinit_top());
             increase_log_cnt();
         }
         else
         {
             ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
-            cc->registerWrite(field, val_oc, tc->clinit_top());
+            cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->clinit_top());
             increase_log_cnt();
         }
     }
@@ -1119,6 +1236,9 @@ void onObjectFree(jvmtiEnv *jvmti_env, jlong tag)
     cerr << "Object freed!\n";
 #endif
     auto* oc = (ObjectContext*)tag;
+
+    assert(!dynamic_cast<ClassContext*>(oc));
+
     delete oc;
 }
 
@@ -1251,7 +1371,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 
     if(val_oc)
     {
-        res = declaring_cc->getFieldReason(env->FromReflectedField(field), val_oc);
+        res = declaring_cc->getStaticFieldReason(jvmti_env, env, env->FromReflectedField(field), val_oc);
     }
 
 #ifdef SHOW_EXISTING
