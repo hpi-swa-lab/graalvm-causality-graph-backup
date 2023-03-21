@@ -378,13 +378,13 @@ struct ClassInfo
 
 struct NonArrayObjectContext : public ObjectContext
 {
-    const ClassInfo* cc;
+    shared_ptr<const ClassInfo> cc;
     vector<WriteHistory> fields_history;
 
 public:
     ~NonArrayObjectContext() override = default;
 
-    NonArrayObjectContext(const ClassInfo* cc);
+    NonArrayObjectContext(shared_ptr<const ClassInfo> cc);
 
     void registerWrite(jfieldID field, ObjectContext* newVal, jobject reason);
 
@@ -393,14 +393,12 @@ public:
 
 class ClassContext : public NonArrayObjectContext
 {
-    class LazyData
+    struct LazyData
     {
+        shared_ptr<const ClassInfo> info;
         unique_ptr<WriteHistory[]> fields_history = nullptr;
 
-    public:
-        const ClassInfo* info;
-
-        LazyData(const ClassInfo* info) : info(info), fields_history(new WriteHistory[info->static_field_indices.size()]())
+        LazyData(shared_ptr<const ClassInfo> info) : info(std::move(info)), fields_history(new WriteHistory[this->info->static_field_indices.size()]())
         {
         }
 
@@ -444,7 +442,7 @@ class ClassContext : public NonArrayObjectContext
 
         // Race condition: Since pointer types are atomically assignable, the worst case is a (minor) memory leak here.
         LazyData* expected = nullptr;
-        LazyData* desired = new LazyData(new ClassInfo(jvmti_env, jni_env, clazz));
+        LazyData* desired = new LazyData(make_shared<ClassInfo>(jvmti_env, jni_env, clazz));
         jni_env->DeleteLocalRef(clazz);
         bool uncontended = lazy.compare_exchange_strong(expected, desired);
         if(uncontended)
@@ -455,12 +453,12 @@ class ClassContext : public NonArrayObjectContext
     }
 
 public:
-    ClassContext(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass, const ClassInfo* declaring_info, const ClassInfo* own_info = nullptr) :
-        NonArrayObjectContext(declaring_info),
+    ClassContext(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass, shared_ptr<const ClassInfo> declaring_info, shared_ptr<const ClassInfo> own_info = {}) :
+        NonArrayObjectContext(std::move(declaring_info)),
         class_object(jni_env->NewWeakGlobalRef(klass))
     {
         if(own_info)
-            lazy = new LazyData(own_info);
+            lazy = new LazyData(std::move(own_info));
     }
 
     ~ClassContext() override
@@ -479,9 +477,9 @@ public:
         return data(jvmti_env, jni_env).getStaticFieldReason(field, writtenVal);
     }
 
-    const ClassInfo& info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
+    shared_ptr<const ClassInfo> info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
     {
-        return *data(jvmti_env, jni_env).info;
+        return data(jvmti_env, jni_env).info;
     }
 
     static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
@@ -492,7 +490,7 @@ public:
     jobject made_reachable_by = nullptr;
 };
 
-NonArrayObjectContext::NonArrayObjectContext(const ClassInfo* cc) : cc(cc), fields_history(cc->nonstatic_field_indices.size())
+NonArrayObjectContext::NonArrayObjectContext(shared_ptr<const ClassInfo> cc) : cc(std::move(cc)), fields_history(this->cc->nonstatic_field_indices.size())
 {}
 
 void NonArrayObjectContext::registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
@@ -540,21 +538,21 @@ ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o
 
     if(env->IsSameObject(oClass, o))
     {
-        auto info = new ClassInfo(jvmti_env, env, oClass);
+        auto info = make_shared<ClassInfo>(jvmti_env, env, oClass);
         oc = new ClassContext(jvmti_env, env, oClass, info, info);
     }
     else if(signature[0] == 'L')
     {
         ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, oClass);
-        const ClassInfo& ci = cc->info(jvmti_env, env);
+        shared_ptr<const ClassInfo> ci = cc->info(jvmti_env, env);
 
         if(std::strcmp(signature, "Ljava/lang/Class;") == 0)
         {
-            oc = new ClassContext(jvmti_env, env, (jclass)o, &ci);
+            oc = new ClassContext(jvmti_env, env, (jclass)o, std::move(ci));
         }
         else
         {
-            oc = new NonArrayObjectContext(&ci);
+            oc = new NonArrayObjectContext(std::move(ci));
         }
     }
     else if(signature[0] == '[')
