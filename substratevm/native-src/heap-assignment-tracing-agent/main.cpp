@@ -11,6 +11,7 @@
 #include <memory>
 #include <atomic>
 #include <iterator>
+#include <variant>
 
 static bool check_jvmti_error(jvmtiError errorcode, const char* code, const char* filename, int line)
 {
@@ -44,6 +45,7 @@ public:
     friend std::ostream& operator<<(std::ostream& out, const JniString& str)
     {
         out << str.chars;
+        return out;
     }
 
     operator bool() const
@@ -391,111 +393,100 @@ public:
 
 class ClassContext : public NonArrayObjectContext
 {
+    class LazyData
+    {
+        unique_ptr<WriteHistory[]> fields_history = nullptr;
+
+    public:
+        const ClassInfo* info;
+
+        LazyData(const ClassInfo* info) : info(info), fields_history(new WriteHistory[info->static_field_indices.size()]())
+        {
+        }
+
+        void registerStaticWrite(jfieldID field, ObjectContext* newVal, jobject reason)
+        {
+            auto lookup_res = info->static_field_indices.find(field);
+
+            if(lookup_res != info->static_field_indices.end())
+            {
+                assert(lookup_res->second < info->static_field_indices.size());
+                fields_history[lookup_res->second].add(newVal, reason);
+            }
+            else
+            {
+                assert(false);
+#if LOG
+                cerr << "!info->static_field_indices.contains(field) for class " << internal_name << " and field " << (uint64_t)field << endl;
+#endif
+            }
+        }
+
+        jobject getStaticFieldReason(jfieldID field, ObjectContext* writtenVal)
+        {
+            auto it = info->static_field_indices.find(field);
+            assert(it != info->static_field_indices.end());
+            assert(it->second < info->static_field_indices.size());
+            return fields_history[it->second].lookup(writtenVal);
+        }
+    };
+
     jweak class_object;
-    const ClassInfo* _info;
-    WriteHistory* fields_history = nullptr;
+    atomic<LazyData*> lazy = nullptr;
+
+    LazyData& data(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
+    {
+        if(lazy)
+            return *lazy;
+
+        jclass clazz = (jclass)jni_env->NewLocalRef(class_object);
+        assert(clazz && "Class object has been collected!");
+
+        // Race condition: Since pointer types are atomically assignable, the worst case is a (minor) memory leak here.
+        LazyData* expected = nullptr;
+        LazyData* desired = new LazyData(new ClassInfo(jvmti_env, jni_env, clazz));
+        jni_env->DeleteLocalRef(clazz);
+        bool uncontended = lazy.compare_exchange_strong(expected, desired);
+        if(uncontended)
+            return *desired;
+
+        delete desired;
+        return *expected;
+    }
+
 public:
     ClassContext(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass, const ClassInfo* declaring_info, const ClassInfo* own_info = nullptr) :
         NonArrayObjectContext(declaring_info),
-        _info(own_info),
         class_object(jni_env->NewWeakGlobalRef(klass))
-    {}
+    {
+        if(own_info)
+            lazy = new LazyData(own_info);
+    }
 
     ~ClassContext() override
     {
+        delete lazy;
         // TODO: Remove leak of class_object
-        delete[] fields_history;
     }
 
     void registerStaticWrite(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jfieldID field, ObjectContext* newVal, jobject reason)
     {
-        auto local_info = info(jvmti_env, jni_env);
-        auto lookup_res = local_info.static_field_indices.find(field);
-
-        if(lookup_res != local_info.static_field_indices.end())
-        {
-            assert(lookup_res->second < local_info.static_field_indices.size());
-            fields_history[lookup_res->second].add(newVal, reason);
-        }
-        else
-        {
-#if LOG
-            cerr << "!static_field_indices.contains(field) for class " << internal_name << " and field " << (uint64_t)field << endl;
-#endif
-        }
+        data(jvmti_env, jni_env).registerStaticWrite(field, newVal, reason);
     }
 
     jobject getStaticFieldReason(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jfieldID field, ObjectContext* writtenVal)
     {
-        auto local_info = info(jvmti_env, jni_env);
-        auto it = local_info.static_field_indices.find(field);
-        assert(it != local_info.static_field_indices.end());
-        assert(it->second < local_info.static_field_indices.size());
-        return fields_history[it->second].lookup(writtenVal);
-    }
-
-    static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
-    {
-        auto* cc = dynamic_cast<ClassContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, klass));
-
-        /*
-        // If it has alredy been created, assert its unique!
-        string internal_name = get_internal_name(jvmti_env, klass);
-        auto res = all_class_contexts.insert({internal_name, cc});
-
-        if(res.first->second != cc)
-        {
-            cerr << "Duplicate class: " << internal_name << endl;
-
-            if(jni_env->IsSameObject(cc->class_object, nullptr))
-                std::cerr << "cc class has been collected!" << std::endl;
-            if(jni_env->IsSameObject(res.first->second->class_object, nullptr))
-                std::cerr << "new class has been collected!" << std::endl;
-            if(!jni_env->IsSameObject(cc->class_object, res.first->second->class_object))
-            {
-                jclass c1 = (jclass)jni_env->NewGlobalRef(cc->class_object);
-                jclass c2 = (jclass)jni_env->NewGlobalRef(res.first->second->class_object);
-
-                if(c1 && c2)
-                {
-                    jobject c1loader, c2loader;
-                    check(jvmti_env->GetClassLoader(c1, &c1loader));
-                    check(jvmti_env->GetClassLoader(c2, &c2loader));
-
-                    if(jni_env->IsSameObject(cc->class_object, res.first->second->class_object))
-                        std::cerr << "Same classloader" << std::endl;
-                    else
-                        std::cerr << "Different classloader: " << javaObjectToString(jni_env, c1loader) << " vs " << javaObjectToString(jni_env, c2loader) << std::endl;
-                }
-
-                jni_env->DeleteGlobalRef(c1);
-                jni_env->DeleteGlobalRef(c2);
-
-                std::cerr << "new and cc differ!" << std::endl;
-            }
-        }
-
-        assert(res.first->second == cc);
-        */
-
-        return cc;
+        return data(jvmti_env, jni_env).getStaticFieldReason(field, writtenVal);
     }
 
     const ClassInfo& info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
     {
-        if(!_info)
-        {
-            jclass clazz = (jclass)jni_env->NewGlobalRef(class_object);
-            assert(clazz && "Class object has been collected!");
+        return *data(jvmti_env, jni_env).info;
+    }
 
-            // Race condition: Since pointer types are atomically assignable, the worst case is a (minor) memory leak here.
-            _info = new ClassInfo(jvmti_env, jni_env, clazz);
-
-            auto local_fields_history = new WriteHistory[_info->static_field_indices.size()]();
-            fields_history = local_fields_history;
-            jni_env->DeleteGlobalRef(clazz);
-        }
-        return *_info;
+    static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
+    {
+        return dynamic_cast<ClassContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, klass));
     }
 
     jobject made_reachable_by = nullptr;
@@ -637,16 +628,16 @@ static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, 
     jobject made_reachable_by = tc->clinit_empty() ? nullptr : tc->clinit_top();
     tc->clinit_push(env, reason);
 
-    if(made_reachable_by)
+    if(made_reachable_by && reason)
     {
         // Use tc->clinit_top because thats a global ref now...
-        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, (jclass)tc->clinit_top());
-        if(cc->made_reachable_by)
+        ObjectContext* oc = ObjectContext::get_or_create(jvmti_env, env, tc->clinit_top());
+
+        if(auto* cc = dynamic_cast<ClassContext*>(oc))
         {
-            cerr << "FAILURE" << endl;
-            exit(1);
+            assert(!cc->made_reachable_by);
+            cc->made_reachable_by = made_reachable_by;
         }
-        cc->made_reachable_by = made_reachable_by;
     }
 }
 
