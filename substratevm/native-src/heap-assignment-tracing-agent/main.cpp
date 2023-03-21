@@ -399,25 +399,14 @@ class ClassContext : public NonArrayObjectContext
         unique_ptr<WriteHistory[]> fields_history = nullptr;
 
         LazyData(shared_ptr<const ClassInfo> info) : info(std::move(info)), fields_history(new WriteHistory[this->info->static_field_indices.size()]())
-        {
-        }
+        {}
 
         void registerStaticWrite(jfieldID field, ObjectContext* newVal, jobject reason)
         {
             auto lookup_res = info->static_field_indices.find(field);
-
-            if(lookup_res != info->static_field_indices.end())
-            {
-                assert(lookup_res->second < info->static_field_indices.size());
-                fields_history[lookup_res->second].add(newVal, reason);
-            }
-            else
-            {
-                assert(false);
-#if LOG
-                cerr << "!info->static_field_indices.contains(field) for class " << internal_name << " and field " << (uint64_t)field << endl;
-#endif
-            }
+            assert(lookup_res != info->static_field_indices.end());
+            assert(lookup_res->second < info->static_field_indices.size());
+            fields_history[lookup_res->second].add(newVal, reason);
         }
 
         jobject getStaticFieldReason(jfieldID field, ObjectContext* writtenVal)
