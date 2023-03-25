@@ -1009,11 +1009,42 @@ void verification_type_info::adjust_offset(BciShift a, size_t bci)
 
 struct BYTEWISE stack_map_frame
 {
+    struct Dispatcher
+    {
+        size_t (stack_map_frame::* len)() const;
+        size_t (stack_map_frame::* offset_delta)() const;
+        void (stack_map_frame::* adjust_offset)(BciShift, size_t);
+
+    public:
+        template<typename T>
+        static Dispatcher create()
+        {
+            return {
+                    static_cast<decltype(len)>(&T::len),
+                    static_cast<decltype(offset_delta)>(&T::offset_delta),
+                    static_cast<decltype(adjust_offset)>(&T::adjust_offset)
+            };
+        }
+    };
+
     u1 frame_type;
 
-    size_t len() const;
-    void adjust_offset(BciShift a, size_t bci);
-    size_t offset_delta() const;
+    [[nodiscard]] Dispatcher getImpl() const;
+
+    size_t len() const
+    {
+        return (this->*getImpl().len)();
+    }
+
+    size_t offset_delta() const
+    {
+        return (this->*getImpl().offset_delta)();
+    }
+
+    void adjust_offset(BciShift a, size_t bci)
+    {
+        return (this->*getImpl().adjust_offset)(a, bci);
+    }
 };
 
 struct BYTEWISE same_frame : public stack_map_frame
@@ -1133,42 +1164,27 @@ struct BYTEWISE full_frame : public stack_map_frame
     size_t offset_delta() const { return _offset_delta; }
 };
 
-// I'd come up with a much nicer solution in DLang, but i don't know how to get a custom field-based virtual dispatch into C++...
-// Therefore this ugliness:
-#define SWITCH_DISPATCH(tag, fun, return) \
-if(frame_type < 64) \
-    return ((same_frame*)this)->fun; \
-else if(frame_type < 128) \
-    return ((same_locals_1_stack_item_frame*)this)->fun; \
-else if(frame_type < 247) \
-    assert(false); \
-else if(frame_type == 247) \
-    return ((same_locals_1_stack_item_frame_extended*)this)->fun; \
-else if(frame_type <= 250) \
-    return ((chop_frame*)this)->fun; \
-else if(frame_type == 251) \
-    return ((same_frame_extended*)this)->fun; \
-else if(frame_type <= 254) \
-    return ((append_frame*)this)->fun; \
-else if(frame_type == 255) \
-    return ((full_frame*)this)->fun; \
-else \
-    assert(false);
-
-size_t stack_map_frame::len() const
+stack_map_frame::Dispatcher stack_map_frame::getImpl() const
 {
-    SWITCH_DISPATCH(frame_type, len(), return);
+    if(frame_type < 64)
+        return Dispatcher::create<same_frame>();
+    if(frame_type < 128)
+        return Dispatcher::create<same_locals_1_stack_item_frame>();
+    if(frame_type < 247)
+        throw runtime_error("Bad frame type");
+    if(frame_type == 247)
+        return Dispatcher::create<same_locals_1_stack_item_frame_extended>();
+    if(frame_type <= 250)
+        return Dispatcher::create<chop_frame>();
+    if(frame_type == 251)
+        return Dispatcher::create<same_frame_extended>();
+    if(frame_type <= 254)
+        return Dispatcher::create<append_frame>();
+    if(frame_type == 255)
+        return Dispatcher::create<full_frame>();
+    throw runtime_error("Bad frame type");
 }
 
-void stack_map_frame::adjust_offset(BciShift a, size_t bci)
-{
-    SWITCH_DISPATCH(frame_type, adjust_offset(a, bci),);
-}
-
-size_t stack_map_frame::offset_delta() const
-{
-    SWITCH_DISPATCH(frame_type, offset_delta(), return);
-}
 
 struct BYTEWISE StackMapTable_attribute : public attribute_info
 {
