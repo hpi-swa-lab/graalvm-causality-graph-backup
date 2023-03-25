@@ -28,6 +28,7 @@ import java.nio.channels.Channel;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -35,8 +36,10 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Stack;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -235,6 +238,40 @@ public class Graph {
         }
     }
 
+    private static HashSet<FlowNode> filterRedundant(HashSet<FlowNode> nodes, Map<FlowNode, ArrayList<FlowNode>> backwardAdj) {
+        HashSet<FlowNode> stillNeeded = new HashSet<>(nodes.size());
+
+        Queue<FlowNode> worklist = new ArrayDeque<>();
+
+        for (FlowNode f : nodes) {
+            if (f.makesContainingReachable() && f.containing != null) {
+                stillNeeded.add(f);
+                worklist.add(f);
+            }
+        }
+
+        while(!worklist.isEmpty()) {
+            FlowNode u = worklist.poll();
+            for(FlowNode v : backwardAdj.get(u)) {
+                if (v != null && stillNeeded.add(v)) {
+                    worklist.add(v);
+                }
+            }
+        }
+
+        return stillNeeded;
+    }
+
+    private static Map<FlowNode, ArrayList<FlowNode>> calculateReverseAdjacency(HashSet<FlowNode> nodes, HashSet<FlowEdge> edges) {
+        Map<FlowNode, ArrayList<FlowNode>> adj = nodes.stream().collect(Collectors.toMap(f -> f, f -> new ArrayList<>(), (a, b) -> a));
+
+        for(FlowEdge e : edges) {
+            adj.get(e.to).add(e.from);
+        }
+
+        return adj;
+    }
+
     public void export(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
         Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
@@ -259,6 +296,7 @@ public class Graph {
                 methods.add(e.to.containing);
         }
 
+        typeflows = filterRedundant(typeflows, calculateReverseAdjacency(typeflows, interflows));
 
         CausalityExport.Reason[] methodsSorted = methods.stream()
                 .filter(m -> !m.unused())
@@ -315,8 +353,14 @@ public class Graph {
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (FlowEdge e : interflows) {
-                b.putInt(e.from == null ? 0 : flowIdMap.get(e.from));
-                b.putInt(flowIdMap.get(e.to));
+                Integer fromId = e.from == null ? Integer.valueOf(0) : flowIdMap.get(e.from);
+                Integer toId = flowIdMap.get(e.to);
+
+                if(fromId == null || toId == null)
+                    continue;
+
+                b.putInt(fromId);
+                b.putInt(toId);
                 b.flip();
                 c.write(b);
                 b.flip();
