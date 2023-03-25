@@ -13,6 +13,8 @@
 #include <iterator>
 #include <variant>
 
+#include "JvmtiWrapper.h"
+
 static bool check_jvmti_error(jvmtiError errorcode, const char* code, const char* filename, int line)
 {
     bool error = errorcode != JVMTI_ERROR_NONE;
@@ -22,55 +24,10 @@ static bool check_jvmti_error(jvmtiError errorcode, const char* code, const char
 }
 
 #define check_code(retcode, expr) if(check_jvmti_error(expr, #expr, __FILE__, __LINE__)) { return retcode; }
-#define check(expr) if(check_jvmti_error(expr, #expr, __FILE__, __LINE__)) { exit(1); }
+#define check(expr) throw_on_error(expr)
+#define check_assert(expr) if(check_jvmti_error(expr, #expr, __FILE__, __LINE__)) { exit(1); }
 
 using namespace std;
-
-
-
-
-class JniString
-{
-    JNIEnv* env;
-    jstring o;
-    const char* chars;
-
-public:
-    JniString(JNIEnv* env, jstring o) : env(env), o(o)
-    {
-        jboolean isCopy;
-        chars = env->GetStringUTFChars(o, &isCopy);
-    }
-
-    friend std::ostream& operator<<(std::ostream& out, const JniString& str)
-    {
-        out << str.chars;
-        return out;
-    }
-
-    operator bool() const
-    {
-        return chars != nullptr;
-    }
-
-    operator string() const
-    {
-        return {chars};
-    }
-
-    ~JniString()
-    {
-        env->ReleaseStringUTFChars(o, chars);
-    }
-};
-
-static string javaObjectToString(JNIEnv* env, jobject o)
-{
-    jclass clazz = env->GetObjectClass(o);
-    jmethodID m = env->GetMethodID(clazz, "toString", "()Ljava/lang/String;");
-    jstring str = (jstring)env->CallObjectMethod(o, m);
-    return JniString(env, str);
-}
 
 bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src, jint src_len, unsigned char** dst_ptr, jint* dst_len_ptr);
 
@@ -126,22 +83,6 @@ static void JNICALL onThreadEnd(
 static void JNICALL onObjectFree(
         jvmtiEnv *jvmti_env,
         jlong tag);
-
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-static void JNICALL onMethodEntry
-        (jvmtiEnv *jvmti_env,
-         JNIEnv* jni_env,
-         jthread thread,
-         jmethodID method);
-
-static void JNICALL onMethodExit
-        (jvmtiEnv *jvmti_env,
-         JNIEnv* jni_env,
-         jthread thread,
-         jmethodID method,
-         jboolean was_popped_by_exception,
-         jvalue return_value);
-#endif
 
 
 class AgentThreadContext
@@ -362,6 +303,8 @@ struct ClassInfo
                     nonstatic_field_indices.emplace(fields[i], nonstatic_field_indices.size());
             }
 
+            check(jvmti_env->Deallocate(reinterpret_cast<unsigned char*>(fields)));
+
             klass = jni_env->GetSuperclass(klass);
         }
         while(klass);
@@ -484,12 +427,24 @@ NonArrayObjectContext::NonArrayObjectContext(shared_ptr<const ClassInfo> cc) : c
 
 void NonArrayObjectContext::registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
 {
-    fields_history.at(cc->get_nonstatic_field_index(field)).add(newVal, reason);
+    auto it = cc->nonstatic_field_indices.find(field);
+    assert(it != cc->nonstatic_field_indices.end());
+    assert(it->second < fields_history.size());
+    fields_history[it->second].add(newVal, reason);
 }
 
 jobject NonArrayObjectContext::getWriteReason(jfieldID field, ObjectContext* writtenVal)
 {
-    return fields_history.at(cc->get_nonstatic_field_index(field)).lookup(writtenVal);
+    auto it = cc->nonstatic_field_indices.find(field);
+
+    if(it == cc->nonstatic_field_indices.end())
+    {
+        // May happen when the field of a substitution is accessed
+        return nullptr;
+    }
+
+    assert(it->second < fields_history.size());
+    return fields_history[it->second].lookup(writtenVal);
 }
 
 
@@ -574,6 +529,9 @@ ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o
         }
     }
 
+    check(jvmti_env->Deallocate(reinterpret_cast<unsigned char*>(signature)));
+    check(jvmti_env->Deallocate(reinterpret_cast<unsigned char*>(generic)));
+
     return oc;
 }
 
@@ -587,10 +545,6 @@ static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, 
     if(tc->clinit_empty())
     {
         check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
-        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_EXIT, thread));
-#endif
     }
 #endif
 
@@ -640,10 +594,6 @@ static void removeFromTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thr
     if(tc->clinit_empty())
     {
         check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_ENTRY, thread));
-        check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_METHOD_EXIT, thread));
-#endif
     }
 #endif
 
@@ -660,6 +610,7 @@ static void removeFromTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thr
 
 class Environment
 {
+    JavaVM* vm;
     jvmtiEnv* env;
 
     static jvmtiIterationControl JNICALL heapObjectCallback(jlong class_tag, jlong size, jlong* tag_ptr, void* user_data)
@@ -670,7 +621,7 @@ class Environment
     }
 
 public:
-    Environment(jvmtiEnv* env) : env(env) {}
+    Environment(JavaVM* vm, jvmtiEnv* env) : vm(vm), env(env) {}
 
     ~Environment()
     {
@@ -683,14 +634,50 @@ public:
             return;
         }
 
-        check(env->DisposeEnvironment());
+        check_assert(env->DisposeEnvironment());
     }
 
     jvmtiEnv* jvmti_env() const { return env; }
+
+    JNIEnv* jni_env() const
+    {
+        void* env;
+        jint res = vm->GetEnv(&env, JNI_VERSION_1_1);
+        if(res)
+            return nullptr;
+        return reinterpret_cast<JNIEnv*>(env);
+    }
 };
 
 static shared_ptr<Environment> _jvmti_env_backing;
 static weak_ptr<Environment> _jvmti_env;
+
+template<typename TReturn, typename TFun> requires(std::is_invocable_r_v<TReturn, TFun, jvmtiEnv*>)
+static TReturn acquire_jvmti_and_wrap_exceptions(TFun&& lambda)
+{
+    auto jvmti_env_guard = _jvmti_env.lock();
+    if(!jvmti_env_guard)
+        return TReturn();
+    auto jvmti_env = jvmti_env_guard->jvmti_env();auto thrower = [&](const char* classname, const char* message) {
+        JNIEnv* env = jvmti_env_guard->jni_env();
+        if(!env) {
+            std::cerr << "Fatal error: " << message << std::endl;
+            exit(1);
+        }
+        env->ThrowNew(env->FindClass(classname), message);
+    };
+    return swallow_cpp_exception_and_throw_java<TReturn>(jvmti_env, thrower, [&]() { return lambda(jvmti_env); });
+}
+
+static void acquire_jvmti_and_wrap_exceptions(std::invocable<jvmtiEnv*> auto&& lambda)
+{
+    acquire_jvmti_and_wrap_exceptions<void>(lambda);
+}
+
+static void acquire_jvmti_and_wrap_exceptions(std::invocable<> auto&& lambda)
+{
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env) { lambda(); });
+}
 
 static atomic<uint64_t> log_cnt;
 
@@ -745,7 +732,7 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     own_path.append("/" HOOK_JAR_NAME);
     check_code(1, env->AddToBootstrapClassLoaderSearch(own_path.c_str()));
 
-    _jvmti_env_backing = std::make_shared<Environment>(env);
+    _jvmti_env_backing = std::make_shared<Environment>(vm, env);
     _jvmti_env = _jvmti_env_backing;
 
     jvmtiCapabilities cap{ 0 };
@@ -759,10 +746,6 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     cap.can_generate_breakpoint_events = true;
     cap.can_generate_field_modification_events = true;
 #endif
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-    cap.can_generate_method_entry_events = true;
-    cap.can_generate_method_exit_events = true;
-#endif
 
     check_code(1, env->AddCapabilities(&cap));
 
@@ -775,10 +758,7 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     callbacks.ThreadStart = onThreadStart;
     callbacks.ThreadEnd = onThreadEnd;
     callbacks.ObjectFree = onObjectFree;
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-    callbacks.MethodEntry = onMethodEntry;
-    callbacks.MethodExit = onMethodExit;
-#endif
+
     check_code(1, env->SetEventCallbacks(&callbacks, sizeof(callbacks)));
     check_code(1, env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, nullptr));
     check_code(1, env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_FRAME_POP, nullptr));
@@ -794,35 +774,31 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
 
 static void processClass(jvmtiEnv* jvmti_env, jclass klass)
 {
-    char* class_signature;
-    char* class_generic;
-
-    check(jvmti_env->GetClassSignature(klass, &class_signature, &class_generic));
-
 #if LOG
-    cerr << "New Class: " << class_signature << "\n";
+    {
+        char* class_signature;
+        char* class_generic;
+
+        check(jvmti_env->GetClassSignature(klass, &class_signature, &class_generic));
+        cerr << "New Class: " << class_signature << "\n";
+        check(jvmti_env->Deallocate(reinterpret_cast<unsigned char*>(class_signature)));
+        check(jvmti_env->Deallocate(reinterpret_cast<unsigned char*>(class_generic)));
+    }
 #endif
 
     // Hook into field modification events
 
-    jint field_count;
-    jfieldID* fields;
+    ClassFields fields(jvmti_env, klass);
 
-    check(jvmti_env->GetClassFields(klass, &field_count, &fields));
-
-    for(jint i = 0; i < field_count; i++)
+    for(auto field : fields)
     {
-        char* field_name;
-        char* field_signature;
-        char* field_generic;
-
-        check(jvmti_env->GetFieldName(klass, fields[i], &field_name, &field_signature, &field_generic));
+        FieldName fieldName = FieldName::get(jvmti_env, klass, field);
 
         // Don't care for primitive types
-        if(field_signature[0] != 'L' && field_signature[0] != '[')
+        if(fieldName.signature[0] != 'L' && fieldName.signature[0] != '[')
             continue;
 
-        auto return_code = jvmti_env->SetFieldModificationWatch(klass, fields[i]);
+        auto return_code = jvmti_env->SetFieldModificationWatch(klass, field);
         if(return_code == JVMTI_ERROR_DUPLICATE)
             return; // Silently ignore if the class had already been processed
         check(return_code);
@@ -838,58 +814,55 @@ static void get_class_name(jvmtiEnv *jvmti_env, jclass clazz, span<char> buffer)
 
 static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env){
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
 
-    jthread thread;
-    check(jvmti_env->GetCurrentThread(&thread));
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+        if(tc->clinit_empty())
+            return;
 
-    if(tc->clinit_empty())
-        return;
-
-    if(val)
-    {
-        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val);
-        if(!val_oc->allocReason)
-            val_oc->allocReason = tc->clinit_top();
-        ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr);
-        if(!arr_oc->allocReason)
-            arr_oc->allocReason = tc->clinit_top();
-        ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->clinit_top());
-        increase_log_cnt();
-    }
+        if(val)
+        {
+            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val);
+            if(!val_oc->allocReason)
+                val_oc->allocReason = tc->clinit_top();
+            ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr);
+            if(!arr_oc->allocReason)
+                arr_oc->allocReason = tc->clinit_top();
+            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->clinit_top());
+            increase_log_cnt();
+        }
 
 #if LOG || PRINT_CLINIT_HEAP_WRITES
-    jclass arr_class = env->GetObjectClass(arr);
+        jclass arr_class = env->GetObjectClass(arr);
 
-    char class_name[1024];
-    get_class_name(jvmti_env, arr_class, class_name);
+        char class_name[1024];
+        get_class_name(jvmti_env, arr_class, class_name);
 
-    char new_value_class_name[1024];
-    if(!val)
-    {
-        strcpy(new_value_class_name, "null");
-    }
-    else
-    {
-        jclass new_value_class = env->GetObjectClass(val);
-        get_class_name(jvmti_env, new_value_class, new_value_class_name);
-    }
+        char new_value_class_name[1024];
+        if(!val)
+        {
+            strcpy(new_value_class_name, "null");
+        }
+        else
+        {
+            jclass new_value_class = env->GetObjectClass(val);
+            get_class_name(jvmti_env, new_value_class, new_value_class_name);
+        }
 
-    char cause_class_name[1024];
+        char cause_class_name[1024];
 
-    if(tc->clinit_empty())
-        cause_class_name[0] = 0;
-    else
-        get_class_name(jvmti_env, tc->clinit_top(), cause_class_name);
+        if(tc->clinit_empty())
+            cause_class_name[0] = 0;
+        else
+            get_class_name(jvmti_env, tc->clinit_top(), cause_class_name);
 
-    class_name[strlen(class_name) - 2] = 0; // Cut off last "[]"
-    cerr << cause_class_name << ": " << class_name << '[' << index << ']' << " = " << new_value_class_name << '\n';
+        class_name[strlen(class_name) - 2] = 0; // Cut off last "[]"
+        cerr << cause_class_name << ": " << class_name << '[' << index << ']' << " = " << new_value_class_name << '\n';
 #endif
+    });
 }
 
 static void JNICALL setObjectArrayElement(JNIEnv *env, jobjectArray array, jsize index, jobject val)
@@ -900,41 +873,35 @@ static void JNICALL setObjectArrayElement(JNIEnv *env, jobjectArray array, jsize
 
 static void JNICALL onVMInit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
+    acquire_jvmti_and_wrap_exceptions([&](){
 #if BREAKPOINTS_ENABLE
-    check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, nullptr));
+        check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, nullptr));
 
-    jint num_classes;
-    jclass* classes_ptr;
+        jint num_classes;
+        jclass* classes_ptr;
 
-    check(jvmti_env->GetLoadedClasses(&num_classes, &classes_ptr));
+        LoadedClasses classes(jvmti_env);
 
-    span<jclass> classes(classes_ptr, num_classes);
+        for(jclass clazz : classes)
+        {
+            jboolean is_modifiable;
+            check(jvmti_env->IsModifiableClass(clazz, &is_modifiable));
+            if(is_modifiable)
+                check(jvmti_env->RetransformClasses(1, &clazz));
 
-    for(jclass clazz : classes)
-    {
-        jboolean is_modifiable;
-        check(jvmti_env->IsModifiableClass(clazz, &is_modifiable));
-        if(is_modifiable)
-            check(jvmti_env->RetransformClasses(1, &clazz));
-
-        jint status;
-        check(jvmti_env->GetClassStatus(clazz, &status));
-        if(status & JVMTI_CLASS_STATUS_PREPARED)
-            processClass(jvmti_env, clazz);
-    }
+            jint status;
+            check(jvmti_env->GetClassStatus(clazz, &status));
+            if(status & JVMTI_CLASS_STATUS_PREPARED)
+                processClass(jvmti_env, clazz);
+        }
 #endif // BREAKPOINTS_ENABLE
 
-
-
-    jniNativeInterface* redirected_jni;
-    check(jvmti_env->GetJNIFunctionTable(&original_jni));
-    check(jvmti_env->GetJNIFunctionTable(&redirected_jni));
-    redirected_jni->SetObjectArrayElement = setObjectArrayElement;
-    check(jvmti_env->SetJNIFunctionTable(redirected_jni));
+        jniNativeInterface* redirected_jni;
+        check(jvmti_env->GetJNIFunctionTable(&original_jni));
+        check(jvmti_env->GetJNIFunctionTable(&redirected_jni));
+        redirected_jni->SetObjectArrayElement = setObjectArrayElement;
+        check(jvmti_env->SetJNIFunctionTable(redirected_jni));
+    });
 }
 
 static void get_class_name(jvmtiEnv *jvmti_env, jclass clazz, span<char> buffer)
@@ -945,29 +912,19 @@ static void get_class_name(jvmtiEnv *jvmti_env, jclass clazz, span<char> buffer)
         return;
     }
 
-    char* class_signature;
-    char* class_generic;
-
-    auto res = jvmti_env->GetClassSignature(clazz, &class_signature, &class_generic);
-
-    if(res)
-    {
-        cerr << "GetClassSignature failed!" << endl;
-        buffer[0] = 0;
-        return;
-    }
+    JvmtiString signature = std::move(ClassSignature::get(jvmti_env, clazz).signature);
 
     size_t array_nesting = 0;
-    while(class_signature[array_nesting] == '[')
+    while(signature[array_nesting] == '[')
         array_nesting++;
 
     size_t pos;
 
-    if(class_signature[array_nesting] == 'L')
+    if(signature[array_nesting] == 'L')
     {
         for(pos = 0; pos < buffer.size() - 1; pos++)
         {
-            char c = class_signature[pos+array_nesting+1];
+            char c = signature[pos+array_nesting+1];
 
             if(c == 0 || c == ';')
             {
@@ -987,7 +944,7 @@ static void get_class_name(jvmtiEnv *jvmti_env, jclass clazz, span<char> buffer)
     {
         const char* keyword;
 
-        switch(class_signature[array_nesting])
+        switch(signature[array_nesting])
         {
             case 'B': keyword = "byte"; break;
             case 'C': keyword = "char"; break;
@@ -1027,76 +984,69 @@ static void onFieldModification(
         char signature_type,
         jvalue new_value)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    char* field_name;
-    char* field_signature;
-    char* field_generic;
-    check(jvmti_env->GetFieldName(field_klass, field, &field_name, &field_signature, &field_generic));
-
     if(!new_value.l)
         return;
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+    acquire_jvmti_and_wrap_exceptions([&](){
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-    assert(!tc->clinit_empty());
+        assert(!tc->clinit_empty());
 
-    if(!tc->clinit_empty())
-    {
-        ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l);
-        if(!val_oc->allocReason)
-            val_oc->allocReason = tc->clinit_top();
-
-        if(object)
+        if(!tc->clinit_empty())
         {
-            auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object);
-            if(!object_oc->allocReason)
-                object_oc->allocReason = tc->clinit_top();
-            object_oc->registerWrite(field, val_oc, tc->clinit_top());
-            increase_log_cnt();
+            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l);
+            if(!val_oc->allocReason)
+                val_oc->allocReason = tc->clinit_top();
+
+            if(object)
+            {
+                auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object);
+                if(!object_oc->allocReason)
+                    object_oc->allocReason = tc->clinit_top();
+                object_oc->registerWrite(field, val_oc, tc->clinit_top());
+                increase_log_cnt();
+            }
+            else
+            {
+                ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
+                cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->clinit_top());
+                increase_log_cnt();
+            }
+        }
+
+#if LOG || PRINT_CLINIT_HEAP_WRITES
+        char class_name[1024];
+        get_class_name(jvmti_env, field_klass, {class_name, class_name + 1024});
+
+        char new_value_class_name[1024];
+        jclass new_value_class = jni_env->GetObjectClass(new_value.l);
+        get_class_name(jvmti_env, new_value_class, new_value_class_name);
+
+        char cause_class_name[1024];
+
+        if(tc->clinit_empty())
+            cause_class_name[0] = 0;
+        else
+            get_class_name(jvmti_env, tc->clinit_top(), cause_class_name);
+
+        if(string_view(new_value_class_name) == "java.lang.String")
+        {
+            const char* str_val = jni_env->GetStringUTFChars((jstring)new_value.l, nullptr);
+            cerr << cause_class_name << ": " << class_name << "." << field_name << " = \"" << str_val << "\"\n";
+            jni_env->ReleaseStringUTFChars((jstring)new_value.l, str_val);
+        }
+        else if(string_view(new_value_class_name) == "java.lang.Class")
+        {
+            char val_content[1024];
+            get_class_name(jvmti_env, (jclass)new_value.l, val_content);
+            cerr << cause_class_name << ": " << class_name << "." << field_name << " = java.lang.Class: \"" << val_content << "\"\n";
         }
         else
         {
-            ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
-            cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->clinit_top());
-            increase_log_cnt();
+            cerr << cause_class_name << ": " << class_name << "." << field_name << " = " << new_value_class_name << '\n';
         }
-    }
-
-#if LOG || PRINT_CLINIT_HEAP_WRITES
-    char class_name[1024];
-    get_class_name(jvmti_env, field_klass, {class_name, class_name + 1024});
-
-    char new_value_class_name[1024];
-    jclass new_value_class = jni_env->GetObjectClass(new_value.l);
-    get_class_name(jvmti_env, new_value_class, new_value_class_name);
-
-    char cause_class_name[1024];
-
-    if(tc->clinit_empty())
-        cause_class_name[0] = 0;
-    else
-        get_class_name(jvmti_env, tc->clinit_top(), cause_class_name);
-
-    if(string_view(new_value_class_name) == "java.lang.String")
-    {
-        const char* str_val = jni_env->GetStringUTFChars((jstring)new_value.l, nullptr);
-        cerr << cause_class_name << ": " << class_name << "." << field_name << " = \"" << str_val << "\"\n";
-        jni_env->ReleaseStringUTFChars((jstring)new_value.l, str_val);
-    }
-    else if(string_view(new_value_class_name) == "java.lang.Class")
-    {
-        char val_content[1024];
-        get_class_name(jvmti_env, (jclass)new_value.l, val_content);
-        cerr << cause_class_name << ": " << class_name << "." << field_name << " = java.lang.Class: \"" << val_content << "\"\n";
-    }
-    else
-    {
-        cerr << cause_class_name << ": " << class_name << "." << field_name << " = " << new_value_class_name << '\n';
-    }
 #endif
+    });
 }
 
 static void JNICALL onFramePop(
@@ -1106,14 +1056,11 @@ static void JNICALL onFramePop(
         jmethodID method,
         jboolean was_popped_by_exception)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    jclass type;
-    check(jvmti_env->GetMethodDeclaringClass(method, &type));
-
-    removeFromTracingStack(jvmti_env, jni_env, thread, type);
+    acquire_jvmti_and_wrap_exceptions([&](){
+        jclass type;
+        check(jvmti_env->GetMethodDeclaringClass(method, &type));
+        removeFromTracingStack(jvmti_env, jni_env, thread, type);
+    });
 }
 
 static void JNICALL onClassPrepare(
@@ -1122,11 +1069,9 @@ static void JNICALL onClassPrepare(
         jthread thread,
         jclass klass)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    processClass(jvmti_env, klass);
+    acquire_jvmti_and_wrap_exceptions([&](){
+        processClass(jvmti_env, klass);
+    });
 }
 
 static void JNICALL onClassFileLoad(
@@ -1141,83 +1086,71 @@ static void JNICALL onClassFileLoad(
         jint* new_class_data_len,
         unsigned char** new_class_data)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
+    acquire_jvmti_and_wrap_exceptions([&]() {
 #if LOG
-    cerr << "ClassLoad: " << name << endl;
+        cerr << "ClassLoad: " << name << endl;
 #endif
 
-    if(string_view(name) == HOOK_CLASS_NAME // Do not replace our own hooks, logically
-    || string_view(name) == "com/oracle/svm/core/jni/functions/JNIFunctionTables") // Crashes during late compile phase
-        return;
+        if(string_view(name) == HOOK_CLASS_NAME // Do not replace our own hooks, logically
+           || string_view(name) == "com/oracle/svm/core/jni/functions/JNIFunctionTables") // Crashes during late compile phase
+            return;
 
-    add_clinit_hook(jvmti_env, class_data, class_data_len, new_class_data, new_class_data_len);
+        add_clinit_hook(jvmti_env, class_data, class_data_len, new_class_data, new_class_data_len);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onClinitStart(JNIEnv* env, jobject self)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env){
+        jvmtiPhase phase;
+        check(jvmti_env->GetPhase(&phase));
 
-    jvmtiPhase phase;
-    check(jvmti_env->GetPhase(&phase));
+        if(phase != JVMTI_PHASE_LIVE)
+            return;
 
-    if(phase != JVMTI_PHASE_LIVE)
-        return;
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
 
-    jthread thread;
-    check(jvmti_env->GetCurrentThread(&thread));
+        jmethodID method;
+        jlocation location;
+        check(jvmti_env->GetFrameLocation(thread, 1, &method, &location));
 
-    jmethodID method;
-    jlocation location;
-    check(jvmti_env->GetFrameLocation(thread, 1, &method, &location));
+        jclass type;
+        check(jvmti_env->GetMethodDeclaringClass(method, &type));
 
-    jclass type;
-    check(jvmti_env->GetMethodDeclaringClass(method, &type));
+        addToTracingStack(jvmti_env, env, thread, type);
 
-    addToTracingStack(jvmti_env, env, thread, type);
-
-    check(jvmti_env->NotifyFramePop(thread, 1));
+        check(jvmti_env->NotifyFramePop(thread, 1));
+    });
 }
 
 static void JNICALL onThreadStart(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    auto* tc = new AgentThreadContext();
-    check(jvmti_env->SetThreadLocalStorage(thread, tc));
+    acquire_jvmti_and_wrap_exceptions([&]() {
+        auto* tc = new AgentThreadContext();
+        check(jvmti_env->SetThreadLocalStorage(thread, tc));
+    });
 }
 
 static void JNICALL onThreadEnd(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-    delete tc;
+    acquire_jvmti_and_wrap_exceptions([&]() {
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+        delete tc;
+    });
 }
 
 void onObjectFree(jvmtiEnv *jvmti_env, jlong tag)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
+    // TODO!
+    acquire_jvmti_and_wrap_exceptions([&]() {
 #if LOG
-    cerr << "Object freed!\n";
+        cerr << "Object freed!\n";
 #endif
-    auto* oc = (ObjectContext*)tag;
 
-    assert(!dynamic_cast<ClassContext*>(oc));
-
-    delete oc;
+        auto* oc = (ObjectContext*)tag;
+        delete oc;
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_notifyArrayWrite(JNIEnv* env, jobject self, jobjectArray arr, jint index, jobject val)
@@ -1227,277 +1160,127 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_notifyArrayWri
 
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onThreadStart(JNIEnv* env, jobject self, jthread newThread)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
 #if LOG || PRINT_CLINIT_HEAP_WRITES
-    jvmtiPhase phase;
-    check(jvmti_env->GetPhase(&phase));
+    acquire_jvmti_and_wrap_exceptions([&]()
+    {
+        jvmtiPhase phase;
+        check(jvmti_env->GetPhase(&phase));
 
-    if(phase != JVMTI_PHASE_LIVE)
-        return;
+        if(phase != JVMTI_PHASE_LIVE)
+            return;
 
-    jthread thread;
-    check(jvmti_env->GetCurrentThread(&thread));
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
 
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-    if(tc->clinit_empty())
-        return;
+        if(tc->clinit_empty())
+            return;
 
-    char outer_clinit_name[1024];
-    get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
+        char outer_clinit_name[1024];
+        get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
 
-    jvmtiThreadInfo info;
-    check(jvmti_env->GetThreadInfo(newThread, &info));
+        jvmtiThreadInfo info;
+        check(jvmti_env->GetThreadInfo(newThread, &info));
 
-    cerr << outer_clinit_name << ": " << "Thread.start(): \"" << info.name << "\"\n";
+        cerr << outer_clinit_name << ": " << "Thread.start(): \"" << info.name << "\"\n";
+    });
 #endif
 }
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getResponsibleClass(JNIEnv* env, jobject thisClass, jobject imageHeapObject)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return nullptr;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    ObjectContext* oc = ObjectContext::get(jvmti_env, imageHeapObject);
-
-    if(!oc)
-        return nullptr;
-
-    return oc->allocReason;
+    return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
+    {
+        ObjectContext* oc = ObjectContext::get(jvmti_env, imageHeapObject);
+        jobject res = nullptr;
+        if(oc)
+            res = oc->allocReason;
+        return res;
+    });
 }
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForNonstaticFieldWrite(JNIEnv* env, jobject thisClass, jobject receiver, jobject field, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    auto receiver_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, receiver);
-    auto val_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, val);
-
-    jfieldID fieldID = env->FromReflectedField(field);
-
-    char *name, *signature, *generic;
-    jvmtiError error = jvmti_env->GetFieldName(env->GetObjectClass(receiver), fieldID, &name, &signature, &generic);
-
-    if(error == JVMTI_ERROR_INVALID_FIELDID)
+    return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        // May happen when the field of a substitution is accessed
-#ifdef SHOW_EXISTING
-#if SHOW_EXISTING == 0
-        cerr << "Invalid Field!\n";
-#endif
-#endif
-        return nullptr;
-    }
-
-    check(error);
-
-    jobject res = nullptr;
-
-    if(receiver_oc && val_oc)
-    {
-        res = receiver_oc->getWriteReason(env->FromReflectedField(field), val_oc);
-    }
-
-#ifdef SHOW_EXISTING
-    if(bool(res) == SHOW_EXISTING)
-    {
-        char receiver_class_name[1024];
-        get_class_name(jvmti_env, env->GetObjectClass(receiver), receiver_class_name);
-        char val_class_name[1024];
-        get_class_name(jvmti_env, env->GetObjectClass(val), val_class_name);
-
-        stringstream s;
-        s << receiver_class_name << '.' << name << '=' << val_class_name << endl;
-        cerr << s.str();
-    }
-#endif
-
-    return res;
+        auto receiver_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, receiver);
+        auto val_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, val);
+        jobject res = nullptr;
+        if(receiver_oc && val_oc)
+            res = receiver_oc->getWriteReason(env->FromReflectedField(field), val_oc);
+        return res;
+    });
 }
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForStaticFieldWrite(JNIEnv* env, jobject thisClass, jclass declaring, jobject field, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return nullptr;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    auto declaring_cc = ClassContext::get_or_create(jvmti_env, env, declaring);
-    auto val_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, val);
-
-    jint class_status;
-    check(jvmti_env->GetClassStatus(declaring, &class_status));
-
-    if(!(class_status & JVMTI_CLASS_STATUS_INITIALIZED))
+    return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env) -> jobject
     {
-        char class_name[1024];
-        get_class_name(jvmti_env, declaring, class_name);
-        cerr << "Class not initialized yet field being asked for: " << class_name << endl;
-        return nullptr;
-    }
+        auto declaring_cc = ClassContext::get_or_create(jvmti_env, env, declaring);
+        auto val_oc = (NonArrayObjectContext*) ObjectContext::get(jvmti_env, val);
 
-    jfieldID fieldID = env->FromReflectedField(field);
+        jint class_status;
+        check(jvmti_env->GetClassStatus(declaring, &class_status));
 
-    jobject res = nullptr;
+        if(!(class_status & JVMTI_CLASS_STATUS_INITIALIZED))
+        {
+            char class_name[1024];
+            get_class_name(jvmti_env, declaring, class_name);
+            cerr << "Class not initialized yet field being asked for: " << class_name << endl;
+            return nullptr;
+        }
 
-    if(val_oc)
-    {
-        res = declaring_cc->getStaticFieldReason(jvmti_env, env, env->FromReflectedField(field), val_oc);
-    }
-
-#ifdef SHOW_EXISTING
-    char declaring_class_name[1024];
-    get_class_name(jvmti_env, declaring, declaring_class_name);
-    char val_class_name[1024];
-    get_class_name(jvmti_env, env->GetObjectClass(val), val_class_name);
-    char *field_name, *signature, *generic;
-    check(jvmti_env->GetFieldName(declaring, fieldID, &field_name, &signature, &generic));
-
-    if(bool(res) == SHOW_EXISTING)
-    {
-        stringstream s;
-        s << declaring_class_name << '.' << field_name << '=' << val_class_name << endl;
-        cerr << s.str();
-    }
-#endif
-
-    return res;
+        jobject res = nullptr;
+        if(val_oc)
+            res = declaring_cc->getStaticFieldReason(jvmti_env, env, env->FromReflectedField(field), val_oc);
+        return res;
+    });
 }
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getClassResponsibleForArrayWrite(JNIEnv* env, jobject thisClass, jobjectArray array, jint index, jobject val)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return nullptr;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    auto array_oc = (ArrayObjectContext*)ObjectContext::get(jvmti_env, array);
-    auto val_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, val);
-
-    jobject res = nullptr;
-
-    if(array_oc && val_oc)
+    return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        res = array_oc->getWriteReason(index, val_oc);
-    }
-
-#ifdef SHOW_EXISTING
-    if(bool(res) == SHOW_EXISTING)
-    {
-        char array_class_name[1024];
-        get_class_name(jvmti_env, env->GetObjectClass(array), array_class_name);
-        char val_class_name[1024];
-        get_class_name(jvmti_env, env->GetObjectClass(val), val_class_name);
-
-        stringstream s;
-        s << array_class_name << '=' << val_class_name << endl;
-        cerr << s.str();
-    }
-#endif
-
-    return res;
+        auto array_oc = (ArrayObjectContext*) ObjectContext::get(jvmti_env, array);
+        auto val_oc = (NonArrayObjectContext*) ObjectContext::get(jvmti_env, val);
+        jobject res = nullptr;
+        if(array_oc && val_oc)
+            res = array_oc->getWriteReason(index, val_oc);
+        return res;
+    });
 }
 
 extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_getBuildTimeClinitResponsibleForBuildTimeClinit(JNIEnv* env, jobject thisClass, jclass clazz)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return nullptr;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, clazz);
-    return cc->made_reachable_by;
+    return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
+    {
+        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, clazz);
+        return cc->made_reachable_by;
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_beginTracing(JNIEnv* env, jobject thisClass, jobject customReason)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    jthread thread;
-    check(jvmti_env->GetCurrentThread(&thread));
-
-    addToTracingStack(jvmti_env, env, thread, customReason);
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env)
+    {
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
+        addToTracingStack(jvmti_env, env, thread, customReason);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_endTracing(JNIEnv* env, jobject thisClass, jobject customReason)
 {
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-    auto jvmti_env = jvmti_env_guard->jvmti_env();
-
-    jthread thread;
-    check(jvmti_env->GetCurrentThread(&thread));
-
-    removeFromTracingStack(jvmti_env, env, thread, customReason);
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env)
+    {
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
+        removeFromTracingStack(jvmti_env, env, thread, customReason);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_dispose(JNIEnv* env, jobject thisClass)
 {
     _jvmti_env_backing.reset();
 }
-
-
-#if LOG_METHOD_ENTRY_EXIT_EVENTS
-static void JNICALL onMethodEntry(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jmethodID method)
-{
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-    if(!tc || tc->clinit_empty())
-        return;
-
-    char outer_clinit_name[1024];
-    get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
-
-    char declaringClassName[1024];
-
-    jclass declaringClass;
-    check(jvmti_env->GetMethodDeclaringClass(method, &declaringClass));
-    get_class_name(jvmti_env, declaringClass, declaringClassName);
-
-    char *name, *signature, *generic;
-    check(jvmti_env->GetMethodName(method, &name, &signature, &generic));
-
-    cerr << outer_clinit_name << ": Entering " << declaringClassName << '.' << name << '(' << signature << ")\n";
-}
-
-static void JNICALL onMethodExit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jmethodID method, jboolean was_popped_by_exception, jvalue return_value)
-{
-    auto jvmti_env_guard = _jvmti_env.lock();
-    if(!jvmti_env_guard)
-        return;
-
-    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-    if(!tc || tc->clinit_empty())
-        return;
-
-    char outer_clinit_name[1024];
-    get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
-
-    char declaringClassName[1024];
-
-    jclass declaringClass;
-    check(jvmti_env->GetMethodDeclaringClass(method, &declaringClass));
-    get_class_name(jvmti_env, declaringClass, declaringClassName);
-
-    char *name, *signature, *generic;
-    check(jvmti_env->GetMethodName(method, &name, &signature, &generic));
-
-    cerr << outer_clinit_name << ": Exiting " << declaringClassName << '.' << name << '(' << signature << ")\n";
-}
-#endif
