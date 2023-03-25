@@ -115,39 +115,33 @@ public class CausalityExport {
         return null;
     }
 
-    public final ReRootingToken accountRootRegistrationsTo(RootCategory category, Reason reason) {
-        beginAccountingRootRegistrationsTo(category, reason);
-        return new ReRootingToken(category, reason);
-    }
-
     public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
-        return accountRootRegistrationsTo(RootCategory.GENERAL, reason);
+        beginAccountingRootRegistrationsTo(reason);
+        return new ReRootingToken(reason);
     }
 
     // May be unrooted due to an ongoing accountRootRegistrationsTo(...)
     public void registerReasonRoot(Reason reason) {}
 
-    public Reason getRootReason(RootCategory category) {
+    public Reason getRootReason() {
         return null;
     }
 
-    protected void beginAccountingRootRegistrationsTo(RootCategory category, Reason reason) {}
+    protected void beginAccountingRootRegistrationsTo(Reason reason) {}
 
-    protected void endAccountingRootRegistrationsTo(RootCategory category, Reason reason) {}
+    protected void endAccountingRootRegistrationsTo(Reason reason) {}
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
     public class ReRootingToken implements AutoCloseable {
-        private final RootCategory category;
         private final Reason reason;
 
-        ReRootingToken(RootCategory category, Reason reason) {
-            this.category = category;
+        ReRootingToken(Reason reason) {
             this.reason = reason;
         }
 
         @Override
         public void close() {
-            endAccountingRootRegistrationsTo(category, reason);
+            endAccountingRootRegistrationsTo(reason);
         }
     }
 
@@ -687,11 +681,6 @@ public class CausalityExport {
         public boolean root() {
             return true;
         }
-    }
-
-    public enum RootCategory {
-        GENERAL,
-        METHOD_PARSING
     }
 }
 

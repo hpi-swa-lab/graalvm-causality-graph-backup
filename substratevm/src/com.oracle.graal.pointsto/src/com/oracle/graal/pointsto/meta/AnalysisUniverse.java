@@ -368,7 +368,13 @@ public class AnalysisUniverse implements Universe {
              */
             AnalysisType declaringType = lookup(field.getDeclaringClass());
 
-            CausalityExport.Reason reason = CausalityExport.getInstance().getRootReason(CausalityExport.RootCategory.METHOD_PARSING);
+            /*
+             * This registration is hard to fully trace.
+             * If we get here during method parsing, a root reason is given.
+             * Otherwise, we violate the principle of conservative reasoning in order
+             * to get usable results.
+             */
+            CausalityExport.Reason reason = CausalityExport.getInstance().getRootReason();
             try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(reason != null ? reason : CausalityExport.Ignored.Instance)) {
                 declaringType.registerAsReachable(field);
             }

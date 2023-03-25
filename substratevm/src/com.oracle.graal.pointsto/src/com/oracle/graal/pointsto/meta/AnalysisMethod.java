@@ -317,7 +317,7 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
      */
     public void registerAsIntrinsicMethod(Object reason) {
         assert isValidReason(reason) : "Registering a method as intrinsic needs to provide a valid reason, found: " + reason;
-        CausalityExport.getInstance().register(CausalityExport.getInstance().getRootReason(CausalityExport.RootCategory.METHOD_PARSING), new CausalityExport.MethodReachableReason(this));
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.MethodReachableReason(this));
         AtomicUtils.atomicSetAndRun(this, reason, isIntrinsicMethodUpdater, this::onReachable);
     }
 
