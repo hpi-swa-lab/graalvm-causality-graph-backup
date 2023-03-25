@@ -268,6 +268,10 @@ public class Graph {
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
 
+        if(typesSorted.length > 0xFFFF) {
+            throw new RuntimeException("Too many types! CausalityExport can only handle up to 65535.");
+        }
+
         zip.putNextEntry(new ZipEntry("types.txt"));
         {
             PrintStream w = new PrintStream(zip);

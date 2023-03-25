@@ -46,7 +46,11 @@ public class CausalityExporter implements InternalFeature {
 
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
-        // The activation has to be done outside of this feature in order to be able to log feature registrations themselves.
+        if(NativeImageOptions.ExitAfterAnalysis.getValue()) {
+            System.err.println("Causality Export should be run until the compiling phase in order to get fully functional data!");
+        }
+
+        // The activation had to be done outside of this feature in order to be able to log feature registrations themselves.
     }
 
     @Override
@@ -72,6 +76,12 @@ public class CausalityExporter implements InternalFeature {
                     zip = null;
                 }
                 throw ex;
+            }
+
+            if(NativeImageOptions.ExitAfterAnalysis.getValue()) {
+                // Produce report without reachability.json
+                zip.close();
+                zip = null;
             }
         } catch (IOException ex) {
             throw VMError.shouldNotReachHere("Failed to create Causality Export", ex);
