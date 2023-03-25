@@ -116,12 +116,6 @@ public:
     }
 };
 
-
-class table_iterator_end
-{
-
-};
-
 template<typename T>
 class table_iterator
 {
@@ -129,6 +123,10 @@ class table_iterator
     size_t count;
 
 public:
+    using value_type = T;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
     table_iterator(T* ptr, size_t count) : ptr(ptr), count(count) {}
 
     table_iterator& operator++()
@@ -138,26 +136,27 @@ public:
         return *this;
     }
 
-    bool operator!=(table_iterator_end e) const
+    void operator++(int) { (*this)++; }
+
+    bool operator==(default_sentinel_t) const
     {
-        return count != 0;
+        return count == 0;
     }
 
-    T& operator*()
+    T& operator*() const
     {
         return *ptr;
     }
 
-    T* operator->() { return ptr; }
+    T* operator->() const { return ptr; }
 };
 
 template<typename T>
 static T* iterate_to_end(T* begin, size_t count)
 {
     table_iterator<T> it{begin, count};
-    table_iterator_end e;
 
-    while(it != e)
+    while(it != default_sentinel_t())
         ++it;
 
     return &*it;
@@ -573,6 +572,10 @@ class table_iterator<Instruction>
     size_t _bci;
 
 public:
+    using value_type = Instruction;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
     table_iterator(Instruction* ptr, size_t bci) : ptr(ptr), _bci(bci) {}
 
     table_iterator& operator++()
@@ -583,21 +586,62 @@ public:
         return *this;
     }
 
+    void operator++(int) { (*this)++; }
+
     bool operator!=(table_iterator<Instruction> other) const
     {
-        assert(ptr <= other.ptr);
-        return ptr < other.ptr;
+        return ptr != other.ptr;
     }
 
-    Instruction& operator*()
+    Instruction& operator*() const
     {
         return *ptr;
     }
 
-    Instruction* operator->() { return ptr; }
+    Instruction* operator->() const { return ptr; }
 
     size_t bci() const { return _bci;}
 };
+static_assert(std::input_iterator<table_iterator<Instruction>>);
+
+template<>
+class table_iterator<const Instruction>
+{
+    const Instruction* ptr;
+    size_t _bci;
+
+public:
+    using value_type = const Instruction;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
+    table_iterator(const Instruction* ptr, size_t bci) : ptr(ptr), _bci(bci) {}
+
+    table_iterator& operator++()
+    {
+        size_t len = ptr->len(_bci);
+        ptr += len;
+        _bci += len;
+        return *this;
+    }
+
+    void operator++(int) { (*this)++; }
+
+    bool operator!=(table_iterator<const Instruction> other) const
+    {
+        return ptr != other.ptr;
+    }
+
+    const Instruction& operator*() const
+    {
+        return *ptr;
+    }
+
+    const Instruction* operator->() const { return ptr; }
+
+    size_t bci() const { return _bci;}
+};
+static_assert(std::input_iterator<table_iterator<const Instruction>>);
 
 
 enum cp_tag : uint8_t
@@ -679,7 +723,7 @@ public:
         return *this;
     }
 
-    bool operator!=(table_iterator_end e) const
+    bool operator!=(default_sentinel_t) const
     {
         return count != 0;
     }
@@ -856,12 +900,19 @@ struct BYTEWISE Code_attribute_1 : public attribute_info
 
     Code_attribute_2* next()
     {
-        return (Code_attribute_2*)&code[code_length];
+        return reinterpret_cast<Code_attribute_2*>(&code[code_length]);
     }
 
-    table_iterator<Instruction> begin() {
-        /*cerr << "Begin of instruction iteration!" << endl;*/ return {code, 0}; }
+    const Code_attribute_2* next() const
+    {
+        return reinterpret_cast<const Code_attribute_2*>(&code[code_length]);
+    }
+
+    table_iterator<Instruction> begin() { return {code, 0}; }
     table_iterator<Instruction> end() { return {code + code_length, code_length }; }
+
+    table_iterator<const Instruction> begin() const { return {code, 0}; }
+    table_iterator<const Instruction> end() const { return {code + code_length, code_length }; }
 };
 
 
@@ -886,7 +937,12 @@ struct BYTEWISE Code_attribute_2
 
     Code_attribute_3* next()
     {
-        return (Code_attribute_3*)&exception_table[exception_table_length];
+        return reinterpret_cast<Code_attribute_3*>(&exception_table[exception_table_length]);
+    }
+
+    const Code_attribute_3* next() const
+    {
+        return reinterpret_cast<const Code_attribute_3*>(&exception_table[exception_table_length]);
     }
 };
 
@@ -897,7 +953,7 @@ struct BYTEWISE Code_attribute_3
 
     table_iterator<attribute_info> begin() { return {attributes, attributes_count}; }
 
-    table_iterator_end end() { return {}; }
+    default_sentinel_t end() { return {}; }
 };
 
 
@@ -1010,7 +1066,7 @@ struct BYTEWISE append_frame : public stack_map_frame
     verification_type_info locals[0 /*frame_type - 251*/];
 
     table_iterator<verification_type_info> begin() { return {locals, (size_t)(frame_type - 251)}; }
-    table_iterator_end end() { return {}; }
+    default_sentinel_t end() { return {}; }
 
     size_t len() const
     {
@@ -1032,7 +1088,7 @@ struct BYTEWISE full_frame2
     verification_type_info stack[0 /*number_of_stack_items*/];
 
     table_iterator<verification_type_info> begin() { return {stack, number_of_stack_items}; }
-    table_iterator_end end() { return {}; }
+    default_sentinel_t end() { return {}; }
 
     size_t len() const
     {
@@ -1053,7 +1109,7 @@ struct BYTEWISE full_frame : public stack_map_frame
     verification_type_info locals[0 /*number_of_locals*/];
 
     table_iterator<verification_type_info> begin() { return {locals, number_of_locals}; }
-    table_iterator_end end() { return {}; }
+    default_sentinel_t end() { return {}; }
 
     full_frame2* next()
     {
@@ -1124,7 +1180,7 @@ struct BYTEWISE StackMapTable_attribute : public attribute_info
         return {entries, number_of_entries};
     }
 
-    table_iterator_end end() { return {}; }
+    default_sentinel_t end() { return {}; }
 };
 
 struct BYTEWISE LineNumberTable_attribute : public attribute_info
@@ -1197,7 +1253,14 @@ struct BYTEWISE method_or_field_info
         return {attributes, attributes_count};
     }
 
-    table_iterator_end end()
+    table_iterator<const attribute_info> begin() const
+    {
+        return {attributes, attributes_count};
+    }
+
+    static_assert(std::input_iterator<table_iterator<attribute_info>>);
+
+    default_sentinel_t end() const
     {
         return {};
     }
@@ -1244,7 +1307,7 @@ struct BYTEWISE ClassFile1
         return {constant_pool, size_t(constant_pool_count) - 1};
     }
 
-    table_iterator_end end()
+    default_sentinel_t end()
     {
         return {};
     }
@@ -1289,7 +1352,7 @@ struct BYTEWISE ClassFile4
         return {methods, methods_count};
     }
 
-    table_iterator_end end()
+    default_sentinel_t end()
     {
         return {};
     }
@@ -1370,27 +1433,21 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
 
     const uint8_t* src_method_end = (const uint8_t*)src_method + ((method_or_field_info*)src_method)->len();
 
-    Code_attribute_1* code1 = nullptr;
-
-    for(const attribute_info& m_attr : *(method_or_field_info*)src_method)
-    {
-        if(cp[m_attr.attribute_name_index]->str() == "Code")
-        {
-            code1 = (Code_attribute_1*)&m_attr;
-            break;
-        }
-    }
-
-    if(!code1)
+    auto attributes = std::ranges::subrange(*src_method);
+    auto code1it = std::ranges::find_if(attributes, [&](const attribute_info& m_attr){
+        return cp[m_attr.attribute_name_index]->str() == "Code";
+    });
+    if(code1it == attributes.end())
         return 0;
+    const Code_attribute_1* code1 = reinterpret_cast<const Code_attribute_1*>(&*code1it);
 
-    Code_attribute_2* code2 = code1->next();
+    const Code_attribute_2* code2 = code1->next();
 
-    const uint8_t* src = (const uint8_t*)src_method;
-    uint8_t* dst = (uint8_t*)dst_method;
+    const uint8_t* src = reinterpret_cast<const uint8_t*>(src_method);
+    uint8_t* dst = reinterpret_cast<uint8_t*>(dst_method);
 
-    dst = std::copy(src, (const uint8_t*)code1->code, dst);
-    src = (const uint8_t*)code1->code;
+    dst = std::copy(src, reinterpret_cast<const uint8_t*>(code1->code), dst);
+    src = reinterpret_cast<const uint8_t*>(code1->code);
 
     Code_attribute_1* dst_code1 = apply_offset(dst - src, code1);
 
@@ -1400,10 +1457,10 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
     for(const auto& insertion : insertions)
     {
         auto prev_dst = dst;
-        dst = std::copy(src, (const unsigned char*)code1->code + insertion.pos, dst);
-        src = (const unsigned char*)code1->code + insertion.pos;
+        dst = std::copy(src, reinterpret_cast<const unsigned char*>(code1->code) + insertion.pos, dst);
+        src = reinterpret_cast<const unsigned char*>(code1->code) + insertion.pos;
 
-        relocate_instructions({(Instruction*)prev_dst, (Instruction*)dst}, bci_shift, original_bci);
+        relocate_instructions({reinterpret_cast<Instruction*>(prev_dst), reinterpret_cast<Instruction*>(dst)}, bci_shift, original_bci);
         original_bci += (dst - prev_dst);
 
         assert((insertion.data.size() % 4) == 0 && "Switch Jumps may need to be 4-byte-aligned, so only the insertion of multiples of 4 is safe");
@@ -1415,7 +1472,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
     dst = std::copy(src, src_method_end, dst);
     src = src_method_end;
 
-    relocate_instructions({(Instruction*)prev_dst, size_t((Instruction*)code1->next() - (Instruction*)prev_src)}, bci_shift, original_bci);
+    relocate_instructions({reinterpret_cast<Instruction*>(prev_dst), size_t(reinterpret_cast<const Instruction*>(code1->next()) - reinterpret_cast<const Instruction*>(prev_src))}, bci_shift, original_bci);
 
     assert(dst_code1->attribute_length == code1->attribute_length);
     assert(dst_code1->code_length == code1->code_length);
@@ -1430,7 +1487,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
         bci_shift.relocate_absolute(e.handler_pc);
     }
 
-    Code_attribute_3* code3 = code2->next();
+    const Code_attribute_3* code3 = code2->next();
     Code_attribute_3* dst_code3 = apply_offset(dst - src, code3);
 
     for(attribute_info& c_attr : *dst_code3)
@@ -1439,7 +1496,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
 
         if(str == "StackMapTable")
         {
-            auto* smt = (StackMapTable_attribute*)&c_attr;
+            auto* smt = reinterpret_cast<StackMapTable_attribute*>(&c_attr);
 
             {
                 auto insertion = insertions.begin();
@@ -1470,7 +1527,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
                     else if(frame_type >= 247)
                     {
                         // All have the same layout as same_frame_extended
-                        auto typed_frame = (same_frame_extended*)&frame;
+                        auto typed_frame = reinterpret_cast<same_frame_extended*>(&frame);
                         typed_frame->_offset_delta += offset;
                     }
                     else if(frame_type < 128)
@@ -1496,7 +1553,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
                         c_attr.attribute_length += 2;
                         dst = std::copy(((u1*)&frame) + 1, dst, ((u1*)&frame) + 3);
 
-                        auto typed_frame = (same_frame_extended*)&frame;
+                        auto typed_frame = reinterpret_cast<same_frame_extended*>(&frame);
                         typed_frame->_offset_delta = bci;
                     }
                     else
@@ -1508,14 +1565,14 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
         }
         else if(str == "LineNumberTable")
         {
-            auto* lnt = (LineNumberTable_attribute*)&c_attr;
+            auto* lnt = reinterpret_cast<LineNumberTable_attribute*>(&c_attr);
 
             for(auto& line : lnt->lines())
                 bci_shift.relocate_absolute(line.start_pc);
         }
         else if(str == "LocalVariableTable")
         {
-            auto* lvt = (LocalVariableTable_attribute*)&c_attr;
+            auto* lvt = reinterpret_cast<LocalVariableTable_attribute*>(&c_attr);
 
             for(auto& e : lvt->local_variables())
             {
@@ -1525,7 +1582,7 @@ static size_t copy_method_with_insertions(const ConstantPoolOffsets& cp, const m
         }
         else if(str == "LocalVariableTypeTable")
         {
-            auto* lvtt = (LocalVariableTypeTable_attribute*)&c_attr;
+            auto* lvtt = reinterpret_cast<LocalVariableTypeTable_attribute*>(&c_attr);
 
             for(auto& e : lvtt->local_variable_types())
             {
@@ -1607,21 +1664,13 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
 
         auto name = cp[m.name_index]->str();
 
-        Code_attribute_1* code1 = nullptr;
-
-        for(const attribute_info& m_attr : *(method_or_field_info*)&m)
-        {
-            if(cp[m_attr.attribute_name_index]->str() == "Code")
-            {
-                code1 = (Code_attribute_1*)&m_attr;
-                break;
-            }
-        }
-
-        if(!code1)
-        {
+        auto attributes = std::ranges::subrange(m);
+        auto code1it = std::ranges::find_if(attributes, [&](const attribute_info& m_attr){
+            return cp[m_attr.attribute_name_index]->str() == "Code";
+        });
+        if(code1it == attributes.end())
             continue;
-        }
+        const auto* code1 = reinterpret_cast<const Code_attribute_1*>(&*code1it);
 
         bool insert_clinit_callback = name == "<clinit>";
 
@@ -1637,46 +1686,25 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
                 //&& cp[m.descriptor_index]->str() == "()V"
                 && cp[cp[file2->this_class]->name_index]->str() == "java/lang/Thread";
 
-        size_t insertion_count = 0;
+
+        vector<Insertion> insertions;
 
         if(insert_clinit_callback)
-            insertion_count++;
+            insertions.push_back({ .data = call_onClinitStart_code, .pos = 0 });
 
         if(insert_threadstart_callback)
-            insertion_count++;
+            insertions.push_back({ .data = call_onThreadStart_code, .pos = 0 });
 
-        for(Instruction& i : *code1)
+        for(const Instruction& i : *code1)
         {
             if(i.op == OpCode::aastore)
-                insertion_count++;
+                insertions.push_back({ .data = call_onArrayWrite_code, .pos = (size_t)(&i + 1 - code1->code) });
         }
 
-        if(insertion_count == 0)
+        if(insertions.empty())
             continue;
 
-        Insertion insertions[insertion_count];
-
-        size_t insertion_index = 0;
-        if(insert_clinit_callback)
-        {
-            insertions[insertion_index++] = { .data = call_onClinitStart_code, .pos = 0 };
-        }
-
-        if(insert_threadstart_callback)
-        {
-            insertions[insertion_index++] = { .data = call_onThreadStart_code, .pos = 0 };
-        }
-
-        for(Instruction& i : *code1)
-        {
-            if(i.op == OpCode::aastore)
-            {
-                if(insertion_index < insertion_count)
-                    insertions[insertion_index++] = { .data = call_onArrayWrite_code, .pos = (size_t)(&i + 1 - code1->code) };
-            }
-        }
-
-        size_t bytes_copied = copy_method_with_insertions(cp, (const method_or_field_info*)src, (method_or_field_info*)dst, {insertions, insertion_count});
+        size_t bytes_copied = copy_method_with_insertions(cp, (const method_or_field_info*)src, (method_or_field_info*)dst, insertions);
 
         if(!bytes_copied)
             continue;
@@ -1685,17 +1713,14 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
 
         {
             // Replace aastore in target code
-            Code_attribute_1* dst_code1 = nullptr;
-
-            for(attribute_info& m_attr : *(method_or_field_info*)dst)
-            {
-                if(cp[m_attr.attribute_name_index]->str() == "Code")
-                {
-                    dst_code1 = (Code_attribute_1*)&m_attr;
-                    break;
-                }
-            }
-
+            auto dst_m = reinterpret_cast<method_or_field_info*>(dst);
+            auto sr = std::ranges::subrange(*dst_m);
+            auto dst_code1it = std::ranges::find_if(sr, [&](const attribute_info& m_attr){
+                return cp[m_attr.attribute_name_index]->str() == "Code";
+            });
+            if(dst_code1it == dst_m->end())
+                continue;
+            auto* dst_code1 = reinterpret_cast<Code_attribute_1*>(&*dst_code1it);
             assert(dst_code1);
 
             for(Instruction& i : *dst_code1)
