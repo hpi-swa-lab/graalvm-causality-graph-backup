@@ -359,7 +359,6 @@ public final class Impl extends CausalityExport {
                     g.directInvokes.add(new Graph.DirectCallEdge(tReachable, init));
                 } else if(!buildTimeClinitsWithReason.contains(init)) {
                     g.directInvokes.add(new Graph.DirectCallEdge(null, init));
-                    System.err.println("Could not get reason for build-time clinit of: " + init.clazz.getTypeName());
                 }
             });
         }

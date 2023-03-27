@@ -226,8 +226,6 @@ public class Graph {
             return size;
         }
 
-        ;
-
         public Integer getId(PointsToAnalysis bb, TypeState s) {
             return typestate_to_id.computeIfAbsent(s.forCanBeNull(bb, true), this::assignId);
         }

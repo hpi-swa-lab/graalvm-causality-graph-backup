@@ -679,14 +679,8 @@ static void acquire_jvmti_and_wrap_exceptions(std::invocable<> auto&& lambda)
     acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env) { lambda(); });
 }
 
-static atomic<uint64_t> log_cnt;
-
 static void increase_log_cnt()
 {
-    uint64_t cnt = ++log_cnt;
-
-    if(cnt % 10000 == 0)
-        cerr << "Log-count" << cnt << endl;
 }
 
 
