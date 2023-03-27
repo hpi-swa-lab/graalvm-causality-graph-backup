@@ -12,6 +12,7 @@ add_library(heap-assignment-tracing-agent SHARED main.cpp bytecode.cpp settings.
 
 add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/HeapAssignmentTracingHooks.class
+        DEPENDS HeapAssignmentTracingHooks.java
         COMMAND javac HeapAssignmentTracingHooks.java -d ${CMAKE_BINARY_DIR}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
