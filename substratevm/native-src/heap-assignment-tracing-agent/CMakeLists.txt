@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_library(heap-assignment-tracing-agent SHARED main.cpp bytecode.cpp settings.h JvmtiWrapper.h)
 
+target_link_libraries(heap-assignment-tracing-agent -static-libgcc -static-libstdc++)
+
+
 add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/HeapAssignmentTracingHooks.class
         DEPENDS HeapAssignmentTracingHooks.java
