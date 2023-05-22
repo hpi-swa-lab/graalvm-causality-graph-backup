@@ -202,7 +202,9 @@ public class FeatureHandler {
         }
 
         if (registeredFeatures.contains(baseFeatureClass)) {
-            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
+            if (ImageSingletons.contains(baseFeatureClass)) {
+                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
+            }
             return;
         }
 
