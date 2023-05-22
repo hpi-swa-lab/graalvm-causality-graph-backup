@@ -357,7 +357,7 @@ public abstract class TypeFlow<T> {
         return addUse(bb, use, true);
     }
 
-    private boolean addUse(PointsToAnalysis bb, TypeFlow<?> use, boolean propagateTypeState) {
+    public boolean addUse(PointsToAnalysis bb, TypeFlow<?> use, boolean propagateTypeState) {
         CausalityExport.getInstance().addTypeFlowEdge(this, use);
 
         if (isSaturated() && propagateTypeState) {

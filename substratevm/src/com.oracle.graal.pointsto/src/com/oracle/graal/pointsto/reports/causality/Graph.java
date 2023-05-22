@@ -157,7 +157,7 @@ public class Graph {
             String detail = null;
 
             if (f instanceof ArrayElementsTypeFlow) {
-                detail = ((ArrayElementsTypeFlow) f).getSourceObject().type().toJavaName();
+                detail = ((ArrayElementsTypeFlow) f).getSource().toJavaName();
             } else if (f instanceof FieldTypeFlow) {
                 detail = ((FieldTypeFlow) f).getSource().format("%H.%n");
             } else if (f instanceof AccessFieldTypeFlow) {
