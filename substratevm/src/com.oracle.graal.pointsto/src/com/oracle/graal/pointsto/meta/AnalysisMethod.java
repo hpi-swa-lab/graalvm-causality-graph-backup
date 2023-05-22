@@ -827,7 +827,12 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
                 return null;
             }
 
-            AnalysisParsedGraph graph = AnalysisParsedGraph.parseBytecode(bb, this);
+            AnalysisParsedGraph graph;
+            try (CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                try (CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(this))) {
+                    graph = AnalysisParsedGraph.parseBytecode(bb, this);
+                }
+            }
 
             /*
              * Since we still hold the parsing lock, the transition form "parsing" to "parsed"
