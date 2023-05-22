@@ -40,8 +40,6 @@ import com.oracle.svm.common.meta.MultiMethod.MultiMethodKey;
 
 import jdk.vm.ci.code.BytecodePosition;
 
-import java.util.Collection;
-
 public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implements InvokeInfo {
 
     /**

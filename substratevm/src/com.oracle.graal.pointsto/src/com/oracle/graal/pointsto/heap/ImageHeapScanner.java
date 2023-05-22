@@ -127,14 +127,14 @@ public abstract class ImageHeapScanner {
             /* Check if the value is available before accessing it. */
             if (isValueAvailable(field)) {
                 FieldScan reason = new FieldScan(field);
-            AnalysisType declaringClass = field.getDeclaringClass();
-            if (field.isStatic()) {
-                JavaConstant fieldValue = declaringClass.getOrComputeData().readFieldValue(field);
-                markReachable(fieldValue, reason);
-                notifyAnalysis(field, null, fieldValue, reason);
-            } else {
-                /* Trigger field scanning for the already processed objects. */
-                postTask(() -> onInstanceFieldRead(field, declaringClass, reason));
+                AnalysisType declaringClass = field.getDeclaringClass();
+                if (field.isStatic()) {
+                    JavaConstant fieldValue = declaringClass.getOrComputeData().readFieldValue(field);
+                    markReachable(fieldValue, reason);
+                    notifyAnalysis(field, null, fieldValue, reason);
+                } else {
+                    /* Trigger field scanning for the already processed objects. */
+                    postTask(() -> onInstanceFieldRead(field, declaringClass, reason));
                 }
             }
         }

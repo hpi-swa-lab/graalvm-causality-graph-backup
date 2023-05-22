@@ -38,8 +38,6 @@ import com.oracle.svm.core.util.VMError;
 
 import java.util.stream.StreamSupport;
 
-import java.util.stream.StreamSupport;
-
 @AutomaticallyRegisteredImageSingleton
 public final class ClassForNameSupport {
 
