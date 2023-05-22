@@ -938,7 +938,7 @@ public class UnsafeAutomaticSubstitutionProcessor extends SubstitutionProcessor 
     /**
      * Try to register the automatic substitution for a field. Bail if the field was deleted or
      * another substitution is detected.
-     * 
+     *
      * @param field stores the value of the recomputation, i.e., an offset, array idx scale or shift
      */
     private boolean tryAutomaticRecomputation(ResolvedJavaField field, Kind kind, Supplier<ComputedValueField> substitutionSupplier) {

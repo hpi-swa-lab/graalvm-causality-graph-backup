@@ -60,6 +60,7 @@ public class FieldFilterTypeFlow extends TypeFlow<AnalysisField> {
         setSaturated();
         /* Swap out this flow with its declared type flow. */
         swapOut(bb, declaredType.getTypeFlow(bb, true));
+        // Christoph-TODO: export the fact that these types are originally still coming from this node!
     }
 
     @Override

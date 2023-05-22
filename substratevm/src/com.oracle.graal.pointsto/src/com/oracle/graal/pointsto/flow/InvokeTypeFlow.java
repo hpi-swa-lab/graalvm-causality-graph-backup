@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
@@ -38,6 +39,8 @@ import com.oracle.svm.common.meta.MultiMethod;
 import com.oracle.svm.common.meta.MultiMethod.MultiMethodKey;
 
 import jdk.vm.ci.code.BytecodePosition;
+
+import java.util.Collection;
 
 public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implements InvokeInfo {
 
@@ -177,6 +180,7 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
             FormalReceiverTypeFlow formalReceiverFlow = calleeFlows.getFormalReceiver();
             if (formalReceiverFlow != null) {
                 formalReceiverFlow.addReceiverState(bb, receiverTypeState);
+                CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), formalReceiverFlow);
             }
         }
 
@@ -189,6 +193,7 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
                      * See also InvokeTypeFlow#linkReturn() for more details.
                      */
                     actualReturn.addState(bb, receiverTypeState);
+                    CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), actualReturn);
                 }
             }
         }
@@ -196,6 +201,8 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
     }
 
     protected void linkCallee(PointsToAnalysis bb, boolean isStatic, MethodFlowsGraphInfo calleeFlows) {
+        if(bb.getPurgeInfo().purgeRequested(calleeFlows.getMethod()))
+            return;
 
         if (bb.getHostVM().getMultiMethodAnalysisPolicy().performParameterLinking(callerMultiMethodKey, calleeFlows.getMethod().getMultiMethodKey())) {
             // iterate over the actual parameters in caller context

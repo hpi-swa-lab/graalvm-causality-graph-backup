@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.CompressEncoding;
 import org.graalvm.compiler.core.common.type.AbstractObjectStamp;
@@ -210,9 +212,44 @@ public class SubstrateGraphBuilderPlugins {
         registerSizeOfPlugins(snippetReflection, plugins);
         registerReferencePlugins(plugins, parsingReason);
         registerReferenceAccessPlugins(plugins);
+
+        // Such that ClassInitializationTracing.onClinitStart() does not appear in every run-time <clinit>
+        registerHeapAssignmentTracingHooksIgnorationPlugin(plugins);
+
         if (supportsStubBasedPlugins) {
             registerAESPlugins(plugins, replacements, architecture);
         }
+    }
+
+    public static void registerHeapAssignmentTracingHooksIgnorationPlugin(InvocationPlugins plugins) {
+        Registration r;
+        try {
+            r = new Registration(plugins, Class.forName("HeapAssignmentTracingHooks"));
+        } catch (ClassNotFoundException e) {
+            return; // Heap assignemnt tracing agent is not attached
+        }
+
+        r.register(new RequiredInvocationPlugin("onClinitStart") {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                return true;
+            }
+        });
+
+        r.register(new RequiredInvocationPlugin("onArrayWrite", Object[].class, int.class, Object.class) {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode arr, ValueNode index, ValueNode val) {
+                b.add(new StoreIndexedNode(arr, index, null, null, JavaKind.Object, val));
+                return true;
+            }
+        });
+
+        r.register(new RequiredInvocationPlugin("onThreadStart", Thread.class) {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode newThread) {
+                return true;
+            }
+        });
     }
 
     private static void registerSerializationPlugins(SnippetReflectionProvider snippetReflection, InvocationPlugins plugins, ParsingReason reason) {
@@ -928,7 +965,9 @@ public class SubstrateGraphBuilderPlugins {
                         AnalysisType type = (AnalysisType) b.getMetaAccess().lookupJavaType(clazz);
                         for (int i = 0; i < dimensionCount; i++) {
                             type = type.getArrayClass();
-                            type.registerAsAllocated(AbstractAnalysisEngine.sourcePosition(clazzNode));
+                            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason((AnalysisMethod) b.getMethod()))) {
+                                type.registerAsAllocated(AbstractAnalysisEngine.sourcePosition(clazzNode));
+                            }
                         }
                     }
                 }

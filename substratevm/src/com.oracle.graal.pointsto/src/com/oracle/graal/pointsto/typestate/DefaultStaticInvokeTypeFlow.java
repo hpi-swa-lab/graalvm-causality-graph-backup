@@ -29,6 +29,7 @@ import static jdk.vm.ci.common.JVMCIError.guarantee;
 import java.util.Collection;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.AbstractStaticInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
@@ -62,6 +63,9 @@ final class DefaultStaticInvokeTypeFlow extends AbstractStaticInvokeTypeFlow {
          * i.e. for this clone, there is no callee linked/
          */
         initializeCallees(bb);
+
+        if(bb.getPurgeInfo().purgeRequested(targetMethod))
+            return;
 
         LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
             MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);

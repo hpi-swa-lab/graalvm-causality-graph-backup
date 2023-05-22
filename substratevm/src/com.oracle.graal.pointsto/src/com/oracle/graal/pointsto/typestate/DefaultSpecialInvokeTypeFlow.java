@@ -27,6 +27,7 @@ package com.oracle.graal.pointsto.typestate;
 import java.util.Collection;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.AbstractSpecialInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
@@ -63,7 +64,11 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
          * the callee will be unreachable from this call site.
          */
         initializeCallees(bb);
+
         LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
+            if(bb.getPurgeInfo().purgeRequested(callee))
+                return;
+
             MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);
             assert calleeFlows.getMethod().equals(callee);
 

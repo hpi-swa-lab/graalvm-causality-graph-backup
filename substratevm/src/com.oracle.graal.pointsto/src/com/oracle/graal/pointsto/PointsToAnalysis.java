@@ -44,6 +44,9 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.stream.StreamSupport;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
+import com.oracle.graal.pointsto.reports.CausalityExport;
+import com.oracle.graal.pointsto.purge.PurgeMethods;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
@@ -106,6 +109,8 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
     private final boolean strengthenGraalGraphs;
 
+    private final PurgeMethods purgeInfo;
+
     @SuppressWarnings("this-escape")
     public PointsToAnalysis(OptionValues options, AnalysisUniverse universe, HostVM hostVM, AnalysisMetaAccess metaAccess, SnippetReflectionProvider snippetReflectionProvider,
                     ConstantReflectionProvider constantReflectionProvider, WordTypes wordTypes, ForkJoinPool executorService, Runnable heartbeatCallback,
@@ -134,6 +139,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
         timing = PointstoOptions.ProfileAnalysisOperations.getValue(options) ? new AnalysisTiming() : null;
         executor.init(timing);
+        purgeInfo = new PurgeMethods(this);
     }
 
     @Override
@@ -149,6 +155,10 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         StatisticsPrinter.print(out, "total_analysis_time_ms", analysisTimer.getTotalTime());
 
         StatisticsPrinter.printLast(out, "total_memory_bytes", analysisTimer.getTotalMemory());
+    }
+
+    public PurgeMethods getPurgeInfo() {
+        return purgeInfo;
     }
 
     @Override
@@ -214,6 +224,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     public void registerAsJNIAccessed(AnalysisField field, boolean writable) {
         // Same as addRootField() and addRootStaticField():
         // create type flows for any subtype of the field's declared type
+        // Causality-TODO: Account this flow edge to the ongoing JNI registration processing somehow
         TypeFlow<?> declaredTypeFlow = field.getType().getTypeFlow(this, true);
         if (field.isStatic()) {
             declaredTypeFlow.addUse(this, field.getStaticFieldFlow());
@@ -298,6 +309,10 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     public AnalysisMethod addRootMethod(AnalysisMethod aMethod, boolean invokeSpecial) {
         assert aMethod.isOriginalMethod();
         assert !universe.sealed() : "Cannot register root methods after analysis universe is sealed.";
+
+        if(purgeInfo.purgeRequested(aMethod))
+            return aMethod;
+
         AnalysisType declaringClass = aMethod.getDeclaringClass();
         boolean isStatic = aMethod.isStatic();
         WrappedSignature signature = aMethod.getSignature();
@@ -310,6 +325,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * and return the method flows graph. Then the method parameter type flows are
              * initialized with the corresponding parameter declared type.
              */
+            CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
             postTask(() -> {
                 pointsToMethod.registerAsDirectRootMethod();
                 pointsToMethod.registerAsImplementationInvoked("root method");
@@ -342,12 +358,18 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * the actual parameter type state is propagated to the formal parameters. Then the
              * callee is linked and registered as implementation-invoked.
              */
+
+            if(invokeSpecial) {
+                CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
+            }
+
             postTask(() -> {
                 if (invokeSpecial) {
                     pointsToMethod.registerAsDirectRootMethod();
                 } else {
                     pointsToMethod.registerAsVirtualRootMethod();
                 }
+                // Causality-TODO: Connect the event of calling addRootMethod and the Reachability of the overridden methods
                 InvokeTypeFlow invoke = pointsToMethod.initAndGetContextInsensitiveInvoke(PointsToAnalysis.this, null, invokeSpecial, pointsToMethod.getMultiMethodKey());
                 /*
                  * Initialize the type flow of the invoke's actual parameters with the corresponding

@@ -31,6 +31,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.MapCursor;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
@@ -110,16 +112,21 @@ public abstract class ImageHeapScanner {
     public void scanEmbeddedRoot(JavaConstant root, BytecodePosition position) {
         if (isNonNullObjectConstant(root)) {
             EmbeddedRootScan reason = new EmbeddedRootScan(position, root);
-            ImageHeapConstant value = getOrCreateImageHeapConstant(root, reason);
+            ImageHeapConstant value;
+            // Explicitly don't unroot registrations here. Otherwise, the current method processes by MethodTypeFlowBuilder could be accounted for scanned objects
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                value = getOrCreateImageHeapConstant(root, reason);
+            }
             markReachable(value, reason);
         }
     }
 
     public void onFieldRead(AnalysisField field) {
         assert field.isRead();
-        /* Check if the value is available before accessing it. */
-        if (isValueAvailable(field)) {
-            FieldScan reason = new FieldScan(field);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            /* Check if the value is available before accessing it. */
+            if (isValueAvailable(field)) {
+                FieldScan reason = new FieldScan(field);
             AnalysisType declaringClass = field.getDeclaringClass();
             if (field.isStatic()) {
                 JavaConstant fieldValue = declaringClass.getOrComputeData().readFieldValue(field);
@@ -128,6 +135,7 @@ public abstract class ImageHeapScanner {
             } else {
                 /* Trigger field scanning for the already processed objects. */
                 postTask(() -> onInstanceFieldRead(field, declaringClass, reason));
+                }
             }
         }
     }
@@ -261,7 +269,9 @@ public abstract class ImageHeapScanner {
             newImageHeapConstant = createImageHeapInstance(constant, type, reason);
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                typeFromClassConstant.registerAsReachable(reason);
+                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) { // Causality-TODO!
+                    typeFromClassConstant.registerAsReachable(reason);
+                }
             }
         }
         return newImageHeapConstant;
@@ -284,7 +294,9 @@ public abstract class ImageHeapScanner {
 
     private ImageHeapInstance createImageHeapInstance(JavaConstant constant, AnalysisType type, ScanReason reason) {
         /* We are about to query the type's fields, the type must be marked as reachable. */
-        type.registerAsReachable(reason);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant, reason))) {
+            type.registerAsReachable(reason);
+        }
         ResolvedJavaField[] instanceFields = type.getInstanceFields(true);
         ImageHeapInstance instance = new ImageHeapInstance(type, constant, instanceFields.length);
         for (ResolvedJavaField javaField : instanceFields) {
@@ -464,7 +476,9 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.addReachableObject(objectType, imageHeapConstant);
 
-        markTypeInstantiated(objectType, reason);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason))) {
+            markTypeInstantiated(objectType, reason);
+        }
         if (imageHeapConstant instanceof ImageHeapObjectArray imageHeapArray) {
             for (int idx = 0; idx < imageHeapArray.getLength(); idx++) {
                 JavaConstant elementValue = imageHeapArray.readElementValue(idx);
@@ -512,10 +526,12 @@ public abstract class ImageHeapScanner {
      * in that case we execute the task directly.
      */
     private void maybeRunInExecutor(CompletionExecutor.DebugContextRunnable task) {
-        if (bb.executorIsStarted()) {
-            bb.postTask(task);
-        } else {
-            task.run(null);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            if (bb.executorIsStarted()) {
+                bb.postTask(task);
+            } else {
+                task.run(null);
+            }
         }
     }
 
@@ -604,7 +620,9 @@ public abstract class ImageHeapScanner {
      * Add the object to the image heap and, if the object is a collection, rescan its elements.
      */
     public void rescanObject(Object object) {
-        rescanObject(object, OtherReason.RESCAN);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            rescanObject(object, OtherReason.RESCAN);
+        }
     }
 
     /**

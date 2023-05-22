@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.oracle.graal.pointsto.reports.AnalysisReportsOptions;
 import org.graalvm.compiler.options.OptionKey;
 import org.graalvm.compiler.serviceprovider.JavaVersionUtil;
 import org.graalvm.nativeimage.Platform;
@@ -250,6 +251,10 @@ public class NativeImage {
 
     final String oHInspectServerContentPath = oH(PointstoOptions.InspectServerContentPath);
     final String oHDeadlockWatchdogInterval = oH(SubstrateOptions.DeadlockWatchdogInterval);
+
+    final String oHEnableHeapAssignmentTracingAgent = oH + "+" + AnalysisReportsOptions.HeapAssignmentTracingAgent.getName();
+    final String oHDisableHeapAssignmentTracingAgent = oH + "-" + AnalysisReportsOptions.HeapAssignmentTracingAgent.getName();
+    final String oHPrintCausalityGraph = oH + "+" + AnalysisReportsOptions.PrintCausalityGraph.getName();
 
     final Map<String, String> imageBuilderEnvironment = new HashMap<>();
     private final ArrayList<String> imageBuilderArgs = new ArrayList<>();
@@ -1283,6 +1288,14 @@ public class NativeImage {
                 agentOptions += ",";
             }
             agentOptions += getAgentOptions(traceObjectInstantiationOpts, "o");
+        }
+
+        boolean heapAssignmentTracingAgentManuallyActivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHEnableHeapAssignmentTracingAgent));
+        boolean heapAssignmentTracingAgentManuallyDeactivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHDisableHeapAssignmentTracingAgent));
+        boolean causalityExportActivated = imageBuilderArgs.stream().anyMatch(arg -> arg.contains(oHPrintCausalityGraph));
+
+        if(heapAssignmentTracingAgentManuallyActivated || (!heapAssignmentTracingAgentManuallyDeactivated && causalityExportActivated)) {
+            args.add("-agentlib:heap-assignment-tracing-agent");
         }
 
         if (!agentOptions.isEmpty()) {

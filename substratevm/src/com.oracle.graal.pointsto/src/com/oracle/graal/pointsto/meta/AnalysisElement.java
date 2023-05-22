@@ -37,6 +37,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.graalvm.compiler.debug.GraalError;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 
 import com.oracle.graal.pointsto.ObjectScanner;
@@ -89,6 +90,8 @@ public abstract class AnalysisElement implements AnnotatedElement {
 
     public void registerReachabilityNotification(ElementNotification notification) {
         ConcurrentLightHashSet.addElement(this, reachableNotificationsUpdater, notification);
+        CausalityExport.Reason reasonForRegistration = CausalityExport.getInstance().getRootReason();
+        CausalityExport.getInstance().registerTwoReasons(reasonForRegistration, CausalityExport.ReachableReason.create(this), new CausalityExport.ReachabilityNotificationCallback(notification.callback));
     }
 
     public void notifyReachabilityCallback(AnalysisUniverse universe, ElementNotification notification) {
@@ -152,7 +155,11 @@ public abstract class AnalysisElement implements AnnotatedElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                callback.accept(universe.getConcurrentAnalysisAccess());
+                try(CausalityExport.ReRootingToken ignore0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReachabilityNotificationCallback(callback))) {
+                        callback.accept(universe.getConcurrentAnalysisAccess());
+                    }
+                }
                 return null;
             });
 

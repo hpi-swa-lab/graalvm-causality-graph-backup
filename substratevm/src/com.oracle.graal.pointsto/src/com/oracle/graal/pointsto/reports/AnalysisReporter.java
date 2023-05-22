@@ -25,10 +25,12 @@
  */
 package com.oracle.graal.pointsto.reports;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.BigBang;

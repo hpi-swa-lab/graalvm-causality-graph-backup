@@ -25,6 +25,7 @@
 package com.oracle.graal.pointsto;
 
 import com.oracle.graal.pointsto.ObjectScanner.ScanReason;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
@@ -68,7 +69,9 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         /* Add the constant value object to the field's type flow. */
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         /* Add the new constant to the field's flow state. */
-        return fieldTypeFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType));
+        TypeState state = bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType);
+        CausalityExport.getInstance().registerTypesFlowing(analysis, CausalityExport.getInstance().getReasonForHeapFieldAssignment(analysis, receiver, field, fieldValue), fieldTypeFlow, state);
+        return fieldTypeFlow.addState(analysis, state);
     }
 
     /**
@@ -106,6 +109,8 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         ArrayElementsTypeFlow arrayObjElementsFlow = getArrayElementsFlow(array, arrayType);
         PointsToAnalysis analysis = getAnalysis();
         /* Add the constant element to the constant's array type flow. */
+        TypeState state = bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType);
+        CausalityExport.getInstance().registerTypesFlowing(analysis, CausalityExport.getInstance().getReasonForHeapArrayAssignment(analysis, array, elementIndex, elementConstant), arrayObjElementsFlow, state);
         return arrayObjElementsFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType));
     }
 
@@ -124,7 +129,9 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         Object valueObj = analysis.getSnippetReflectionProvider().asObject(Object.class, value);
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
-        type.registerAsInHeap(reason);
+        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject(analysis, value, reason))) {
+            type.registerAsInHeap(reason);
+        }
     }
 
     private PointsToAnalysis getAnalysis() {

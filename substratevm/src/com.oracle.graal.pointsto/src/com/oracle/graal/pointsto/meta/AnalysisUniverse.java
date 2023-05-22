@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
@@ -365,7 +366,17 @@ public class AnalysisUniverse implements Universe {
              * it during constant folding.
              */
             AnalysisType declaringType = lookup(field.getDeclaringClass());
-            declaringType.registerAsReachable(field);
+
+            /*
+             * This registration is hard to fully trace.
+             * If we get here during method parsing, a root reason is given.
+             * Otherwise, we violate the principle of conservative reasoning in order
+             * to get usable results.
+             */
+            CausalityExport.Reason reason = CausalityExport.getInstance().getRootReason();
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(reason != null ? reason : CausalityExport.Ignored.Instance)) {
+                declaringType.registerAsReachable(field);
+            }
             declaringType.ensureOnTypeReachableTaskDone();
 
             /*

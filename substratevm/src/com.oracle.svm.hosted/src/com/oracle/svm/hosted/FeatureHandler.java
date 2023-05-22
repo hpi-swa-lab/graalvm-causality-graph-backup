@@ -37,6 +37,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.nativeimage.ImageSingletons;
@@ -165,7 +166,9 @@ public class FeatureHandler {
         Function<Class<?>, Class<?>> specificClassProvider = specificAutomaticFeatures::get;
 
         for (Class<?> featureClass : automaticFeatures) {
-            registerFeature(featureClass, specificClassProvider, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.AutomaticFeatureRegistration.Instance)) {
+                registerFeature(featureClass, specificClassProvider, access);
+            }
         }
 
         for (String featureName : Options.userEnabledFeatures()) {
@@ -175,7 +178,9 @@ public class FeatureHandler {
             } catch (ClassNotFoundException e) {
                 throw UserError.abort("Feature %s class not found on the classpath. Ensure that the name is correct and that the class is on the classpath.", featureName);
             }
-            registerFeature(featureClass, specificClassProvider, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.UserEnabledFeatureRegistration.Instance)) {
+                registerFeature(featureClass, specificClassProvider, access);
+            }
         }
         if (NativeImageOptions.PrintFeatures.getValue()) {
             ReportUtils.report("feature information", SubstrateOptions.reportsPath(), "feature_info", "csv", out -> {
@@ -197,6 +202,7 @@ public class FeatureHandler {
         }
 
         if (registeredFeatures.contains(baseFeatureClass)) {
+            CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
             return;
         }
 
@@ -229,9 +235,14 @@ public class FeatureHandler {
          * First add dependent features so that initializers are executed in order of dependencies.
          */
         for (Class<? extends Feature> requiredFeatureClass : feature.getRequiredFeatures()) {
-            registerFeature(requiredFeatureClass, specificClassProvider, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+                try(CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+                    registerFeature(requiredFeatureClass, specificClassProvider, access);
+                }
+            }
         }
 
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(feature));
         featureInstances.add(feature);
     }
 

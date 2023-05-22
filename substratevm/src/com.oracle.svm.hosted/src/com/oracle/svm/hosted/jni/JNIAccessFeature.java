@@ -38,7 +38,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
@@ -203,13 +205,21 @@ public class JNIAccessFeature implements Feature {
         public void register(ConfigurationCondition condition, boolean unsafeAllocated, Class<?> clazz) {
             assert !unsafeAllocated : "unsafeAllocated can be only set via Unsafe.allocateInstance, not via JNI.";
             abortIfSealed();
-            registerConditionalConfiguration(condition, () -> newClasses.add(clazz));
+            registerConditionalConfiguration(condition, () -> {
+                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(clazz));
+                newClasses.add(clazz);
+            });
         }
 
         @Override
         public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
             abortIfSealed();
-            registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
+            registerConditionalConfiguration(condition, () -> {
+                for(Executable m : methods) {
+                    CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(m));
+                }
+                newMethods.addAll(Arrays.asList(methods));
+            });
         }
 
         @Override
@@ -220,6 +230,7 @@ public class JNIAccessFeature implements Feature {
 
         private void registerFields(boolean finalIsWritable, Field[] fields) {
             for (Field field : fields) {
+                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.JNIRegistration(field));
                 boolean writable = finalIsWritable || !Modifier.isFinal(field.getModifiers());
                 newFields.put(field, writable);
             }
@@ -312,17 +323,24 @@ public class JNIAccessFeature implements Feature {
         }
 
         for (Class<?> clazz : newClasses) {
-            addClass(clazz, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(clazz))) {
+                addClass(clazz, access);
+            }
         }
         newClasses.clear();
 
         for (Executable method : newMethods) {
-            addMethod(method, access);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(method))) {
+                addMethod(method, access);
+            }
         }
         newMethods.clear();
 
         newFields.forEach((field, writable) -> {
-            addField(field, writable, access);
+            // Ignore writable for now... Causality-TODO
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.JNIRegistration(field))) {
+                addField(field, writable, access);
+            }
         });
         newFields.clear();
 
@@ -621,5 +639,13 @@ public class JNIAccessFeature implements Feature {
              */
             return false;
         }
+    }
+
+    public ResolvedJavaMethod[] getRegisteredMethods() {
+        return calledJavaMethods.stream().map(cjm -> cjm.targetMethod).toArray(ResolvedJavaMethod[]::new);
+    }
+
+    public Class<?>[] getRegisteredClasses() {
+        return StreamSupport.stream(JNIReflectionDictionary.singleton().getClasses().spliterator(), false).map(JNIAccessibleClass::getClassObject).toArray(Class<?>[]::new);
     }
 }

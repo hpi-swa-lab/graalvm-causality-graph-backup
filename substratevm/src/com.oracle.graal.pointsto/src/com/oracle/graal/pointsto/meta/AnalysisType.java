@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 import org.graalvm.word.WordBase;
@@ -478,7 +479,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     public boolean registerAsInHeap(Object reason) {
         assert isValidReason(reason) : "Registering a type as in-heap needs to provide a valid reason.";
-        registerAsReachable(reason);
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
+        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+                registerAsReachable(reason);
+            }
+        }
         if (AtomicUtils.atomicSet(this, reason, isInHeapUpdater)) {
             onInstantiated(UsageKind.InHeap);
             return true;
@@ -493,7 +499,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     public boolean registerAsAllocated(Object reason) {
         assert isValidReason(reason) : "Registering a type as allocated needs to provide a valid reason.";
-        registerAsReachable(reason);
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
+        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+                registerAsReachable(reason);
+            }
+        }
         if (AtomicUtils.atomicSet(this, reason, isAllocatedUpdater)) {
             onInstantiated(UsageKind.Allocated);
             return true;
@@ -549,6 +560,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     public boolean registerAsReachable(Object reason) {
         assert isValidReason(reason) : "Registering a type as reachable needs to provide a valid reason.";
+        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeReachableReason(this));
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
             forAllSuperTypes(type -> AtomicUtils.atomicSetAndRun(type, reason, isReachableUpdater, type::onReachable));

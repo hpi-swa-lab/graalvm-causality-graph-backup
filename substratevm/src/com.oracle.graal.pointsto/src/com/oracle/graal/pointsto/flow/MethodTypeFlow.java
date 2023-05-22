@@ -31,6 +31,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import com.oracle.graal.pointsto.purge.PurgedMethodTypeFlowBuilder;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.debug.Assertions;
 import org.graalvm.compiler.nodes.ParameterNode;
@@ -163,7 +165,7 @@ public class MethodTypeFlow extends TypeFlow<AnalysisMethod> {
 
             parsingReason = reason;
             try {
-                MethodTypeFlowBuilder builder = bb.createMethodTypeFlowBuilder(bb, method, null, graphKind);
+                MethodTypeFlowBuilder builder = bb.getPurgeInfo().purgeRequested(method) ? new PurgedMethodTypeFlowBuilder(bb, method, null, graphKind) : bb.createMethodTypeFlowBuilder(bb, method, null, graphKind);
                 try {
                     builder.apply(forceReparseOnCreation, PointsToAnalysisMethod.unwrapInvokeReason(parsingReason));
                 } catch (UnsupportedFeatureException ex) {
@@ -184,6 +186,8 @@ public class MethodTypeFlow extends TypeFlow<AnalysisMethod> {
                 /* Wrap all other errors as parsing errors. */
                 throw AnalysisError.parsingError(method, t);
             }
+
+            CausalityExport.getInstance().registerMethodFlow(this);
         }
     }
 

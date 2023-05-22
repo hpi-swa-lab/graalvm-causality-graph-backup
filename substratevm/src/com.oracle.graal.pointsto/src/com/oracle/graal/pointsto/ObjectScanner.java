@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.word.WordBase;
 
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -240,7 +241,10 @@ public class ObjectScanner {
             return;
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
-            bb.registerTypeAsInHeap(bb.getMetaAccess().lookupJavaType(value), reason);
+            AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, value, reason))) {
+                bb.registerTypeAsInHeap(type, reason);
+            }
             return;
         }
         Object valueObj = (value instanceof ImageHeapConstant) ? value : constantAsObject(bb, value);
@@ -405,7 +409,9 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            type.registerAsReachable(entry.reason);
+            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, entry.constant, entry.reason))) {
+                type.registerAsReachable(entry.reason);
+            }
 
             if (type.isInstanceClass()) {
                 /* Scan constant's instance fields. */

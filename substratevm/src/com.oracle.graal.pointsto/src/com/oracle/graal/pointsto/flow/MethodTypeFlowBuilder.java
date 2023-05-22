@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
+import jdk.vm.ci.code.BytecodeFrame;
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.core.common.spi.ForeignCallsProvider;
 import org.graalvm.compiler.core.common.type.ObjectStamp;
@@ -185,13 +187,19 @@ public class MethodTypeFlowBuilder {
         AnalysisParsedGraph analysisParsedGraph = forceReparse ? method.reparseGraph(bb) : method.ensureGraphParsed(bb);
 
         if (analysisParsedGraph.isIntrinsic()) {
-            method.registerAsIntrinsicMethod(reason);
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) {
+                method.registerAsIntrinsicMethod(reason);
+            }
         }
 
         if (analysisParsedGraph.getEncodedGraph() == null) {
             return false;
         }
-        graph = InlineBeforeAnalysis.decodeGraph(bb, method, analysisParsedGraph);
+
+        // This is for capturing sideeffects e.g. by SubstrateGraphBuilderPlugin.interceptUpdaterInvoke(...) which adds reflection
+        try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(method))) {
+            graph = InlineBeforeAnalysis.decodeGraph(bb, method, analysisParsedGraph);
+        }
 
         try (DebugContext.Scope s = graph.getDebug().scope("MethodTypeFlowBuilder", graph)) {
             if (!bb.strengthenGraalGraphs()) {
@@ -200,7 +208,9 @@ public class MethodTypeFlowBuilder {
                  * parsing graphs again for compilation, we need to have all types, methods, fields
                  * of the original graph registered properly.
                  */
-                registerUsedElements(bb, graph, false);
+                try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(method))) {
+                    registerUsedElements(bb, graph, false);
+                }
             }
             CanonicalizerPhase canonicalizerPhase = CanonicalizerPhase.create();
             canonicalizerPhase.apply(graph, bb.getProviders(method));
@@ -232,8 +242,10 @@ public class MethodTypeFlowBuilder {
                 return false;
             }
 
-            // Do it again after canonicalization changed type checks and field accesses.
-            registerUsedElements(bb, graph, true);
+            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.MethodReachableReason(method))) {
+                // Do it again after canonicalization changed type checks and field accesses.
+                registerUsedElements(bb, graph, true);
+            }
 
             return true;
         } catch (Throwable ex) {
@@ -1462,6 +1474,14 @@ public class MethodTypeFlowBuilder {
         return invokePosition;
     }
 
+    private static AnalysisMethod getPotentiallyInlinedCaller(ValueNode invoke) {
+        NodeSourcePosition nsp = invoke.getNodeSourcePosition();
+        while (nsp.getCaller() != null && nsp.getBCI() == BytecodeFrame.UNWIND_BCI) {
+            nsp = nsp.getCaller();
+        }
+        return (AnalysisMethod) nsp.getMethod();
+    }
+
     protected void processMethodInvocation(TypeFlowsOfNodes state, ValueNode invoke, InvokeKind invokeKind, PointsToAnalysisMethod targetMethod, NodeInputList<ValueNode> arguments,
                     boolean installResult, BytecodePosition invokeLocation) {
         // check if the call is allowed
@@ -1508,11 +1528,15 @@ public class MethodTypeFlowBuilder {
 
             MultiMethod.MultiMethodKey multiMethodKey = method.getMultiMethodKey();
             InvokeTypeFlow invokeFlow;
+            AnalysisMethod logicalCaller = getPotentiallyInlinedCaller(invoke);
             switch (invokeKind) {
                 case Static:
+                    CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createStaticInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
                 case Special:
+                    // Causality-TODO: This adds one kind of overapproximation: When the DefaultSpecialInvokeTypeFlow can prove that the receiver is null, it won't make the target reachable.
+                    CausalityExport.getInstance().register(new CausalityExport.MethodReachableReason(logicalCaller), new CausalityExport.MethodReachableReason(targetMethod));
                     invokeFlow = bb.analysisPolicy().createSpecialInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, multiMethodKey);
                     break;
                 case Virtual:
