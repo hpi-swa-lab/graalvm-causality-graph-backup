@@ -4,7 +4,6 @@ import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
-import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
 import com.oracle.graal.pointsto.meta.AnalysisField;
@@ -24,7 +23,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -50,7 +48,7 @@ public class CausalityExport {
         return instance;
     }
 
-    public static CausalityExport getInstance() {
+    public static CausalityExport get() {
         return instances != null ? instances.get() : dummyInstance;
     }
 
@@ -65,17 +63,22 @@ public class CausalityExport {
 
 
     // --- Registration ---
-    public void addTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {}
 
-    protected void beginSaturationHappening() {}
+    public void addVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {}
 
-    protected void endSaturationHappening() {}
+    public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {}
+
+    public void registerTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {}
 
     public final SaturationHappeningToken setSaturationHappening()
     {
         beginSaturationHappening();
         return new SaturationHappeningToken();
     }
+
+    protected void beginSaturationHappening() {}
+
+    protected void endSaturationHappening() {}
 
     public class SaturationHappeningToken implements AutoCloseable {
         @Override
@@ -86,95 +89,61 @@ public class CausalityExport {
         SaturationHappeningToken() { }
     }
 
-    public void registerTypesFlowing(PointsToAnalysis bb, Reason reason, TypeFlow<?> destination, TypeState types) {}
+    public void registerEvent(Event event) {}
 
-    public void registerTwoReasons(Reason reason1, Reason reason2, Reason consequence) {
-    }
+    public void registerEdge(Event cause, Event consequence) {}
 
-    public void register(Reason reason, Reason consequence) {}
+    public void registerConjunctiveEdge(Event cause1, Event cause2, Event consequence) {}
 
-    public void addVirtualInvoke(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {}
-
-    public void registerMethodFlow(MethodTypeFlow method) {}
-
-    public void registerVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {}
-
-    public Reason getReasonForHeapObject(Object heapObject, ObjectScanner.ScanReason reason) {
+    public Event getHeapObjectCreator(Object heapObject, ObjectScanner.ScanReason reason) {
         return null;
     }
 
-    public Reason getReasonForHeapObject(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+    public Event getHeapObjectCreator(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
         return null;
     }
 
-    public Reason getReasonForHeapFieldAssignment(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value) {
+    public Event getHeapFieldAssigner(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value) {
         return null;
     }
 
-    public Reason getReasonForHeapArrayAssignment(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value) {
+    public Event getHeapArrayAssigner(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value) {
         return null;
     }
 
-    public final ReRootingToken accountRootRegistrationsTo(Reason reason) {
-        beginAccountingRootRegistrationsTo(reason);
-        return new ReRootingToken(reason);
+    public void registerTypesEntering(PointsToAnalysis bb, Event cause, TypeFlow<?> destination, TypeState types) {}
+
+    public final CauseToken setCause(Event event) {
+        beginCauseRegion(event);
+        return new CauseToken(event);
     }
 
-    // May be unrooted due to an ongoing accountRootRegistrationsTo(...)
-    public void registerReasonRoot(Reason reason) {}
+    protected void beginCauseRegion(Event event) {}
 
-    public Reason getRootReason() {
-        return null;
-    }
-
-    protected void beginAccountingRootRegistrationsTo(Reason reason) {}
-
-    protected void endAccountingRootRegistrationsTo(Reason reason) {}
+    protected void endCauseRegion(Event event) {}
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
-    public class ReRootingToken implements AutoCloseable {
-        private final Reason reason;
+    public class CauseToken implements AutoCloseable {
+        private final Event event;
 
-        ReRootingToken(Reason reason) {
-            this.reason = reason;
+        CauseToken(Event event) {
+            this.event = event;
         }
 
         @Override
         public void close() {
-            endAccountingRootRegistrationsTo(reason);
+            endCauseRegion(event);
         }
+    }
+
+    public Event getCause() {
+        return null;
     }
 
 
 
 
-    private static String reflectionObjectToString(Object reflectionObject)
-    {
-        if(reflectionObject instanceof Class<?>) {
-            return ((Class<?>) reflectionObject).getTypeName();
-        } else if(reflectionObject instanceof Constructor<?>) {
-            Constructor<?> c = ((Constructor<?>) reflectionObject);
-            return c.getDeclaringClass().getTypeName() + ".<init>(" + Arrays.stream(c.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
-        } else if(reflectionObject instanceof Method) {
-            Method m = ((Method) reflectionObject);
-            return m.getDeclaringClass().getTypeName() + '.' + m.getName() + '(' + Arrays.stream(m.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
-        } else {
-            Field f = ((Field) reflectionObject);
-            return f.getDeclaringClass().getTypeName() + '.' + f.getName();
-        }
-    }
-
-    private static String reflectionObjectToGraalLikeString(AnalysisMetaAccess metaAccess, Object reflectionObject) {
-        if(reflectionObject instanceof Class<?>) {
-            return metaAccess.lookupJavaType((Class<?>) reflectionObject).toJavaName();
-        } else if(reflectionObject instanceof Executable) {
-            return metaAccess.lookupJavaMethod((Executable) reflectionObject).getQualifiedName();
-        } else {
-            return metaAccess.lookupJavaField((Field) reflectionObject).format("%h.%n");
-        }
-    }
-
-    public static abstract class Reason {
+    public static abstract class Event {
         public boolean unused() {
             return false;
         }
@@ -186,18 +155,18 @@ public class CausalityExport {
         }
     }
 
-    public static abstract class ReachableReason<T extends AnalysisElement> extends Reason {
+    public static abstract class ReachableEvent<T extends AnalysisElement> extends Event {
         public final T element;
 
-        public ReachableReason(T element) {
+        public ReachableEvent(T element) {
             this.element = element;
         }
 
-        public static ReachableReason<?> create(AnalysisElement e) {
+        public static ReachableEvent<?> create(AnalysisElement e) {
             if(e instanceof AnalysisMethod)
-                return new MethodReachableReason((AnalysisMethod) e);
+                return new MethodReachable((AnalysisMethod) e);
             if(e instanceof AnalysisType)
-                return new TypeReachableReason((AnalysisType) e);
+                return new TypeReachable((AnalysisType) e);
             throw new IllegalArgumentException();
         }
 
@@ -205,7 +174,7 @@ public class CausalityExport {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            ReachableReason<?> that = (ReachableReason<?>) o;
+            ReachableEvent<?> that = (ReachableEvent<?>) o;
             return element.equals(that.element);
         }
 
@@ -215,8 +184,8 @@ public class CausalityExport {
         }
     }
 
-    public static final class MethodReachableReason extends ReachableReason<AnalysisMethod> {
-        public MethodReachableReason(AnalysisMethod method) {
+    public static final class MethodReachable extends ReachableEvent<AnalysisMethod> {
+        public MethodReachable(AnalysisMethod method) {
             super(method);
         }
 
@@ -231,10 +200,10 @@ public class CausalityExport {
         }
     }
 
-    public static final class MethodSnippetReason extends Reason {
+    public static final class MethodSnippet extends Event {
         public final AnalysisMethod method;
 
-        public MethodSnippetReason(AnalysisMethod method) {
+        public MethodSnippet(AnalysisMethod method) {
             this.method = method;
         }
 
@@ -247,7 +216,7 @@ public class CausalityExport {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            MethodSnippetReason that = (MethodSnippetReason) o;
+            MethodSnippet that = (MethodSnippet) o;
             return method.equals(that.method);
         }
 
@@ -257,8 +226,8 @@ public class CausalityExport {
         }
     }
 
-    public static final class TypeReachableReason extends ReachableReason<AnalysisType> {
-        public TypeReachableReason(AnalysisType type) {
+    public static final class TypeReachable extends ReachableEvent<AnalysisType> {
+        public TypeReachable(AnalysisType type) {
             super(type);
         }
 
@@ -273,10 +242,10 @@ public class CausalityExport {
         }
     }
 
-    public static final class TypeInstantiatedReason extends Reason {
+    public static final class TypeInstantiated extends Event {
         public final AnalysisType type;
 
-        public TypeInstantiatedReason(AnalysisType type) {
+        public TypeInstantiated(AnalysisType type) {
             this.type = type;
         }
 
@@ -294,7 +263,7 @@ public class CausalityExport {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            TypeInstantiatedReason that = (TypeInstantiatedReason) o;
+            TypeInstantiated that = (TypeInstantiated) o;
             return type.equals(that.type);
         }
 
@@ -304,7 +273,7 @@ public class CausalityExport {
         }
     }
 
-    public static abstract class ReflectionObjectRegistration extends Reason {
+    public static abstract class ReflectionObjectRegistration extends Event {
         public final Object element;
 
         public ReflectionObjectRegistration(Executable method) {
@@ -383,7 +352,7 @@ public class CausalityExport {
         }
     }
 
-    public static class ReachabilityNotificationCallback extends Reason {
+    public static class ReachabilityNotificationCallback extends Event {
         public final Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback;
 
         public ReachabilityNotificationCallback(Consumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess> callback) {
@@ -409,7 +378,7 @@ public class CausalityExport {
         }
     }
 
-    public static class BuildTimeClassInitialization extends Reason {
+    public static class BuildTimeClassInitialization extends Event {
         public final Class<?> clazz;
 
         public BuildTimeClassInitialization(Class<?> clazz) {
@@ -453,7 +422,7 @@ public class CausalityExport {
         }
     }
 
-    public static class HeapObjectClass extends Reason {
+    public static class HeapObjectClass extends Event {
         public final Class<?> clazz;
 
         public HeapObjectClass(Class<?> clazz) {
@@ -479,7 +448,7 @@ public class CausalityExport {
         }
     }
 
-    public static class HeapObjectDynamicHub extends Reason {
+    public static class HeapObjectDynamicHub extends Event {
         public final Class<?> forClass;
 
 
@@ -506,7 +475,7 @@ public class CausalityExport {
         }
     }
 
-    public static class UnknownHeapObject extends Reason {
+    public static class UnknownHeapObject extends Event {
         public final Class<?> heapObjectType;
 
         public UnknownHeapObject(Class<?> heapObjectType) {
@@ -543,7 +512,7 @@ public class CausalityExport {
     }
 
     // Can be used in Rerooting to indicate that registrations simply should be ignored
-    public static class Ignored extends Reason {
+    public static class Ignored extends Event {
         public static final Ignored Instance = new Ignored();
 
         private Ignored() {}
@@ -559,7 +528,7 @@ public class CausalityExport {
         }
     }
 
-    public static class Feature extends Reason {
+    public static class Feature extends Event {
         public final org.graalvm.nativeimage.hosted.Feature f;
 
         public Feature(org.graalvm.nativeimage.hosted.Feature f) {
@@ -593,7 +562,7 @@ public class CausalityExport {
         }
     }
 
-    public static class AutomaticFeatureRegistration extends Reason {
+    public static class AutomaticFeatureRegistration extends Event {
         public static final AutomaticFeatureRegistration Instance = new AutomaticFeatureRegistration();
 
         private AutomaticFeatureRegistration() {}
@@ -609,7 +578,7 @@ public class CausalityExport {
         }
     }
 
-    public static class UserEnabledFeatureRegistration extends Reason {
+    public static class UserEnabledFeatureRegistration extends Event {
         public static final UserEnabledFeatureRegistration Instance = new UserEnabledFeatureRegistration();
 
         private UserEnabledFeatureRegistration() {}
@@ -625,7 +594,7 @@ public class CausalityExport {
         }
     }
 
-    public static class InitialRegistration extends Reason {
+    public static class InitialRegistration extends Event {
         public static InitialRegistration Instance = new InitialRegistration();
 
         private InitialRegistration() { }
@@ -641,7 +610,7 @@ public class CausalityExport {
         }
     }
 
-    public static class ConfigurationFile extends Reason {
+    public static class ConfigurationFile extends Event {
         public final URI uri;
 
         public ConfigurationFile(URI uri) {
@@ -680,6 +649,35 @@ public class CausalityExport {
         @Override
         public boolean root() {
             return true;
+        }
+    }
+
+
+
+
+    private static String reflectionObjectToString(Object reflectionObject)
+    {
+        if(reflectionObject instanceof Class<?>) {
+            return ((Class<?>) reflectionObject).getTypeName();
+        } else if(reflectionObject instanceof Constructor<?>) {
+            Constructor<?> c = ((Constructor<?>) reflectionObject);
+            return c.getDeclaringClass().getTypeName() + ".<init>(" + Arrays.stream(c.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+        } else if(reflectionObject instanceof Method) {
+            Method m = ((Method) reflectionObject);
+            return m.getDeclaringClass().getTypeName() + '.' + m.getName() + '(' + Arrays.stream(m.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(", ")) + ')';
+        } else {
+            Field f = ((Field) reflectionObject);
+            return f.getDeclaringClass().getTypeName() + '.' + f.getName();
+        }
+    }
+
+    private static String reflectionObjectToGraalLikeString(AnalysisMetaAccess metaAccess, Object reflectionObject) {
+        if(reflectionObject instanceof Class<?>) {
+            return metaAccess.lookupJavaType((Class<?>) reflectionObject).toJavaName();
+        } else if(reflectionObject instanceof Executable) {
+            return metaAccess.lookupJavaMethod((Executable) reflectionObject).getQualifiedName();
+        } else {
+            return metaAccess.lookupJavaField((Field) reflectionObject).format("%h.%n");
         }
     }
 }

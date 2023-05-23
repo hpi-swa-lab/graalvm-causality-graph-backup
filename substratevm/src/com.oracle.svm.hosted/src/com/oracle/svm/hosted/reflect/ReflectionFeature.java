@@ -131,7 +131,7 @@ public class ReflectionFeature implements InternalFeature, ReflectionSubstitutio
 
     @Override
     public SubstrateAccessor getOrCreateAccessor(Executable member) {
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(member))) {
+        try(var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(member))) {
             SubstrateAccessor existing = accessors.get(member);
             if (existing != null) {
                 return existing;

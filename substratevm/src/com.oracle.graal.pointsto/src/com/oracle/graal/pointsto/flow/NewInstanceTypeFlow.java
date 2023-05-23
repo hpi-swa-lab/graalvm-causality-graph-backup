@@ -73,7 +73,7 @@ public class NewInstanceTypeFlow extends TypeFlow<BytecodePosition> {
              */
             TypeState exactTypeState = TypeState.forExactType(bb, declaredType, false);
             addState(bb, exactTypeState);
-            CausalityExport.getInstance().addTypeFlowEdge(null, this);
+            CausalityExport.get().registerTypeFlowEdge(null, this);
         }
     }
 

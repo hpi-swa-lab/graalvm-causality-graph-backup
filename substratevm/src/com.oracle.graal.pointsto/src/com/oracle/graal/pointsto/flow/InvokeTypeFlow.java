@@ -178,7 +178,7 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
             FormalReceiverTypeFlow formalReceiverFlow = calleeFlows.getFormalReceiver();
             if (formalReceiverFlow != null) {
                 formalReceiverFlow.addReceiverState(bb, receiverTypeState);
-                CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), formalReceiverFlow);
+                CausalityExport.get().registerTypeFlowEdge(getReceiver(), formalReceiverFlow);
             }
         }
 
@@ -191,7 +191,7 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
                      * See also InvokeTypeFlow#linkReturn() for more details.
                      */
                     actualReturn.addState(bb, receiverTypeState);
-                    CausalityExport.getInstance().addTypeFlowEdge(getReceiver(), actualReturn);
+                    CausalityExport.get().registerTypeFlowEdge(getReceiver(), actualReturn);
                 }
             }
         }

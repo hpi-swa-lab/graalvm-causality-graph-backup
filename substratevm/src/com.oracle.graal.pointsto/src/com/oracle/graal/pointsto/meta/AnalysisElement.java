@@ -90,8 +90,8 @@ public abstract class AnalysisElement implements AnnotatedElement {
 
     public void registerReachabilityNotification(ElementNotification notification) {
         ConcurrentLightHashSet.addElement(this, reachableNotificationsUpdater, notification);
-        CausalityExport.Reason reasonForRegistration = CausalityExport.getInstance().getRootReason();
-        CausalityExport.getInstance().registerTwoReasons(reasonForRegistration, CausalityExport.ReachableReason.create(this), new CausalityExport.ReachabilityNotificationCallback(notification.callback));
+        CausalityExport.Event eventForRegistration = CausalityExport.get().getCause();
+        CausalityExport.get().registerConjunctiveEdge(eventForRegistration, CausalityExport.ReachableEvent.create(this), new CausalityExport.ReachabilityNotificationCallback(notification.callback));
     }
 
     public void notifyReachabilityCallback(AnalysisUniverse universe, ElementNotification notification) {
@@ -155,8 +155,8 @@ public abstract class AnalysisElement implements AnnotatedElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                try(CausalityExport.ReRootingToken ignore0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
-                    try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReachabilityNotificationCallback(callback))) {
+                try(var ignore0 = CausalityExport.get().setCause(null)) {
+                    try(var ignored = CausalityExport.get().setCause(new CausalityExport.ReachabilityNotificationCallback(callback))) {
                         callback.accept(universe.getConcurrentAnalysisAccess());
                     }
                 }

@@ -77,7 +77,7 @@ public final class SourceTypeFlow extends TypeFlow<BytecodePosition> {
             addState(bb, exactTypeState);
         });
 
-        CausalityExport.getInstance().addTypeFlowEdge(declaredType.instantiatedTypes, this);
+        CausalityExport.get().registerTypeFlowEdge(declaredType.instantiatedTypes, this);
     }
 
     @Override

@@ -114,8 +114,8 @@ public abstract class SharedGraphBuilderPhase extends GraphBuilderPhase.Instance
 
     @Override
     protected void run(StructuredGraph graph) {
-        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
-            try (CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachableReason((AnalysisMethod) graph.method()) : null)) {
+        try (var ignored0 = CausalityExport.get().setCause(null)) {
+            try (var ignored1 = CausalityExport.get().setCause(graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodReachable((AnalysisMethod) graph.method()) : null)) {
                 super.run(graph);
             }
         }

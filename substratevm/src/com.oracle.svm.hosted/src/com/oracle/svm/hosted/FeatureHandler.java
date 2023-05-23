@@ -166,7 +166,7 @@ public class FeatureHandler {
         Function<Class<?>, Class<?>> specificClassProvider = specificAutomaticFeatures::get;
 
         for (Class<?> featureClass : automaticFeatures) {
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.AutomaticFeatureRegistration.Instance)) {
+            try(var ignored = CausalityExport.get().setCause(CausalityExport.AutomaticFeatureRegistration.Instance)) {
                 registerFeature(featureClass, specificClassProvider, access);
             }
         }
@@ -178,7 +178,7 @@ public class FeatureHandler {
             } catch (ClassNotFoundException e) {
                 throw UserError.abort("Feature %s class not found on the classpath. Ensure that the name is correct and that the class is on the classpath.", featureName);
             }
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.UserEnabledFeatureRegistration.Instance)) {
+            try(var ignored = CausalityExport.get().setCause(CausalityExport.UserEnabledFeatureRegistration.Instance)) {
                 registerFeature(featureClass, specificClassProvider, access);
             }
         }
@@ -203,7 +203,7 @@ public class FeatureHandler {
 
         if (registeredFeatures.contains(baseFeatureClass)) {
             if (ImageSingletons.contains(baseFeatureClass)) {
-                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
+                CausalityExport.get().registerEvent(new CausalityExport.Feature(ImageSingletons.lookup((Class<Feature>) baseFeatureClass)));
             }
             return;
         }
@@ -237,14 +237,14 @@ public class FeatureHandler {
          * First add dependent features so that initializers are executed in order of dependencies.
          */
         for (Class<? extends Feature> requiredFeatureClass : feature.getRequiredFeatures()) {
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
-                try(CausalityExport.ReRootingToken ignored1 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+            try(var ignored = CausalityExport.get().setCause(null)) {
+                try(var ignored1 = CausalityExport.get().setCause(new CausalityExport.Feature(feature))) {
                     registerFeature(requiredFeatureClass, specificClassProvider, access);
                 }
             }
         }
 
-        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.Feature(feature));
+        CausalityExport.get().registerEvent(new CausalityExport.Feature(feature));
         featureInstances.add(feature);
     }
 

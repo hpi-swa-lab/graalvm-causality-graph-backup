@@ -479,9 +479,9 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     public boolean registerAsInHeap(Object reason) {
         assert isValidReason(reason) : "Registering a type as in-heap needs to provide a valid reason.";
-        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
-        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
-            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+        CausalityExport.get().registerEvent(new CausalityExport.TypeInstantiated(this));
+        try(var ignored0 = CausalityExport.get().setCause(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (var ignored = CausalityExport.get().setCause(new CausalityExport.TypeInstantiated(this))) {
                 registerAsReachable(reason);
             }
         }
@@ -499,9 +499,9 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     public boolean registerAsAllocated(Object reason) {
         assert isValidReason(reason) : "Registering a type as allocated needs to provide a valid reason.";
-        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeInstantiatedReason(this));
-        try(CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(null)) { // Causality-TODO: Get rid of this ugliness...
-            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeInstantiatedReason(this))) {
+        CausalityExport.get().registerEvent(new CausalityExport.TypeInstantiated(this));
+        try(var ignored0 = CausalityExport.get().setCause(null)) { // Causality-TODO: Get rid of this ugliness...
+            try (var ignored = CausalityExport.get().setCause(new CausalityExport.TypeInstantiated(this))) {
                 registerAsReachable(reason);
             }
         }
@@ -560,7 +560,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     public boolean registerAsReachable(Object reason) {
         assert isValidReason(reason) : "Registering a type as reachable needs to provide a valid reason.";
-        CausalityExport.getInstance().registerReasonRoot(new CausalityExport.TypeReachableReason(this));
+        CausalityExport.get().registerEvent(new CausalityExport.TypeReachable(this));
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
             forAllSuperTypes(type -> AtomicUtils.atomicSetAndRun(type, reason, isReachableUpdater, type::onReachable));

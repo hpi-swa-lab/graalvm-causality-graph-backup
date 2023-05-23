@@ -50,7 +50,7 @@ public class FrozenFieldFilterTypeFlow extends TypeFlow<AnalysisField> {
         super(field, field.getType());
         this.unsafeSink = unsafeSink;
         this.source.getInstanceFieldFlow().addObserver(bb, this);
-        CausalityExport.getInstance().addTypeFlowEdge(this.source.getInstanceFieldFlow(), this);
+        CausalityExport.get().registerTypeFlowEdge(this.source.getInstanceFieldFlow(), this);
     }
 
     @Override

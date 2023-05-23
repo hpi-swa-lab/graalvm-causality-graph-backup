@@ -169,9 +169,9 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
         register(analysisUniverse -> registerConditionalConfiguration(condition,
                 () -> {
-                    CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(clazz)); // TODO: Differentiate on "unsafeInstantiated"
+                    CausalityExport.get().registerEvent(new CausalityExport.ReflectionRegistration(clazz)); // TODO: Differentiate on "unsafeInstantiated"
                     analysisUniverse.getBigbang().postTask(debug -> {
-                        try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(clazz))) {
+                        try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(clazz))) {
                             registerClass(clazz, unsafeInstantiated);
                         }
                     });
@@ -279,9 +279,9 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         checkNotSealed();
         register(analysisUniverse -> registerConditionalConfiguration(condition, () -> {
             for (Executable executable : executables) {
-                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(executable));
+                CausalityExport.get().registerEvent(new CausalityExport.ReflectionRegistration(executable));
                 analysisUniverse.getBigbang().postTask(debug -> {
-                    try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(executable))) {
+                    try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(executable))) {
                         registerMethod(queriedOnly, executable);
                     }
                 });
@@ -416,9 +416,9 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     private void registerInternal(ConfigurationCondition condition, Field... fields) {
         register(analysisUniverse -> registerConditionalConfiguration(condition, () -> {
             for (Field field : fields) {
-                CausalityExport.getInstance().registerReasonRoot(new CausalityExport.ReflectionRegistration(field));
+                CausalityExport.get().registerEvent(new CausalityExport.ReflectionRegistration(field));
                 analysisUniverse.getBigbang().postTask(debug -> {
-                    try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(field))) {
+                    try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(field))) {
                         registerField(field);
                     }
                 });
@@ -979,7 +979,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         DynamicHub hub = (DynamicHub) object;
         Class<?> javaClass = hub.getHostedJavaClass();
         if (heapDynamicHubs.add(hub) && !SubstitutionReflectivityFilter.shouldExclude(javaClass, metaAccess, universe)) {
-            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.TypeReachableReason(metaAccess.lookupJavaType(javaClass)))) {
+            try (var ignored = CausalityExport.get().setCause(new CausalityExport.TypeReachable(metaAccess.lookupJavaType(javaClass)))) {
                 registerTypesForClass(metaAccess.lookupJavaType(javaClass), javaClass);
             }
         }
@@ -994,8 +994,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void registerHeapReflectionField(Field reflectField, ScanReason reason) {
         assert !sealed;
-        CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject(reflectField, reason), new CausalityExport.ReflectionRegistration(reflectField));
-        try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(reflectField))) {
+        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectField, reason), new CausalityExport.ReflectionRegistration(reflectField));
+        try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(reflectField))) {
             AnalysisField analysisField = metaAccess.lookupJavaField(reflectField);
             if (heapFields.put(analysisField, reflectField) == null && !SubstitutionReflectivityFilter.shouldExclude(reflectField, metaAccess, universe)) {
                 registerTypesForField(analysisField, reflectField);
@@ -1009,8 +1009,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void registerHeapReflectionExecutable(Executable reflectExecutable, ScanReason reason) {
         assert !sealed;
-        CausalityExport.getInstance().register(CausalityExport.getInstance().getReasonForHeapObject(reflectExecutable, reason), new CausalityExport.ReflectionRegistration(reflectExecutable));
-        try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.ReflectionRegistration(reflectExecutable))) {
+        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectExecutable, reason), new CausalityExport.ReflectionRegistration(reflectExecutable));
+        try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(reflectExecutable))) {
             AnalysisMethod analysisMethod = metaAccess.lookupJavaMethod(reflectExecutable);
             if (heapMethods.put(analysisMethod, reflectExecutable) == null && !SubstitutionReflectivityFilter.shouldExclude(reflectExecutable, metaAccess, universe)) {
                 registerTypesForMethod(analysisMethod, reflectExecutable);

@@ -52,7 +52,7 @@ final class DefaultVirtualInvokeTypeFlow extends AbstractVirtualInvokeTypeFlow {
     DefaultVirtualInvokeTypeFlow(BytecodePosition invokeLocation, AnalysisType receiverType, PointsToAnalysisMethod targetMethod,
                     TypeFlow<?>[] actualParameters, ActualReturnTypeFlow actualReturn, MultiMethodKey callerMultiMethodKey) {
         super(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, callerMultiMethodKey);
-        CausalityExport.getInstance().registerVirtualInvokeTypeFlow(this);
+        CausalityExport.get().addVirtualInvokeTypeFlow(this);
     }
 
     @Override
@@ -128,7 +128,7 @@ final class DefaultVirtualInvokeTypeFlow extends AbstractVirtualInvokeTypeFlow {
                     linkCallee(bb, false, calleeFlows);
                 }
 
-                CausalityExport.getInstance().addVirtualInvoke(bb, this, calleeFlows.getMethod(), TypeState.forExactType(bb, type, false));
+                CausalityExport.get().registerVirtualInvocation(bb, this, calleeFlows.getMethod(), TypeState.forExactType(bb, type, false));
                 updateReceiver(bb, calleeFlows, TypeState.forExactType(bb, type, false));
             }
         }

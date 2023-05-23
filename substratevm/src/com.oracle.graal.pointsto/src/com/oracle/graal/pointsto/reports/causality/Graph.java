@@ -2,7 +2,6 @@ package com.oracle.graal.pointsto.reports.causality;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AccessFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
 import com.oracle.graal.pointsto.flow.ArrayElementsTypeFlow;
@@ -20,13 +19,10 @@ import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import org.graalvm.collections.Pair;
 
-import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.Channel;
 import java.nio.channels.Channels;
-import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -62,10 +58,10 @@ public class Graph {
     }
 
     static class FlowNode extends Node {
-        public final CausalityExport.Reason containing;
+        public final CausalityExport.Event containing;
         public final TypeState filter;
 
-        FlowNode(String debugStr, CausalityExport.Reason containing, TypeState filter) {
+        FlowNode(String debugStr, CausalityExport.Event containing, TypeState filter) {
             super(debugStr);
             this.containing = containing;
             this.filter = filter;
@@ -79,7 +75,7 @@ public class Graph {
     }
 
     static final class InvocationFlowNode extends FlowNode {
-        public InvocationFlowNode(CausalityExport.Reason invocationTarget, TypeState filter) {
+        public InvocationFlowNode(CausalityExport.Event invocationTarget, TypeState filter) {
             super("Virtual Invocation Flow Node: " + invocationTarget, invocationTarget, filter);
         }
 
@@ -90,9 +86,9 @@ public class Graph {
     }
 
     static class DirectCallEdge {
-        public final CausalityExport.Reason from, to;
+        public final CausalityExport.Event from, to;
 
-        DirectCallEdge(CausalityExport.Reason from, CausalityExport.Reason to) {
+        DirectCallEdge(CausalityExport.Event from, CausalityExport.Event to) {
             if (to == null)
                 throw new NullPointerException();
 
@@ -191,12 +187,12 @@ public class Graph {
             }
         }
 
-        public RealFlowNode(TypeFlow<?> f, CausalityExport.Reason containing, TypeState filter) {
+        public RealFlowNode(TypeFlow<?> f, CausalityExport.Event containing, TypeState filter) {
             super(customToString(f), containing, filter);
             this.f = f;
         }
 
-        public static RealFlowNode create(PointsToAnalysis bb, TypeFlow<?> f, CausalityExport.Reason containing) {
+        public static RealFlowNode create(PointsToAnalysis bb, TypeFlow<?> f, CausalityExport.Event containing) {
             return new RealFlowNode(f, containing, customFilter(bb, f));
         }
     }
@@ -274,7 +270,7 @@ public class Graph {
         Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
 
-        HashSet<CausalityExport.Reason> methods = new HashSet<>();
+        HashSet<CausalityExport.Event> methods = new HashSet<>();
         HashSet<FlowNode> typeflows = new HashSet<>();
 
         for (DirectCallEdge e : directInvokes) {
@@ -296,11 +292,11 @@ public class Graph {
 
         typeflows = filterRedundant(typeflows, calculateReverseAdjacency(typeflows, interflows));
 
-        CausalityExport.Reason[] methodsSorted = methods.stream()
+        CausalityExport.Event[] methodsSorted = methods.stream()
                 .filter(m -> !m.unused())
                 .map(reason -> Pair.create(reason.toString(bb.getMetaAccess()), reason))
-                .sorted(Comparator.comparing(Pair::getLeft)).map(Pair::getRight).toArray(CausalityExport.Reason[]::new);
-        HashMap<CausalityExport.Reason, Integer> methodIdMap = inverse(methodsSorted, 1);
+                .sorted(Comparator.comparing(Pair::getLeft)).map(Pair::getRight).toArray(CausalityExport.Event[]::new);
+        HashMap<CausalityExport.Event, Integer> methodIdMap = inverse(methodsSorted, 1);
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
 
@@ -319,7 +315,7 @@ public class Graph {
         zip.putNextEntry(new ZipEntry("methods.txt"));
         {
             PrintStream w = new PrintStream(zip);
-            for (CausalityExport.Reason method : methodsSorted) {
+            for (CausalityExport.Event method : methodsSorted) {
                 w.println(method.toString(bb.getMetaAccess()));
             }
         }

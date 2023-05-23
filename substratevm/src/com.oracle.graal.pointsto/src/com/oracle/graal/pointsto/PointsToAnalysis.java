@@ -46,7 +46,6 @@ import java.util.stream.StreamSupport;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.purge.PurgeMethods;
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
@@ -325,7 +324,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * and return the method flows graph. Then the method parameter type flows are
              * initialized with the corresponding parameter declared type.
              */
-            CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
+            CausalityExport.get().registerEvent(new CausalityExport.MethodReachable(pointsToMethod));
             postTask(() -> {
                 pointsToMethod.registerAsDirectRootMethod();
                 pointsToMethod.registerAsImplementationInvoked("root method");
@@ -360,7 +359,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              */
 
             if(invokeSpecial) {
-                CausalityExport.getInstance().register(null, new CausalityExport.MethodReachableReason(pointsToMethod));
+                CausalityExport.get().registerEvent(new CausalityExport.MethodReachable(pointsToMethod));
             }
 
             postTask(() -> {

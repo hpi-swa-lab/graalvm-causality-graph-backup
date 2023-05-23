@@ -70,7 +70,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         FieldTypeFlow fieldTypeFlow = getFieldTypeFlow(field, receiver);
         /* Add the new constant to the field's flow state. */
         TypeState state = bb.analysisPolicy().constantTypeState(analysis, fieldValue, fieldType);
-        CausalityExport.getInstance().registerTypesFlowing(analysis, CausalityExport.getInstance().getReasonForHeapFieldAssignment(analysis, receiver, field, fieldValue), fieldTypeFlow, state);
+        CausalityExport.get().registerTypesEntering(analysis, CausalityExport.get().getHeapFieldAssigner(analysis, receiver, field, fieldValue), fieldTypeFlow, state);
         return fieldTypeFlow.addState(analysis, state);
     }
 
@@ -110,7 +110,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         PointsToAnalysis analysis = getAnalysis();
         /* Add the constant element to the constant's array type flow. */
         TypeState state = bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType);
-        CausalityExport.getInstance().registerTypesFlowing(analysis, CausalityExport.getInstance().getReasonForHeapArrayAssignment(analysis, array, elementIndex, elementConstant), arrayObjElementsFlow, state);
+        CausalityExport.get().registerTypesEntering(analysis, CausalityExport.get().getHeapArrayAssigner(analysis, array, elementIndex, elementConstant), arrayObjElementsFlow, state);
         return arrayObjElementsFlow.addState(analysis, bb.analysisPolicy().constantTypeState(analysis, elementConstant, elementType));
     }
 
@@ -129,7 +129,7 @@ public class AnalysisObjectScanningObserver implements ObjectScanningObserver {
         Object valueObj = analysis.getSnippetReflectionProvider().asObject(Object.class, value);
         AnalysisType type = bb.getMetaAccess().lookupJavaType(valueObj.getClass());
 
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject(analysis, value, reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(analysis, value, reason))) {
             type.registerAsInHeap(reason);
         }
     }

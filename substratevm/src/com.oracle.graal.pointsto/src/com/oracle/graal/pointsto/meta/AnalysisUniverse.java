@@ -373,8 +373,8 @@ public class AnalysisUniverse implements Universe {
              * Otherwise, we violate the principle of conservative reasoning in order
              * to get usable results.
              */
-            CausalityExport.Reason reason = CausalityExport.getInstance().getRootReason();
-            try (CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(reason != null ? reason : CausalityExport.Ignored.Instance)) {
+            CausalityExport.Event event = CausalityExport.get().getCause();
+            try (var ignored = CausalityExport.get().setCause(event != null ? event : CausalityExport.Ignored.Instance)) {
                 declaringType.registerAsReachable(field);
             }
             declaringType.ensureOnTypeReachableTaskDone();

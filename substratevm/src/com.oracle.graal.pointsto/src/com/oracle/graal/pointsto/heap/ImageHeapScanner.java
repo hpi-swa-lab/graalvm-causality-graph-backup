@@ -114,7 +114,7 @@ public abstract class ImageHeapScanner {
             EmbeddedRootScan reason = new EmbeddedRootScan(position, root);
             ImageHeapConstant value;
             // Explicitly don't unroot registrations here. Otherwise, the current method processes by MethodTypeFlowBuilder could be accounted for scanned objects
-            try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+            try(var ignored = CausalityExport.get().setCause(null)) {
                 value = getOrCreateImageHeapConstant(root, reason);
             }
             markReachable(value, reason);
@@ -123,7 +123,7 @@ public abstract class ImageHeapScanner {
 
     public void onFieldRead(AnalysisField field) {
         assert field.isRead();
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+        try(var ignored = CausalityExport.get().setCause(null)) {
             /* Check if the value is available before accessing it. */
             if (isValueAvailable(field)) {
                 FieldScan reason = new FieldScan(field);
@@ -269,7 +269,7 @@ public abstract class ImageHeapScanner {
             newImageHeapConstant = createImageHeapInstance(constant, type, reason);
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.Ignored.Instance)) { // Causality-TODO!
+                try(var ignored = CausalityExport.get().setCause(CausalityExport.Ignored.Instance)) { // Causality-TODO!
                     typeFromClassConstant.registerAsReachable(reason);
                 }
             }
@@ -294,7 +294,7 @@ public abstract class ImageHeapScanner {
 
     private ImageHeapInstance createImageHeapInstance(JavaConstant constant, AnalysisType type, ScanReason reason) {
         /* We are about to query the type's fields, the type must be marked as reachable. */
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, constant, reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, constant, reason))) {
             type.registerAsReachable(reason);
         }
         ResolvedJavaField[] instanceFields = type.getInstanceFields(true);
@@ -476,7 +476,7 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.addReachableObject(objectType, imageHeapConstant);
 
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.getInstance().getReasonForHeapObject((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason))) {
             markTypeInstantiated(objectType, reason);
         }
         if (imageHeapConstant instanceof ImageHeapObjectArray imageHeapArray) {
@@ -526,7 +526,7 @@ public abstract class ImageHeapScanner {
      * in that case we execute the task directly.
      */
     private void maybeRunInExecutor(CompletionExecutor.DebugContextRunnable task) {
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+        try(var ignored = CausalityExport.get().setCause(null)) {
             if (bb.executorIsStarted()) {
                 bb.postTask(task);
             } else {
@@ -620,7 +620,7 @@ public abstract class ImageHeapScanner {
      * Add the object to the image heap and, if the object is a collection, rescan its elements.
      */
     public void rescanObject(Object object) {
-        try(CausalityExport.ReRootingToken ignored = CausalityExport.getInstance().accountRootRegistrationsTo(null)) {
+        try(var ignored = CausalityExport.get().setCause(null)) {
             rescanObject(object, OtherReason.RESCAN);
         }
     }

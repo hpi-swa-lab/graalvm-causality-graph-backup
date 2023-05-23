@@ -58,7 +58,6 @@ import java.util.function.BooleanSupplier;
 
 import com.oracle.graal.pointsto.reports.AnalysisReportsOptions;
 import com.oracle.graal.pointsto.reports.CausalityExport;
-import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.MapCursor;
@@ -768,7 +767,7 @@ public class NativeImageGenerator {
                 BeforeAnalysisAccessImpl config = new BeforeAnalysisAccessImpl(featureHandler, loader, bb, nativeLibraries, debug);
                 ServiceCatalogSupport.singleton().enableServiceCatalogMapTransformer(config);
                 featureHandler.forEachFeature(feature -> {
-                    try(CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+                    try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature))) {
                         feature.beforeAnalysis(config);
                     }
                 });
@@ -785,7 +784,7 @@ public class NativeImageGenerator {
                         try (StopTimer t2 = TimerCollection.createTimerAndStart(TimerCollection.Registry.FEATURES)) {
                             bb.getHostVM().notifyClassReachabilityListener(universe, config);
                             featureHandler.forEachFeature(feature -> {
-                                try(CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(new CausalityExport.Feature(feature))) {
+                                try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature))) {
                                     feature.duringAnalysis(config);
                                 }
                             });
@@ -1081,7 +1080,7 @@ public class NativeImageGenerator {
          * good example.
          */
         try (Indent ignored = debug.logAndIndent("add initial classes/fields/methods")) {
-            try (CausalityExport.ReRootingToken ignored2 = CausalityExport.getInstance().accountRootRegistrationsTo(CausalityExport.InitialRegistration.Instance)) {
+            try (var ignored2 = CausalityExport.get().setCause(CausalityExport.InitialRegistration.Instance)) {
                 bb.registerTypeAsInHeap(bb.addRootClass(Object.class, false, false), "root class");
                 bb.addRootField(DynamicHub.class, "vtable");
                 bb.registerTypeAsInHeap(bb.addRootClass(String.class, false, false), "root class");
@@ -1126,9 +1125,9 @@ public class NativeImageGenerator {
                 Collection<StructuredGraph> snippetGraphs = aReplacements.getSnippetGraphs(GraalOptions.TrackNodeSourcePosition.getValue(options), options);
                 if (bb instanceof NativeImagePointsToAnalysis) {
                     for (StructuredGraph graph : snippetGraphs) {
-                        CausalityExport.Reason snippetRegistrationReason = new CausalityExport.MethodSnippetReason((AnalysisMethod) graph.method());
-                        CausalityExport.getInstance().registerReasonRoot(snippetRegistrationReason); // Is directly catching the "[Initial Registrations]" reason from above
-                        try (CausalityExport.ReRootingToken ignored0 = CausalityExport.getInstance().accountRootRegistrationsTo(snippetRegistrationReason)) {
+                        CausalityExport.Event snippetRegistrationEvent = new CausalityExport.MethodSnippet((AnalysisMethod) graph.method());
+                        CausalityExport.get().registerEvent(snippetRegistrationEvent); // Is directly catching the "[Initial Registrations]" reason from above
+                        try (var ignored0 = CausalityExport.get().setCause(snippetRegistrationEvent)) {
                             HostedConfiguration.instance().registerUsedElements((PointsToAnalysis) bb, graph, false);
                         }
                     }
