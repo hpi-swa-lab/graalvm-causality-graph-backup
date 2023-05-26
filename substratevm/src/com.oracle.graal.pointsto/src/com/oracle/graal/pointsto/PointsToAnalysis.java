@@ -45,7 +45,6 @@ import java.util.stream.StreamSupport;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import com.oracle.graal.pointsto.reports.CausalityExport;
-import com.oracle.graal.pointsto.purge.PurgeMethods;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
@@ -108,8 +107,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
     private final boolean strengthenGraalGraphs;
 
-    private final PurgeMethods purgeInfo;
-
     @SuppressWarnings("this-escape")
     public PointsToAnalysis(OptionValues options, AnalysisUniverse universe, HostVM hostVM, AnalysisMetaAccess metaAccess, SnippetReflectionProvider snippetReflectionProvider,
                     ConstantReflectionProvider constantReflectionProvider, WordTypes wordTypes, ForkJoinPool executorService, Runnable heartbeatCallback,
@@ -138,7 +135,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
 
         timing = PointstoOptions.ProfileAnalysisOperations.getValue(options) ? new AnalysisTiming() : null;
         executor.init(timing);
-        purgeInfo = new PurgeMethods(this);
     }
 
     @Override
@@ -154,10 +150,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         StatisticsPrinter.print(out, "total_analysis_time_ms", analysisTimer.getTotalTime());
 
         StatisticsPrinter.printLast(out, "total_memory_bytes", analysisTimer.getTotalMemory());
-    }
-
-    public PurgeMethods getPurgeInfo() {
-        return purgeInfo;
     }
 
     @Override
@@ -308,10 +300,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     public AnalysisMethod addRootMethod(AnalysisMethod aMethod, boolean invokeSpecial) {
         assert aMethod.isOriginalMethod();
         assert !universe.sealed() : "Cannot register root methods after analysis universe is sealed.";
-
-        if(purgeInfo.purgeRequested(aMethod))
-            return aMethod;
-
         AnalysisType declaringClass = aMethod.getDeclaringClass();
         boolean isStatic = aMethod.isStatic();
         WrappedSignature signature = aMethod.getSignature();

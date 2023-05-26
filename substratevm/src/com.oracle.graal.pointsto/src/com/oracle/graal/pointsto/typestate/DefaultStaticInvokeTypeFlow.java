@@ -63,9 +63,6 @@ final class DefaultStaticInvokeTypeFlow extends AbstractStaticInvokeTypeFlow {
          */
         initializeCallees(bb);
 
-        if(bb.getPurgeInfo().purgeRequested(targetMethod))
-            return;
-
         LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
             MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);
             linkCallee(bb, true, calleeFlows);

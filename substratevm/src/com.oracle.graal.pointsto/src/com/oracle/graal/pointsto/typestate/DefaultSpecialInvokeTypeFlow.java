@@ -64,8 +64,6 @@ final class DefaultSpecialInvokeTypeFlow extends AbstractSpecialInvokeTypeFlow {
          */
         initializeCallees(bb);
         LightImmutableCollection.forEach(this, CALLEES_ACCESSOR, (PointsToAnalysisMethod callee) -> {
-            if(bb.getPurgeInfo().purgeRequested(callee))
-                return;
             MethodFlowsGraphInfo calleeFlows = callee.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, this);
             assert calleeFlows.getMethod().equals(callee);
 

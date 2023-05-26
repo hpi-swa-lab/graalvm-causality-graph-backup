@@ -199,8 +199,6 @@ public abstract class InvokeTypeFlow extends TypeFlow<BytecodePosition> implemen
     }
 
     protected void linkCallee(PointsToAnalysis bb, boolean isStatic, MethodFlowsGraphInfo calleeFlows) {
-        if(bb.getPurgeInfo().purgeRequested(calleeFlows.getMethod()))
-            return;
 
         if (bb.getHostVM().getMultiMethodAnalysisPolicy().performParameterLinking(callerMultiMethodKey, calleeFlows.getMethod().getMultiMethodKey())) {
             // iterate over the actual parameters in caller context

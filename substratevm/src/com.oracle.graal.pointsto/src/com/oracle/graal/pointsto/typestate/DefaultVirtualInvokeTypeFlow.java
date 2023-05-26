@@ -104,9 +104,6 @@ final class DefaultVirtualInvokeTypeFlow extends AbstractVirtualInvokeTypeFlow {
                 continue;
             }
 
-            if (bb.getPurgeInfo().purgeRequested(method))
-                continue;
-
             assert !Modifier.isAbstract(method.getModifiers());
 
             var calleeList = bb.getHostVM().getMultiMethodAnalysisPolicy().determineCallees(bb, PointsToAnalysis.assertPointsToAnalysisMethod(method), targetMethod, callerMultiMethodKey,
