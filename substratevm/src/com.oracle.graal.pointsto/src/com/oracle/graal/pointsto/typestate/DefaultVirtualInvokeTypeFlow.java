@@ -125,7 +125,7 @@ final class DefaultVirtualInvokeTypeFlow extends AbstractVirtualInvokeTypeFlow {
                     linkCallee(bb, false, calleeFlows);
                 }
 
-                CausalityExport.get().registerVirtualInvocation(bb, this, calleeFlows.getMethod(), TypeState.forExactType(bb, type, false));
+                CausalityExport.get().registerVirtualInvocation(bb, this, calleeFlows.getMethod(), type);
                 updateReceiver(bb, calleeFlows, TypeState.forExactType(bb, type, false));
             }
         }

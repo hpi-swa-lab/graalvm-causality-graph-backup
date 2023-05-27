@@ -67,7 +67,7 @@ public class CausalityExport {
 
     public void addVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {}
 
-    public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {}
+    public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, AnalysisType concreteTargetType) {}
 
     public void registerTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {}
 

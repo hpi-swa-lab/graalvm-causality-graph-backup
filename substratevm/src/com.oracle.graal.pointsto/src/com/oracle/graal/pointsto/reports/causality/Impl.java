@@ -127,15 +127,15 @@ public final class Impl extends CausalityExport {
     }
 
     @Override
-    public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, TypeState concreteTargetMethodCallingTypes) {
+    public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, AnalysisType concreteTargetType) {
         virtual_invokes.compute(concreteTargetMethod, (m, p) -> {
             if (p == null) {
                 HashSet<AbstractVirtualInvokeTypeFlow> invocations = new HashSet<>(1);
                 invocations.add(invocation);
-                return Pair.create(invocations, concreteTargetMethodCallingTypes);
+                return Pair.create(invocations, TypeState.forExactType(bb, concreteTargetType, false));
             } else {
                 p.getLeft().add(invocation);
-                return Pair.create(p.getLeft(), TypeState.forUnion(bb, p.getRight(), concreteTargetMethodCallingTypes));
+                return Pair.create(p.getLeft(), TypeState.forUnion(bb, p.getRight(), TypeState.forExactType(bb, concreteTargetType, false)));
             }
         });
     }
