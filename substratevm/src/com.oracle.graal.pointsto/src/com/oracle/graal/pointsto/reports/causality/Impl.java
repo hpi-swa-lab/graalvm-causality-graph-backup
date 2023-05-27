@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.reports.causality;
 
+import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -93,7 +94,7 @@ public final class Impl extends CausalityExport {
             throw new RuntimeException();
     }
 
-    private static <T> T asObject(PointsToAnalysis bb, Class<T> tClass, JavaConstant constant) {
+    private static <T> T asObject(BigBang bb, Class<T> tClass, JavaConstant constant) {
         if(constant instanceof ImageHeapConstant)
         {
             constant = ((ImageHeapConstant)constant).getHostedObject();
@@ -166,12 +167,12 @@ public final class Impl extends CausalityExport {
     }
 
     @Override
-    public Event getHeapObjectCreator(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+    public Event getHeapObjectCreator(BigBang bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
         return getHeapObjectCreator(asObject(bb, Object.class, heapObject), reason);
     }
 
     @Override
-    public Event getHeapFieldAssigner(PointsToAnalysis bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
+    public Event getHeapFieldAssigner(BigBang bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
         Object responsible;
         Object o = asObject(bb, Object.class, value);
 
@@ -185,7 +186,7 @@ public final class Impl extends CausalityExport {
     }
 
     @Override
-    public Event getHeapArrayAssigner(PointsToAnalysis bb, JavaConstant array, int elementIndex, JavaConstant value) {
+    public Event getHeapArrayAssigner(BigBang bb, JavaConstant array, int elementIndex, JavaConstant value) {
         Object o = asObject(bb, Object.class, value);
         Object responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, o);
         return getEventForHeapReason(responsible, o);

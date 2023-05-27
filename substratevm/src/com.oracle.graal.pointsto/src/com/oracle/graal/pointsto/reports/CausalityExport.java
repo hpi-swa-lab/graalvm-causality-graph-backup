@@ -1,5 +1,6 @@
 package com.oracle.graal.pointsto.reports;
 
+import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -99,15 +100,15 @@ public class CausalityExport {
         return null;
     }
 
-    public Event getHeapObjectCreator(PointsToAnalysis bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+    public Event getHeapObjectCreator(BigBang bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
         return null;
     }
 
-    public Event getHeapFieldAssigner(PointsToAnalysis analysis, JavaConstant receiver, AnalysisField field, JavaConstant value) {
+    public Event getHeapFieldAssigner(BigBang analysis, JavaConstant receiver, AnalysisField field, JavaConstant value) {
         return null;
     }
 
-    public Event getHeapArrayAssigner(PointsToAnalysis analysis, JavaConstant array, int elementIndex, JavaConstant value) {
+    public Event getHeapArrayAssigner(BigBang analysis, JavaConstant array, int elementIndex, JavaConstant value) {
         return null;
     }
 

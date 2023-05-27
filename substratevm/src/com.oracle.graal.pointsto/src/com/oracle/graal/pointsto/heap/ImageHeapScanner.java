@@ -294,7 +294,7 @@ public abstract class ImageHeapScanner {
 
     private ImageHeapInstance createImageHeapInstance(JavaConstant constant, AnalysisType type, ScanReason reason) {
         /* We are about to query the type's fields, the type must be marked as reachable. */
-        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, constant, reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, constant, reason))) {
             type.registerAsReachable(reason);
         }
         ResolvedJavaField[] instanceFields = type.getInstanceFields(true);
@@ -476,7 +476,7 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.addReachableObject(objectType, imageHeapConstant);
 
-        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, imageHeapConstant.getHostedObject(), reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, imageHeapConstant.getHostedObject(), reason))) {
             markTypeInstantiated(objectType, reason);
         }
         if (imageHeapConstant instanceof ImageHeapObjectArray imageHeapArray) {

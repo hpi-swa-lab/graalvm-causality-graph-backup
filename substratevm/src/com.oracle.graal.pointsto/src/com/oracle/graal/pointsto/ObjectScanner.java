@@ -242,7 +242,7 @@ public class ObjectScanner {
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
-            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, value, reason))) {
+            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, value, reason))) {
                 bb.registerTypeAsInHeap(type, reason);
             }
             return;
@@ -409,7 +409,7 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator((PointsToAnalysis) bb, entry.constant, entry.reason))) {
+            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, entry.constant, entry.reason))) {
                 type.registerAsReachable(entry.reason);
             }
 
