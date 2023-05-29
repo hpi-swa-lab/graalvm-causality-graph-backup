@@ -269,7 +269,12 @@ public abstract class ImageHeapScanner {
             newImageHeapConstant = createImageHeapInstance(constant, type, reason);
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                try(var ignored = CausalityExport.get().setCause(CausalityExport.Ignored.Instance)) { // Causality-TODO!
+                CausalityExport.Event cause = CausalityExport.get().getHeapObjectCreator(bb, constant, reason);
+                if (cause instanceof CausalityExport.UnknownHeapObject) {
+                    // Objects created by the analysis itself would add too many types as roots...
+                    cause = CausalityExport.Ignored.Instance; // Causality-TODO!
+                }
+                try(var ignored = CausalityExport.get().setCause(cause)) {
                     typeFromClassConstant.registerAsReachable(reason);
                 }
             }
