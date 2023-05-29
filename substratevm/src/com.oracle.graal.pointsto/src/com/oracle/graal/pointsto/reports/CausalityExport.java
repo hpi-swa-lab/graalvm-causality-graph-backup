@@ -201,6 +201,32 @@ public class CausalityExport {
         }
     }
 
+    public static final class VirtualMethodInvoked extends Event {
+        public final AnalysisMethod method;
+
+        public VirtualMethodInvoked(AnalysisMethod method) {
+            this.method = method;
+        }
+
+        @Override
+        public String toString() {
+            return method.getQualifiedName() + " [Virtual Invoke]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            VirtualMethodInvoked that = (VirtualMethodInvoked) o;
+            return method.equals(that.method);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ method.hashCode();
+        }
+    }
+
     public static final class MethodSnippet extends Event {
         public final AnalysisMethod method;
 
