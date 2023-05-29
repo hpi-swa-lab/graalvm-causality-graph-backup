@@ -610,9 +610,17 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     public void registerInstantiatedCallback(Consumer<DuringAnalysisAccess> callback) {
+        CausalityExport.Event eventForRegistration = CausalityExport.get().getCause();
+        CausalityExport.Event callbackEvent = new CausalityExport.ReachabilityNotificationCallback(callback);
+        CausalityExport.get().registerConjunctiveEdge(eventForRegistration, new CausalityExport.TypeInstantiated(this), callbackEvent);
+
         if (this.isInstantiated()) {
-            /* If the type is already instantiated just trigger the callback. */
-            callback.accept(universe.getConcurrentAnalysisAccess());
+            try (var ignored0 = CausalityExport.get().setCause(null)) {
+                try (var ignored1 = CausalityExport.get().setCause(callbackEvent)) {
+                    /* If the type is already instantiated just trigger the callback. */
+                    callback.accept(universe.getConcurrentAnalysisAccess());
+                }
+            }
         } else {
             ElementNotification notification = new ElementNotification(callback);
             ConcurrentLightHashSet.addElement(this, instantiatedNotificationsUpdater, notification);
