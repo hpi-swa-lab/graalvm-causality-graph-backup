@@ -35,7 +35,7 @@ import java.util.function.Function;
 public final class Impl extends CausalityExport {
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
     private final HashSet<Pair<Event, Event>> direct_edges = new HashSet<>();
-    private final HashSet<Pair<Pair<Event, Event>, Event>> direct_edges_2 = new HashSet<>();
+    private final HashSet<Graph.HyperEdge> hyper_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
 
     private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
@@ -56,7 +56,7 @@ public final class Impl extends CausalityExport {
         for (Impl i : instances) {
             interflows.addAll(i.interflows);
             direct_edges.addAll(i.direct_edges);
-            direct_edges_2.addAll(i.direct_edges_2);
+            hyper_edges.addAll(i.hyper_edges);
             mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
                 p1.getLeft().addAll(p2.getLeft());
                 return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
@@ -114,7 +114,7 @@ public final class Impl extends CausalityExport {
         } else if(cause2 == null) {
             registerEdge(cause1, consequence);
         } else {
-            direct_edges_2.add(Pair.create(Pair.create(cause1, cause2), consequence));
+            hyper_edges.add(new Graph.HyperEdge(cause1, cause2, consequence));
         }
     }
 
@@ -243,7 +243,7 @@ public final class Impl extends CausalityExport {
 
         direct_edges.removeIf(pair -> pair.getRight() instanceof MethodReachable && ((MethodReachable)pair.getRight()).element.isClassInitializer());
 
-        direct_edges.stream().map(Pair::getLeft).filter(from -> from != null && !from.unused() && from.root()).distinct().forEach(from -> g.directInvokes.add(new Graph.DirectCallEdge(null, from)));
+        direct_edges.stream().map(Pair::getLeft).filter(from -> from != null && !from.unused() && from.root()).distinct().forEach(from -> g.directEdges.add(new Graph.DirectEdge(null, from)));
 
         for (Pair<Event, Event> e : direct_edges) {
             Event from = e.getLeft();
@@ -255,7 +255,7 @@ public final class Impl extends CausalityExport {
             if(to.unused())
                 continue;
 
-            g.directInvokes.add(new Graph.DirectCallEdge(from, to));
+            g.directEdges.add(new Graph.DirectEdge(from, to));
         }
 
         for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
@@ -298,7 +298,7 @@ public final class Impl extends CausalityExport {
 
             AnalysisMethod classInitializer = t.getClassInitializer();
             if(classInitializer != null && classInitializer.isImplementationInvoked()) {
-                g.directInvokes.add(new Graph.DirectCallEdge(new TypeReachable(t), new MethodReachable(classInitializer)));
+                g.directEdges.add(new Graph.DirectEdge(new TypeReachable(t), new MethodReachable(classInitializer)));
             }
         }
 
@@ -334,7 +334,7 @@ public final class Impl extends CausalityExport {
                         break;
                     buildTimeClinitsWithReason.add(init);
                     BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization((Class<?>) outerInitClazz);
-                    g.directInvokes.add(new Graph.DirectCallEdge(outerInit, init));
+                    g.directEdges.add(new Graph.DirectEdge(outerInit, init));
                     init = outerInit;
                 }
             });
@@ -349,9 +349,9 @@ public final class Impl extends CausalityExport {
 
                 if (t != null && t.isReachable()) {
                     TypeReachable tReachable = new TypeReachable(t);
-                    g.directInvokes.add(new Graph.DirectCallEdge(tReachable, init));
+                    g.directEdges.add(new Graph.DirectEdge(tReachable, init));
                 } else if(!buildTimeClinitsWithReason.contains(init)) {
-                    g.directInvokes.add(new Graph.DirectCallEdge(null, init));
+                    g.directEdges.add(new Graph.DirectEdge(null, init));
                 }
             });
         }
@@ -397,17 +397,11 @@ public final class Impl extends CausalityExport {
 
             TypeState objectTypeState = TypeState.forType(bb, bb.getObjectType(), false);
 
-            for(Pair<Pair<Event, Event>, Event> andEdge : direct_edges_2) {
-                if(andEdge.getLeft().getLeft().unused() || andEdge.getLeft().getRight().unused() || andEdge.getRight().unused())
+            for(Graph.HyperEdge andEdge : hyper_edges) {
+                if(andEdge.from1.unused() || andEdge.from2.unused() || andEdge.to.unused())
                     continue;
 
-                Graph.FlowNode a = new Graph.FlowNode("And 1 input: " + andEdge.getLeft().getLeft().toString(bb.getMetaAccess()), andEdge.getLeft().getLeft(), objectTypeState);
-                Graph.FlowNode b = new Graph.FlowNode("And 2 input: " + andEdge.getLeft().getRight().toString(bb.getMetaAccess()), andEdge.getLeft().getRight(), objectTypeState);
-                Graph.FlowNode c = new Graph.InvocationFlowNode(andEdge.getRight(), objectTypeState);
-
-                g.interflows.add(new Graph.FlowEdge(null, a));
-                g.interflows.add(new Graph.FlowEdge(a, b));
-                g.interflows.add(new Graph.FlowEdge(b, c));
+                g.hyperEdges.add(andEdge);
             }
         }
 

@@ -85,10 +85,10 @@ public class Graph {
         }
     }
 
-    static class DirectCallEdge {
+    static class DirectEdge {
         public final CausalityExport.Event from, to;
 
-        DirectCallEdge(CausalityExport.Event from, CausalityExport.Event to) {
+        DirectEdge(CausalityExport.Event from, CausalityExport.Event to) {
             if (to == null)
                 throw new NullPointerException();
 
@@ -100,7 +100,7 @@ public class Graph {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            DirectCallEdge that = (DirectCallEdge) o;
+            DirectEdge that = (DirectEdge) o;
             return Objects.equals(from, that.from) && to.equals(that.to);
         }
 
@@ -112,6 +112,40 @@ public class Graph {
         @Override
         public String toString() {
             return (from == null ? "" : from.toString()) + "->" + to.toString();
+        }
+    }
+
+    static class HyperEdge {
+        public final CausalityExport.Event from1, from2, to;
+
+        HyperEdge(CausalityExport.Event from1, CausalityExport.Event from2, CausalityExport.Event to) {
+            if (from1 == null || from2 == null || to == null)
+                throw new NullPointerException();
+
+            this.from1 = from1;
+            this.from2 = from2;
+            this.to = to;
+        }
+
+        @Override
+        public int hashCode() {
+            return (from1.hashCode() ^ from2.hashCode()) + 31 * to.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            HyperEdge that = (HyperEdge) o;
+            return to.equals(that.to) && (
+                    (from1.equals(that.from1) && from2.equals(that.from2))
+                 || (from1.equals(that.from2) && from2.equals(that.from1))
+            );
+        }
+
+        @Override
+        public String toString() {
+            return "{" + from1 + "," + from2 + "}" + "->" + to;
         }
     }
 
@@ -197,7 +231,8 @@ public class Graph {
         }
     }
 
-    public HashSet<DirectCallEdge> directInvokes = new HashSet<>();
+    public HashSet<DirectEdge> directEdges = new HashSet<>();
+    public HashSet<HyperEdge> hyperEdges = new HashSet<>();
     public HashSet<FlowEdge> interflows = new HashSet<>();
 
     private static <T> HashMap<T, Integer> inverse(T[] arr, int startIndex) {
@@ -273,9 +308,15 @@ public class Graph {
         HashSet<CausalityExport.Event> methods = new HashSet<>();
         HashSet<FlowNode> typeflows = new HashSet<>();
 
-        for (DirectCallEdge e : directInvokes) {
+        for (DirectEdge e : directEdges) {
             if (e.from != null)
                 methods.add(e.from);
+            methods.add(e.to);
+        }
+
+        for (HyperEdge e : hyperEdges) {
+            methods.add(e.from1);
+            methods.add(e.from2);
             methods.add(e.to);
         }
 
@@ -323,14 +364,34 @@ public class Graph {
         zip.putNextEntry(new ZipEntry("direct_invokes.bin"));
         {
             WritableByteChannel c = Channels.newChannel(zip);
-            ByteBuffer b = ByteBuffer.allocate(8);
+            ByteBuffer b = ByteBuffer.allocate(2 * Integer.BYTES);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
-            for (DirectCallEdge e : directInvokes) {
+            for (DirectEdge e : directEdges) {
                 int src = e.from == null ? 0 : methodIdMap.get(e.from);
                 int dst = methodIdMap.get(e.to);
 
                 b.putInt(src);
+                b.putInt(dst);
+                b.flip();
+                c.write(b);
+                b.flip();
+            }
+        }
+
+        zip.putNextEntry(new ZipEntry("hyper_edges.bin"));
+        {
+            WritableByteChannel c = Channels.newChannel(zip);
+            ByteBuffer b = ByteBuffer.allocate(3 * Integer.BYTES);
+            b.order(ByteOrder.LITTLE_ENDIAN);
+
+            for (HyperEdge e : hyperEdges) {
+                int src1 = methodIdMap.get(e.from1);
+                int src2 = methodIdMap.get(e.from2);
+                int dst = methodIdMap.get(e.to);
+
+                b.putInt(src1);
+                b.putInt(src2);
                 b.putInt(dst);
                 b.flip();
                 c.write(b);
@@ -343,7 +404,7 @@ public class Graph {
         zip.putNextEntry(new ZipEntry("interflows.bin"));
         {
             WritableByteChannel c = Channels.newChannel(zip);
-            ByteBuffer b = ByteBuffer.allocate(8);
+            ByteBuffer b = ByteBuffer.allocate(2 * Integer.BYTES);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (FlowEdge e : interflows) {
@@ -364,7 +425,7 @@ public class Graph {
         zip.putNextEntry(new ZipEntry("typeflow_filters.bin"));
         {
             WritableByteChannel c = Channels.newChannel(zip);
-            ByteBuffer b = ByteBuffer.allocate(4);
+            ByteBuffer b = ByteBuffer.allocate(Integer.BYTES);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (FlowNode flow : flowsSorted) {
@@ -411,7 +472,7 @@ public class Graph {
         zip.putNextEntry(new ZipEntry("typeflow_methods.bin"));
         {
             WritableByteChannel c = Channels.newChannel(zip);
-            ByteBuffer b = ByteBuffer.allocate(4);
+            ByteBuffer b = ByteBuffer.allocate(Integer.BYTES);
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (FlowNode f : flowsSorted) {
