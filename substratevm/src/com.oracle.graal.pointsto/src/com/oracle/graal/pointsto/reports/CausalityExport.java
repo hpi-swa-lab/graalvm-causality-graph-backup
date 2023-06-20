@@ -13,6 +13,7 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.causality.Impl;
 import com.oracle.graal.pointsto.reports.causality.Graph;
+import com.oracle.graal.pointsto.reports.causality.TypeflowImpl;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
 
@@ -36,15 +37,17 @@ public class CausalityExport {
     private static final CausalityExport dummyInstance = new CausalityExport();
     private static ThreadLocal<Impl> instances;
     private static List<Impl> instancesOfAllThreads;
+    private static boolean collectTypeflowInformation;
 
     // Starts collection of Causality Data
-    public static synchronized void activate() {
+    public static synchronized void activate(boolean collectTypeflowInformation) {
+        CausalityExport.collectTypeflowInformation = collectTypeflowInformation;
         instances = ThreadLocal.withInitial(CausalityExport::createInstance);
         instancesOfAllThreads = new ArrayList<>();
     }
 
     private static synchronized Impl createInstance() {
-        Impl instance = new Impl();
+        Impl instance = collectTypeflowInformation ? new TypeflowImpl() : new Impl();
         instancesOfAllThreads.add(instance);
         return instance;
     }
@@ -54,7 +57,7 @@ public class CausalityExport {
     }
 
     public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
-        Impl data = new Impl(instancesOfAllThreads, bb);
+        Impl data = collectTypeflowInformation ? new TypeflowImpl((Iterable<TypeflowImpl>)(Iterable<? extends Impl>) instancesOfAllThreads, bb) : new Impl(instancesOfAllThreads, bb);
         // Let GC collect intermediate data structures
         instances = null;
         instancesOfAllThreads = null;
@@ -701,7 +704,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.getQualifiedName() + " [Root registration]";
+            return method.getQualifiedName() + " [Root Registration]";
         }
     }
 

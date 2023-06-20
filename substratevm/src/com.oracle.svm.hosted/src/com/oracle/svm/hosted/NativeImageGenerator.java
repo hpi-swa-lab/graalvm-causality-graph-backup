@@ -874,7 +874,7 @@ public class NativeImageGenerator {
                 if(AnalysisReportsOptions.PrintCausalityGraph.getValue(options)) {
                     // This cannot be done in the "CausalityExporter"-Feature since Feature-registration should already
                     // be logged by CausalityExport...
-                    CausalityExport.activate();
+                    CausalityExport.activate(AnalysisReportsOptions.CausalityGraphWithTypeflow.getValue(options));
                 }
 
                 ClassLoaderSupportImpl classLoaderSupport = new ClassLoaderSupportImpl(loader.classLoaderSupport);

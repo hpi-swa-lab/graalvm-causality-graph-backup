@@ -80,6 +80,9 @@ public class AnalysisReportsOptions {
     @Option(help = "Causality Graph for Offline-Analysis of reachability.")
     public static final OptionKey<Boolean> PrintCausalityGraph = new OptionKey<>(false);
 
+    @Option(help = "Whether TypeFlow-information should be recorded and included in the Causality Graph.")
+    public static final OptionKey<Boolean> CausalityGraphWithTypeflow = new OptionKey<>(true);
+
     @Option(help = "Include debug-string for each typeflow.")
     public static final OptionKey<Boolean> CausalityGraphVerbose = new OptionKey<>(false);
 

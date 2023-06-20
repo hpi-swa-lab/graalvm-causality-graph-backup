@@ -5,11 +5,6 @@ import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
-import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
-import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
-import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
-import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
-import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.heap.ImageHeapConstant;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
@@ -22,79 +17,32 @@ import jdk.vm.ci.meta.JavaConstant;
 import org.graalvm.collections.Pair;
 
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
-public final class Impl extends CausalityExport {
-    private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
+public class Impl extends CausalityExport {
     private final HashSet<Pair<Event, Event>> direct_edges = new HashSet<>();
     private final HashSet<Graph.HyperEdge> hyper_edges = new HashSet<>();
-    private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
-
-    /**
-     * Saves for each virtual invocation the receiver typeflow before it may have been replaced during saturation.
-     */
-    private final HashMap<AbstractVirtualInvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
-    private final HashMap<Pair<Event, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
 
     public Impl() {
     }
 
-    private static <K, V> void mergeMap(Map<K, V> dst, Map<K, V> src, BiFunction<V, V, V> merger) {
+    protected static <K, V> void mergeMap(Map<K, V> dst, Map<K, V> src, BiFunction<V, V, V> merger) {
         src.forEach((k, v) -> dst.merge(k, v, merger));
     }
 
-    private static <K> void mergeTypeFlowMap(Map<K, TypeState> dst, Map<K, TypeState> src, PointsToAnalysis bb) {
+    protected static <K> void mergeTypeFlowMap(Map<K, TypeState> dst, Map<K, TypeState> src, PointsToAnalysis bb) {
         mergeMap(dst, src, (v1, v2) -> TypeState.forUnion(bb, v1, v2));
     }
 
-    public Impl(List<Impl> instances, PointsToAnalysis bb) {
+    public Impl(Iterable<? extends Impl> instances, PointsToAnalysis bb) {
         for (Impl i : instances) {
-            interflows.addAll(i.interflows);
             direct_edges.addAll(i.direct_edges);
             hyper_edges.addAll(i.hyper_edges);
-            mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
-                p1.getLeft().addAll(p2.getLeft());
-                return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
-            });
-            originalInvokeReceivers.putAll(i.originalInvokeReceivers);
-            mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
-    }
-
-    @Override
-    public void registerTypeFlowEdge(TypeFlow<?> from, TypeFlow<?> to) {
-        if (from == to)
-            return;
-
-        if (currentlySaturatingDepth > 0)
-            if (from instanceof AllInstantiatedTypeFlow)
-                return;
-            else
-                assert to.isContextInsensitive() || from instanceof ActualReturnTypeFlow && to instanceof ActualReturnTypeFlow || to instanceof ActualParameterTypeFlow;
-
-        interflows.add(Pair.create(from, to));
-    }
-
-    int currentlySaturatingDepth; // Inhibits the registration of new typeflow edges
-
-    @Override
-    public void beginSaturationHappening() {
-        currentlySaturatingDepth++;
-    }
-
-    @Override
-    public void endSaturationHappening() {
-        currentlySaturatingDepth--;
-        if (currentlySaturatingDepth < 0)
-            throw new RuntimeException();
     }
 
     private static <T> T asObject(BigBang bb, Class<T> tClass, JavaConstant constant) {
@@ -103,11 +51,6 @@ public final class Impl extends CausalityExport {
             constant = ((ImageHeapConstant)constant).getHostedObject();
         }
         return bb.getSnippetReflectionProvider().asObject(tClass, constant);
-    }
-
-    @Override
-    public void registerTypesEntering(PointsToAnalysis bb, Event cause, TypeFlow<?> destination, TypeState types) {
-        flowingFromHeap.compute(Pair.create(cause, destination), (p, state) -> state == null ? types : TypeState.forUnion(bb, state, types));
     }
 
     @Override
@@ -146,11 +89,6 @@ public final class Impl extends CausalityExport {
                 new CausalityExport.TypeInstantiated(concreteTargetType),
                 new CausalityExport.MethodReachable(concreteTargetMethod)
         );
-    }
-
-    @Override
-    public void addVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {
-        originalInvokeReceivers.put(invocation, invocation.getReceiver());
     }
 
     private Event getEventForHeapReason(Object customReason, Object o) {
@@ -230,25 +168,6 @@ public final class Impl extends CausalityExport {
     public Graph createCausalityGraph(PointsToAnalysis bb) {
         Graph g = new Graph();
 
-        HashMap<TypeFlow<?>, Graph.RealFlowNode> flowMapping = new HashMap<>();
-
-        Function<TypeFlow<?>, Graph.RealFlowNode> flowMapper = flow ->
-        {
-            if(flow.getState().typesCount() == 0 && !flow.isSaturated())
-                return null;
-
-            return flowMapping.computeIfAbsent(flow, f -> {
-                AnalysisMethod m = f.method();
-
-                MethodReachable reason = m == null ? null : new MethodReachable(m);
-
-                if(reason != null && reason.unused())
-                    return null;
-
-                return Graph.RealFlowNode.create(bb, f, reason);
-            });
-        };
-
         direct_edges.removeIf(pair -> pair.getRight() instanceof MethodReachable && ((MethodReachable)pair.getRight()).element.isClassInitializer());
 
         direct_edges.stream().map(Pair::getLeft).filter(from -> from != null && !from.unused() && from.root()).distinct().forEach(from -> g.directEdges.add(new Graph.DirectEdge(null, from)));
@@ -266,40 +185,6 @@ public final class Impl extends CausalityExport {
             g.directEdges.add(new Graph.DirectEdge(from, to));
         }
 
-        for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
-
-            MethodReachable reason = new MethodReachable(e.getKey());
-
-            if(reason.unused())
-                continue;
-
-            Graph.InvocationFlowNode invocationFlowNode = new Graph.InvocationFlowNode(reason, e.getValue().getRight());
-
-            e.getValue().getLeft().stream()
-                    .map(originalInvokeReceivers::get)
-                    .filter(Objects::nonNull)
-                    .map(flowMapper::apply)
-                    .filter(Objects::nonNull)
-                    .map(receiverNode -> new Graph.FlowEdge(receiverNode, invocationFlowNode))
-                    .forEach(g.interflows::add);
-        }
-
-        for (Pair<TypeFlow<?>, TypeFlow<?>> e : interflows) {
-            Graph.RealFlowNode left = null;
-
-            if(e.getLeft() != null) {
-                left = flowMapper.apply(e.getLeft());
-                if(left == null)
-                    continue;
-            }
-
-            Graph.RealFlowNode right = flowMapper.apply(e.getRight());
-            if(right == null)
-                continue;
-
-            g.interflows.add(new Graph.FlowEdge(left, right));
-        }
-
         for (AnalysisType t : bb.getUniverse().getTypes()) {
             if (!t.isReachable())
                 continue;
@@ -309,23 +194,6 @@ public final class Impl extends CausalityExport {
                 g.directEdges.add(new Graph.DirectEdge(new TypeReachable(t), new MethodReachable(classInitializer)));
             }
         }
-
-        direct_edges.stream().map(Pair::getRight).filter(r -> r instanceof TypeInstantiated).map(r -> (TypeInstantiated)r).distinct().forEach(reason -> {
-            if(!reason.unused()) {
-                AnalysisType t = reason.type;
-                TypeState state = TypeState.forExactType(bb, t, false);
-
-                String debugStr = "Virtual Flow Node for reaching " + t.toJavaName();
-
-                Graph.FlowNode vfn = new Graph.FlowNode(debugStr, reason, state);
-                g.interflows.add(new Graph.FlowEdge(null, vfn));
-
-                t.forAllSuperTypes(t1 -> {
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
-                    g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
-                });
-            }
-        });
 
         {
             Set<BuildTimeClassInitialization> buildTimeClinits = new HashSet<>();
@@ -364,53 +232,11 @@ public final class Impl extends CausalityExport {
             });
         }
 
-        for (Map.Entry<Pair<Event, TypeFlow<?>>, TypeState> e : flowingFromHeap.entrySet()) {
-            Graph.RealFlowNode fieldNode = flowMapper.apply(e.getKey().getRight());
-
-            if (fieldNode == null)
+        for(Graph.HyperEdge andEdge : hyper_edges) {
+            if(andEdge.from1.unused() || andEdge.from2.unused() || andEdge.to.unused())
                 continue;
 
-            // The causality-query implementation saturates at 20 types.
-            // Saturation will happen even if the types don't pass the filter
-            // Therefore, as soon as a typeflow connected to the source (represented by null) allows for more than 20 types,
-            // These will be added to allInstantiated immeadiatly.
-            // In practice this only shows in big projects and rarely (e.g. 3 times in 170MB spring-petclinic)
-            // Therefore we simply employ this quick fix:
-            if(e.getValue().typesCount() <= 20) {
-                Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), e.getValue());
-                g.interflows.add(new Graph.FlowEdge(null, intermediate));
-                g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
-            } else {
-                AnalysisType[] types = e.getValue().typesStream(bb).toArray(AnalysisType[]::new);
-
-                for(int i = 0; i < types.length; i += 20) {
-                    TypeState state = TypeState.forEmpty();
-
-                    for(int j = i; j < i + 20 && j < types.length; j++) {
-                        state = TypeState.forUnion(bb, state, TypeState.forExactType(bb, types[j], false));
-                    }
-
-                    Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), state);
-                    g.interflows.add(new Graph.FlowEdge(null, intermediate));
-                    g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
-                }
-            }
-        }
-
-        {
-            // For the regular part of the graph, there is no such thing as a conjunctive hyper-edge.
-            // But we can emulate this behavior using typeflow nodes.
-            // The objectTypeState could be any non-empty type.
-            // A singleton typeflow can be processed faster in causality-query.
-
-            TypeState objectTypeState = TypeState.forType(bb, bb.getObjectType(), false);
-
-            for(Graph.HyperEdge andEdge : hyper_edges) {
-                if(andEdge.from1.unused() || andEdge.from2.unused() || andEdge.to.unused())
-                    continue;
-
-                g.hyperEdges.add(andEdge);
-            }
+            g.hyperEdges.add(andEdge);
         }
 
         return g;
