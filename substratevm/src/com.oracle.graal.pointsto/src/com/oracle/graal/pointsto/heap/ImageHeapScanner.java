@@ -269,7 +269,7 @@ public abstract class ImageHeapScanner {
             newImageHeapConstant = createImageHeapInstance(constant, type, reason);
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                CausalityExport.Event cause = CausalityExport.get().getHeapObjectCreator(bb, constant, reason);
+                CausalityExport.Event cause = CausalityExport.get().getHeapObjectCreator(bb, constant, null /* Avoid getting Jdk Reflection methods as reason for every type */);
                 if (cause instanceof CausalityExport.UnknownHeapObject) {
                     // Objects created by the analysis itself would add too many types as roots...
                     cause = CausalityExport.Ignored.Instance; // Causality-TODO!
