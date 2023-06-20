@@ -306,6 +306,8 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         int paramCount = signature.getParameterCount(!isStatic);
         PointsToAnalysisMethod pointsToMethod = assertPointsToAnalysisMethod(aMethod);
 
+        CausalityExport.get().registerEvent(new CausalityExport.RootMethodRegistration(aMethod));
+
         if (isStatic) {
             /*
              * For static methods trigger analysis in the empty context. This will trigger parsing

@@ -679,6 +679,32 @@ public class CausalityExport {
         }
     }
 
+    public static class RootMethodRegistration extends Event {
+        public final AnalysisMethod method;
+
+        public RootMethodRegistration(AnalysisMethod method) {
+            this.method = method;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            RootMethodRegistration that = (RootMethodRegistration) o;
+            return method.equals(that.method);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ method.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return method.getQualifiedName() + " [Root registration]";
+        }
+    }
+
 
 
 

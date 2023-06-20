@@ -38,7 +38,10 @@ public final class Impl extends CausalityExport {
     private final HashSet<Graph.HyperEdge> hyper_edges = new HashSet<>();
     private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
 
-    private final HashMap<InvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
+    /**
+     * Saves for each virtual invocation the receiver typeflow before it may have been replaced during saturation.
+     */
+    private final HashMap<AbstractVirtualInvokeTypeFlow, TypeFlow<?>> originalInvokeReceivers = new HashMap<>();
     private final HashMap<Pair<Event, TypeFlow<?>>, TypeState> flowingFromHeap = new HashMap<>();
 
     public Impl() {
@@ -130,16 +133,19 @@ public final class Impl extends CausalityExport {
     public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, AnalysisType concreteTargetType) {
         AnalysisMethod callingMethod = invocation.method();
 
-        if (callingMethod == null) {
-            registerEdge(new CausalityExport.TypeInstantiated(concreteTargetType), new CausalityExport.MethodReachable(concreteTargetMethod));
-        } else {
-            registerEdge(new CausalityExport.MethodReachable(callingMethod), new CausalityExport.VirtualMethodInvoked(invocation.getTargetMethod()));
-            registerConjunctiveEdge(
-                    new CausalityExport.VirtualMethodInvoked(invocation.getTargetMethod()),
-                    new CausalityExport.TypeInstantiated(concreteTargetType),
-                    new CausalityExport.MethodReachable(concreteTargetMethod)
-            );
-        }
+        if(callingMethod == null && invocation.getTargetMethod().getContextInsensitiveVirtualInvoke(invocation.getCallerMultiMethodKey()) != invocation)
+            throw new RuntimeException("CausalityExport has made an invalid assumption!");
+
+        CausalityExport.Event callerEvent = callingMethod != null ? new CausalityExport.MethodReachable(callingMethod) : new RootMethodRegistration(invocation.getTargetMethod());
+
+        registerEdge(
+                callerEvent,
+                new CausalityExport.VirtualMethodInvoked(invocation.getTargetMethod()));
+        registerConjunctiveEdge(
+                new CausalityExport.VirtualMethodInvoked(invocation.getTargetMethod()),
+                new CausalityExport.TypeInstantiated(concreteTargetType),
+                new CausalityExport.MethodReachable(concreteTargetMethod)
+        );
     }
 
     @Override
@@ -161,10 +167,10 @@ public final class Impl extends CausalityExport {
 
     @Override
     public Event getHeapObjectCreator(Object heapObject, ObjectScanner.ScanReason reason) {
-        if(reason instanceof ObjectScanner.EmbeddedRootScan) {
-            return new MethodReachable(((ObjectScanner.EmbeddedRootScan)reason).getMethod());
-        }
         Object responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(heapObject);
+        if(responsible == null && reason instanceof ObjectScanner.EmbeddedRootScan ers) {
+            return new MethodReachable(ers.getMethod());
+        }
         return getEventForHeapReason(responsible, heapObject);
     }
 
