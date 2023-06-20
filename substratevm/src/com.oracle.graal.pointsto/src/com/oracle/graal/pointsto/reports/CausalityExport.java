@@ -705,6 +705,31 @@ public class CausalityExport {
         }
     }
 
+    public static class ConfigurationCondition extends Event {
+        public final String typeName;
+
+        public ConfigurationCondition(String typeName) {
+            this.typeName = typeName;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ConfigurationCondition that = (ConfigurationCondition) o;
+            return typeName.equals(that.typeName);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ typeName.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return typeName + " [Configuration Condition]";
+        }
+    }
 
 
 
