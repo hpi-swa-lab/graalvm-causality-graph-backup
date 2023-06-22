@@ -57,9 +57,17 @@ public class CausalityExport {
     }
 
     public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
+        /*
+         * When an exception occurs during analysis, the CompletionExecutor will not wait for all analysis threads to finish.
+         * Without giving us a chance to detect this condition, Feature.onAnalysisExit(...) will be called as usual.
+         * Due to an analysis thread issuing additional causality graph edges, we may experience a ConcurrentModificationException.
+         *
+         * As a hotfix, we invalidate the reference to instances prior to merging thread-local data.
+         * Not that while this approach reduces the probability of concurrent modification, we still have undefined behavior!
+         */
+        instances = null;
         Impl data = collectTypeflowInformation ? new TypeflowImpl((Iterable<TypeflowImpl>)(Iterable<? extends Impl>) instancesOfAllThreads, bb) : new Impl(instancesOfAllThreads, bb);
         // Let GC collect intermediate data structures
-        instances = null;
         instancesOfAllThreads = null;
         Graph g = data.createCausalityGraph(bb);
         g.export(bb, zip, exportTypeflowNames);
