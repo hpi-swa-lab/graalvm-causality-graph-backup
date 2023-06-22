@@ -222,12 +222,7 @@ public class SubstrateGraphBuilderPlugins {
     }
 
     public static void registerHeapAssignmentTracingHooksIgnorationPlugin(InvocationPlugins plugins) {
-        Registration r;
-        try {
-            r = new Registration(plugins, Class.forName("HeapAssignmentTracingHooks"));
-        } catch (ClassNotFoundException e) {
-            return; // Heap assignemnt tracing agent is not attached
-        }
+        Registration r = new Registration(plugins, "HeapAssignmentTracingHooks");
 
         r.register(new RequiredInvocationPlugin("onClinitStart") {
             @Override
