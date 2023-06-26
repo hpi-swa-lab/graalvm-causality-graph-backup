@@ -203,7 +203,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return element.getQualifiedName();
+            return element.format("%H.%n(%P):%R");
         }
 
         @Override
@@ -221,7 +221,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.getQualifiedName() + " [Virtual Invoke]";
+            return method.format("%H.%n(%P):%R") + " [Virtual Invoke]";
         }
 
         @Override
@@ -247,7 +247,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.getQualifiedName() + " [Snippet]";
+            return method.format("%H.%n(%P):%R") + " [Snippet]";
         }
 
         @Override
@@ -442,21 +442,12 @@ public class CausalityExport {
         }
 
         private String getTypeName(AnalysisMetaAccess metaAccess) {
-            try {
-                Optional<AnalysisType> ot = metaAccess.optionalLookupJavaType(clazz);
-                if(ot.isPresent())
-                    return ot.get().toJavaName();
-            } catch (UnsupportedFeatureException ex) {
-                // Ignore
-            }
-
-            // Best-effort approach to get a graal-like name
-            return clazz.getTypeName();
+            return metaAccess.getWrapped().lookupJavaType(clazz).toJavaName();
         }
 
         @Override
         public String toString(AnalysisMetaAccess metaAccess) {
-            return getTypeName(metaAccess) + ".<clinit>() [Build-Time]";
+            return getTypeName(metaAccess) + ".<clinit>() [Build-Time] " + clazz;
         }
     }
 
@@ -712,7 +703,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.getQualifiedName() + " [Root Registration]";
+            return method.format("%H.%n(%P):%R") + " [Root Registration]";
         }
     }
 
@@ -764,7 +755,7 @@ public class CausalityExport {
         if(reflectionObject instanceof Class<?>) {
             return metaAccess.lookupJavaType((Class<?>) reflectionObject).toJavaName();
         } else if(reflectionObject instanceof Executable) {
-            return metaAccess.lookupJavaMethod((Executable) reflectionObject).getQualifiedName();
+            return metaAccess.lookupJavaMethod((Executable) reflectionObject).format("%H.%n(%P):%R");
         } else {
             return metaAccess.lookupJavaField((Field) reflectionObject).format("%h.%n");
         }
