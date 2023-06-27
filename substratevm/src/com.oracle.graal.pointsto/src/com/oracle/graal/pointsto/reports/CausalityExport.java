@@ -16,6 +16,11 @@ import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.reports.causality.TypeflowImpl;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaConstant;
+import jdk.vm.ci.meta.JavaField;
+import jdk.vm.ci.meta.JavaMethod;
+import jdk.vm.ci.meta.JavaType;
+import jdk.vm.ci.meta.MetaUtil;
+import jdk.vm.ci.meta.Signature;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
@@ -203,7 +208,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return element.format("%H.%n(%P):%R");
+            return stableMethodName(element);
         }
 
         @Override
@@ -221,7 +226,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.format("%H.%n(%P):%R") + " [Virtual Invoke]";
+            return stableMethodName(method) + " [Virtual Invoke]";
         }
 
         @Override
@@ -247,7 +252,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.format("%H.%n(%P):%R") + " [Snippet]";
+            return stableMethodName(method) + " [Snippet]";
         }
 
         @Override
@@ -271,7 +276,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return element.toJavaName();
+            return stableTypeName(element);
         }
 
         @Override
@@ -294,7 +299,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return type.toJavaName() + " [Instantiated]";
+            return stableTypeName(type) + " [Instantiated]";
         }
 
         @Override
@@ -442,7 +447,7 @@ public class CausalityExport {
         }
 
         private String getTypeName(AnalysisMetaAccess metaAccess) {
-            return metaAccess.getWrapped().lookupJavaType(clazz).toJavaName();
+            return stableTypeName(metaAccess.getWrapped().lookupJavaType(clazz));
         }
 
         @Override
@@ -536,7 +541,7 @@ public class CausalityExport {
 
         @Override
         public String toString(AnalysisMetaAccess metaAccess) {
-            return metaAccess.lookupJavaType(heapObjectType).toJavaName() + " [Unknown Heap Object]";
+            return stableTypeName(metaAccess.lookupJavaType(heapObjectType)) + " [Unknown Heap Object]";
         }
     }
 
@@ -703,7 +708,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return method.format("%H.%n(%P):%R") + " [Root Registration]";
+            return stableMethodName(method) + " [Root Registration]";
         }
     }
 
@@ -752,13 +757,45 @@ public class CausalityExport {
     }
 
     private static String reflectionObjectToGraalLikeString(AnalysisMetaAccess metaAccess, Object reflectionObject) {
-        if(reflectionObject instanceof Class<?>) {
-            return metaAccess.lookupJavaType((Class<?>) reflectionObject).toJavaName();
-        } else if(reflectionObject instanceof Executable) {
-            return metaAccess.lookupJavaMethod((Executable) reflectionObject).format("%H.%n(%P):%R");
+        if(reflectionObject instanceof Class<?> c) {
+            return stableTypeName(metaAccess.lookupJavaType(c));
+        } else if(reflectionObject instanceof Executable e) {
+            return stableMethodName(metaAccess.lookupJavaMethod(e));
         } else {
-            return metaAccess.lookupJavaField((Field) reflectionObject).format("%h.%n");
+            return stableFieldName(metaAccess.lookupJavaField((Field) reflectionObject));
         }
+    }
+
+    // Hotfix until c322e16d4b406f9e6b54a6188d19ef0c3a8b4535 gets merged
+
+    public static String stableTypeName(JavaType t) {
+        return MetaUtil.internalNameToJava(t.getName(), true, false);
+    }
+
+    public static String stableFieldName(JavaField f) {
+        return stableTypeName(f.getDeclaringClass()) + '.' + f.getName();
+    }
+
+    public static String stableMethodName(JavaMethod m) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(stableTypeName(m.getDeclaringClass()));
+        sb.append('.');
+        sb.append(m.getName());
+        sb.append('(');
+
+        Signature sig = m.getSignature();
+        for(int i = 0; i < sig.getParameterCount(false); i++) {
+            if (i != 0) {
+                sb.append(", ");
+            }
+            sb.append(stableTypeName(sig.getParameterType(i, null)));
+        }
+
+        sb.append(')');
+        sb.append(':');
+        sb.append(stableTypeName(sig.getReturnType(null)));
+
+        return sb.toString();
     }
 }
 
