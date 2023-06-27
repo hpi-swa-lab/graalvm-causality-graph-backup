@@ -403,6 +403,9 @@ public class SubstrateOptions {
     @Option(help = "Create text files containing all reachable types and methods, respectively")
     public static final HostedOptionKey<Boolean> GenerateFlatReachability = new HostedOptionKey<>(false);
 
+    @Option(help = "Path pointing to a file with a newline-separated list of methods whose implementation should be ripped out.")
+    public static final HostedOptionKey<String> EviscerateMethodsPath = new HostedOptionKey<>(null);
+
     /*
      * Build output options.
      */

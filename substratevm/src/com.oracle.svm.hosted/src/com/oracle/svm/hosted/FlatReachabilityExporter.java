@@ -91,15 +91,15 @@ public class FlatReachabilityExporter implements InternalFeature {
 
     // Hotfix until c322e16d4b406f9e6b54a6188d19ef0c3a8b4535 gets merged
 
-    private static String stableTypeName(JavaType t) {
+    public static String stableTypeName(JavaType t) {
         return MetaUtil.internalNameToJava(t.getName(), true, false);
     }
 
-    private static String stableFieldName(JavaField f) {
+    public static String stableFieldName(JavaField f) {
         return stableTypeName(f.getDeclaringClass()) + '.' + f.getName();
     }
 
-    private static String stableMethodName(JavaMethod m) {
+    public static String stableMethodName(JavaMethod m) {
         StringBuilder sb = new StringBuilder();
         sb.append(stableTypeName(m.getDeclaringClass()));
         sb.append('.');
