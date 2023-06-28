@@ -444,7 +444,7 @@ public class CausalityExport {
 
         @Override
         public String toString(AnalysisMetaAccess metaAccess) {
-            return getTypeName(metaAccess) + ".<clinit>() [Build-Time] " + clazz;
+            return getTypeName(metaAccess) + ".<clinit>() [Build-Time]";
         }
     }
 
