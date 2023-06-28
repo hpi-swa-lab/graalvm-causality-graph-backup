@@ -63,8 +63,8 @@ public class CausalityExporter implements InternalFeature {
     }
 
     @Override
-    public void onAnalysisExit(OnAnalysisExitAccess access) {
-        BigBang bb = ((FeatureImpl.OnAnalysisExitAccessImpl)access).bb;
+    public void afterAnalysis(AfterAnalysisAccess access) {
+        BigBang bb = ((FeatureImpl.AfterAnalysisAccessImpl)access).bb;
 
         try {
             try {
