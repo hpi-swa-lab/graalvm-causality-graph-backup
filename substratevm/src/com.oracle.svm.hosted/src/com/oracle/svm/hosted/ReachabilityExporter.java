@@ -320,7 +320,7 @@ public class ReachabilityExporter implements InternalFeature {
                     continue;
 
                 Type t = getType(m.getDeclaringClass(), classInitKinds, reflectionTypes, jniTypes);
-                t.methods.add(Pair.create(m.format("%n(%P)"), new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
+                t.methods.add(Pair.create(m.format("%n(%P):%R"), new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
             }
             for (HostedField f : universe.getFields()) {
                 if(!f.getWrapped().isReachable())
