@@ -829,7 +829,7 @@ public abstract class AnalysisMethod extends AnalysisElement implements WrappedJ
 
             AnalysisParsedGraph graph;
             try (var ignored1 = CausalityExport.get().setCause(null)) {
-                try (var ignored2 = CausalityExport.get().setCause(new CausalityExport.MethodReachable(this))) {
+                try (var ignored2 = CausalityExport.get().setCause(new CausalityExport.MethodCode(this))) {
                     graph = AnalysisParsedGraph.parseBytecode(bb, this);
                 }
             }

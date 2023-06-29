@@ -209,6 +209,37 @@ public class CausalityExport {
         }
     }
 
+    public static final class MethodCode extends Event {
+        public final AnalysisMethod method;
+
+        public MethodCode(AnalysisMethod method) {
+            this.method = method;
+        }
+
+        @Override
+        public String toString() {
+            return stableMethodName(method) + " [Impl]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MethodCode that = (MethodCode) o;
+            return method.equals(that.method);
+        }
+
+        @Override
+        public boolean unused() {
+            return !method.isReachable();
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ method.hashCode();
+        }
+    }
+
     public static final class VirtualMethodInvoked extends Event {
         public final AnalysisMethod method;
 

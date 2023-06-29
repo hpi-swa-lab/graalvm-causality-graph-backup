@@ -113,7 +113,7 @@ public class TypeflowImpl extends Impl {
             return flowMapping.computeIfAbsent(flow, f -> {
                 AnalysisMethod m = f.method();
 
-                MethodReachable reason = m == null ? null : new MethodReachable(m);
+                Event reason = m == null ? null : new MethodCode(m);
 
                 if(reason != null && reason.unused())
                     return null;
@@ -124,7 +124,7 @@ public class TypeflowImpl extends Impl {
 
         for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
 
-            MethodReachable reason = new MethodReachable(e.getKey());
+            Event reason = new MethodReachable(e.getKey());
 
             if(reason.unused())
                 continue;
