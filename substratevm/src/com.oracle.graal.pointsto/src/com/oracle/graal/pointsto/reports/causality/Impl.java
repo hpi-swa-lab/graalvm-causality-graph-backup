@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 public class Impl extends CausalityExport {
     private final HashSet<Pair<Event, Event>> direct_edges = new HashSet<>();
@@ -165,12 +166,30 @@ public class Impl extends CausalityExport {
         }
     }
 
+    protected void forEachEvent(Consumer<Event> callback) {
+        for (Pair<Event, Event> e : direct_edges) {
+            callback.accept(e.getLeft());
+            callback.accept(e.getRight());
+        }
+        for (var he : hyper_edges) {
+            callback.accept(he.from1);
+            callback.accept(he.from2);
+            callback.accept(he.to);
+        }
+    }
+
     public Graph createCausalityGraph(PointsToAnalysis bb) {
         Graph g = new Graph();
 
         direct_edges.removeIf(pair -> pair.getRight() instanceof MethodReachable && ((MethodReachable)pair.getRight()).element.isClassInitializer());
 
-        direct_edges.stream().map(Pair::getLeft).filter(from -> from != null && !from.unused() && from.root()).distinct().forEach(from -> g.directEdges.add(new Graph.DirectEdge(null, from)));
+        HashSet<Event> events = new HashSet<>();
+        forEachEvent(events::add);
+        for (Event e : events) {
+            if (e != null && !e.unused() && e.root()) {
+                g.directEdges.add(new Graph.DirectEdge(null, e));
+            }
+        }
 
         for (AnalysisMethod m : bb.getUniverse().getMethods()) {
             if (m.isReachable()) {

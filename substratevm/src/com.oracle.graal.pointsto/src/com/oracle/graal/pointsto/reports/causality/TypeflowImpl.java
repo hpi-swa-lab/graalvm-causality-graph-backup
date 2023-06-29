@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class TypeflowImpl extends Impl {
@@ -97,6 +98,28 @@ public class TypeflowImpl extends Impl {
     @Override
     public void addVirtualInvokeTypeFlow(AbstractVirtualInvokeTypeFlow invocation) {
         originalInvokeReceivers.put(invocation, invocation.method() == null ? null : invocation.getReceiver());
+    }
+
+    protected void forEachTypeflow(Consumer<TypeFlow<?>> callback) {
+        for (var e : interflows) {
+            callback.accept(e.getLeft());
+            callback.accept(e.getRight());
+        }
+    }
+
+    @Override
+    protected void forEachEvent(Consumer<Event> callback) {
+        super.forEachEvent(callback);
+
+        flowingFromHeap.keySet().stream().map(Pair::getLeft).forEach(callback);
+        virtual_invokes.keySet().stream().map(MethodReachable::new).forEach(callback);
+
+        forEachTypeflow(tf -> {
+            if(tf != null && tf.method() != null) {
+                callback.accept(new MethodCode(tf.method()));
+                callback.accept(new MethodReachable(tf.method()));
+            }
+        });
     }
 
     @Override
