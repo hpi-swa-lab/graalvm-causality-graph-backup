@@ -410,20 +410,24 @@ public class JNIAccessFeature implements Feature {
 
     private JNIJavaCallVariantWrapperGroup createJavaCallVariantWrappers(DuringAnalysisAccessImpl access, SimpleSignature wrapperSignature, boolean nonVirtual) {
         var map = nonVirtual ? nonvirtualCallVariantWrappers : callVariantWrappers;
+        CausalityExport.get().registerEvent(new CausalityExport.JniCallVariantWrapper(wrapperSignature, !nonVirtual));
         return map.computeIfAbsent(wrapperSignature, signature -> {
-            MetaAccessProvider originalMetaAccess = access.getUniverse().getOriginalMetaAccess();
-            WordTypes wordTypes = access.getBigBang().getWordTypes();
-            var varargs = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.VARARGS, nonVirtual, originalMetaAccess, wordTypes);
-            var array = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.ARRAY, nonVirtual, originalMetaAccess, wordTypes);
-            var valist = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.VA_LIST, nonVirtual, originalMetaAccess, wordTypes);
-            Stream<JNIJavaCallVariantWrapperMethod> wrappers = Stream.of(varargs, array, valist);
-            CEntryPointData unpublished = CEntryPointData.createCustomUnpublished();
-            wrappers.forEach(wrapper -> {
-                AnalysisMethod analysisWrapper = access.getUniverse().lookup(wrapper);
-                access.getBigBang().addRootMethod(analysisWrapper, true);
-                analysisWrapper.registerAsEntryPoint(unpublished); // ensures C calling convention
-            });
-            return new JNIJavaCallVariantWrapperGroup(varargs, array, valist);
+            try (var ignored0 = CausalityExport.get().setCause(null);
+                 var ignored = CausalityExport.get().setCause(new CausalityExport.JniCallVariantWrapper(wrapperSignature, !nonVirtual))) {
+                MetaAccessProvider originalMetaAccess = access.getUniverse().getOriginalMetaAccess();
+                WordTypes wordTypes = access.getBigBang().getWordTypes();
+                var varargs = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.VARARGS, nonVirtual, originalMetaAccess, wordTypes);
+                var array = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.ARRAY, nonVirtual, originalMetaAccess, wordTypes);
+                var valist = new JNIJavaCallVariantWrapperMethod(signature, CallVariant.VA_LIST, nonVirtual, originalMetaAccess, wordTypes);
+                Stream<JNIJavaCallVariantWrapperMethod> wrappers = Stream.of(varargs, array, valist);
+                CEntryPointData unpublished = CEntryPointData.createCustomUnpublished();
+                wrappers.forEach(wrapper -> {
+                    AnalysisMethod analysisWrapper = access.getUniverse().lookup(wrapper);
+                    access.getBigBang().addRootMethod(analysisWrapper, true);
+                    analysisWrapper.registerAsEntryPoint(unpublished); // ensures C calling convention
+                });
+                return new JNIJavaCallVariantWrapperGroup(varargs, array, valist);
+            }
         });
     }
 

@@ -761,6 +761,39 @@ public class CausalityExport {
         }
     }
 
+    public static class JniCallVariantWrapper extends Event {
+        public final Signature signature;
+        public final boolean virtual;
+
+        public JniCallVariantWrapper(Signature signature, boolean virtual) {
+            this.signature = signature;
+            this.virtual = virtual;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            JniCallVariantWrapper that = (JniCallVariantWrapper) o;
+
+            if (virtual != that.virtual) return false;
+            return signature.equals(that.signature);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = signature.hashCode();
+            result = 31 * result + (virtual ? 1 : 0);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return signature + (virtual ? " [Virtual JNI Call Variant Wrapper]" : " [JNI Call Variant Wrapper]");
+        }
+    }
+
 
 
     private static String reflectionObjectToString(Object reflectionObject)
