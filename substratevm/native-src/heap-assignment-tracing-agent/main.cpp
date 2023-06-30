@@ -147,14 +147,14 @@ public:
     }
 };
 
-struct ObjectContext
+class ObjectContext
 {
     static inline uint64_t next_id = 0;
     static inline mutex creation_mutex;
 
     // This id is unique even after collection by GC
-    uint64_t id;
-    jobject allocReason = nullptr;
+    uint64_t _id;
+    jobject _allocReason = nullptr;
 
     static ObjectContext* create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o);
 
@@ -164,7 +164,10 @@ protected:
 public:
     virtual ~ObjectContext() = default;
 
-    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o);
+    [[nodiscard]] uint64_t id() const { return _id; }
+    [[nodiscard]] jobject allocReason() const { return _allocReason; }
+
+    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason);
 
     static ObjectContext* get(jvmtiEnv* jvmti_env, jobject o);
 };
@@ -191,7 +194,7 @@ public:
     [[nodiscard]] jobject getAllocReason() const
     {
         if (complexData) {
-            return getComplexData()->allocReason;
+            return getComplexData()->allocReason();
         } else {
             return reinterpret_cast<jobject>(ptr);
         }
@@ -216,14 +219,17 @@ ObjectContext* ObjectContext::get(jvmtiEnv* jvmti_env, jobject o)
     return ObjectTag::get(jvmti_env, o).getComplexData();
 }
 
-ObjectContext* ObjectContext::get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o)
+ObjectContext* ObjectContext::get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o, jobject allocReason)
 {
     ObjectContext* oc = ObjectContext::get(jvmti_env, o);
 
-    if(oc)
-        return oc;
+    if(!oc)
+        oc = create(jvmti_env, env, o);
 
-    return create(jvmti_env, env, o);
+    if(!oc->_allocReason)
+        oc->_allocReason = allocReason;
+
+    return oc;
 }
 
 struct Write
@@ -314,12 +320,12 @@ class WriteHistory
 public:
     void add(ObjectContext* o, jobject reason)
     {
-        history.push({o->id, reason});
+        history.push({o->id(), reason});
     }
 
     jobject lookup(ObjectContext* writtenVal)
     {
-        uint64_t id = writtenVal->id;
+        uint64_t id = writtenVal->id();
         for(const Write& write : history)
         {
             if(write.object_id == id)
@@ -330,11 +336,12 @@ public:
 };
 
 
-struct ClassInfo
+class ClassInfo
 {
     unordered_map<jfieldID, size_t> nonstatic_field_indices;
     unordered_map<jfieldID, size_t> static_field_indices;
 
+public:
     ClassInfo(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
     {
         do
@@ -371,16 +378,35 @@ struct ClassInfo
         while(klass);
     }
 
+    [[nodiscard]] size_t n_static_fields() const
+    {
+        return static_field_indices.size();
+    }
+
+    [[nodiscard]] size_t n_nonstatic_fields() const
+    {
+        return nonstatic_field_indices.size();
+    }
+
     size_t get_nonstatic_field_index(jfieldID field) const
     {
         auto it = nonstatic_field_indices.find(field);
         assert(it != nonstatic_field_indices.end());
+        assert(it->second < nonstatic_field_indices.size());
+        return it->second;
+    }
+
+    size_t get_static_field_index(jfieldID field) const
+    {
+        auto it = static_field_indices.find(field);
+        assert(it != static_field_indices.end());
+        assert(it->second < static_field_indices.size());
         return it->second;
     }
 };
 
 
-struct NonArrayObjectContext : public ObjectContext
+class NonArrayObjectContext : public ObjectContext
 {
     shared_ptr<const ClassInfo> cc;
     vector<WriteHistory> fields_history;
@@ -397,28 +423,28 @@ public:
 
 class ClassContext : public NonArrayObjectContext
 {
-    struct LazyData
+    class LazyData
     {
-        shared_ptr<const ClassInfo> info;
+        shared_ptr<const ClassInfo> _info;
         unique_ptr<WriteHistory[]> fields_history = nullptr;
 
-        LazyData(shared_ptr<const ClassInfo> info) : info(std::move(info)), fields_history(new WriteHistory[this->info->static_field_indices.size()]())
+    public:
+        LazyData(shared_ptr<const ClassInfo> info) : _info(std::move(info)), fields_history(new WriteHistory[this->_info->n_static_fields()]())
         {}
 
         void registerStaticWrite(jfieldID field, ObjectContext* newVal, jobject reason)
         {
-            auto lookup_res = info->static_field_indices.find(field);
-            assert(lookup_res != info->static_field_indices.end());
-            assert(lookup_res->second < info->static_field_indices.size());
-            fields_history[lookup_res->second].add(newVal, reason);
+            fields_history[_info->get_static_field_index(field)].add(newVal, reason);
         }
 
         jobject getStaticFieldReason(jfieldID field, ObjectContext* writtenVal)
         {
-            auto it = info->static_field_indices.find(field);
-            assert(it != info->static_field_indices.end());
-            assert(it->second < info->static_field_indices.size());
-            return fields_history[it->second].lookup(writtenVal);
+            return fields_history[_info->get_static_field_index(field)].lookup(writtenVal);
+        }
+
+        [[nodiscard]] const shared_ptr<const ClassInfo>& info() const
+        {
+            return _info;
         }
     };
 
@@ -470,46 +496,34 @@ public:
         return data(jvmti_env, jni_env).getStaticFieldReason(field, writtenVal);
     }
 
-    shared_ptr<const ClassInfo> info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
+    const shared_ptr<const ClassInfo>& info(jvmtiEnv* jvmti_env, JNIEnv* jni_env)
     {
-        return data(jvmti_env, jni_env).info;
+        return data(jvmti_env, jni_env).info();
     }
 
     static ClassContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* jni_env, jclass klass)
     {
-        return dynamic_cast<ClassContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, klass));
+        return dynamic_cast<ClassContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, klass, nullptr));
     }
 
     jobject made_reachable_by = nullptr;
 };
 
-NonArrayObjectContext::NonArrayObjectContext(shared_ptr<const ClassInfo> cc) : cc(std::move(cc)), fields_history(this->cc->nonstatic_field_indices.size())
+NonArrayObjectContext::NonArrayObjectContext(shared_ptr<const ClassInfo> cc) : cc(std::move(cc)), fields_history(this->cc->n_nonstatic_fields())
 {}
 
 void NonArrayObjectContext::registerWrite(jfieldID field, ObjectContext* newVal, jobject reason)
 {
-    auto it = cc->nonstatic_field_indices.find(field);
-    assert(it != cc->nonstatic_field_indices.end());
-    assert(it->second < fields_history.size());
-    fields_history[it->second].add(newVal, reason);
+    fields_history[cc->get_nonstatic_field_index(field)].add(newVal, reason);
 }
 
 jobject NonArrayObjectContext::getWriteReason(jfieldID field, ObjectContext* writtenVal)
 {
-    auto it = cc->nonstatic_field_indices.find(field);
-
-    if(it == cc->nonstatic_field_indices.end())
-    {
-        // May happen when the field of a substitution is accessed
-        return nullptr;
-    }
-
-    assert(it->second < fields_history.size());
-    return fields_history[it->second].lookup(writtenVal);
+    return fields_history[cc->get_nonstatic_field_index(field)].lookup(writtenVal);
 }
 
 
-struct ArrayObjectContext : public ObjectContext
+class ArrayObjectContext : public ObjectContext
 {
     vector<WriteHistory> elements_history;
 
@@ -584,8 +598,8 @@ ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o
         }
         else
         {
-            oc->id = next_id++;
-            oc->allocReason = oldTag.getAllocReason();
+            oc->_id = next_id++;
+            oc->_allocReason = oldTag.getAllocReason();
             ObjectTag::set(jvmti_env, o, ObjectTag(oc));
         }
     }
@@ -633,7 +647,7 @@ static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, 
     if(made_reachable_by && reason)
     {
         // Use tc->clinit_top because thats a global ref now...
-        ObjectContext* oc = ObjectContext::get_or_create(jvmti_env, env, tc->clinit_top());
+        ObjectContext* oc = ObjectContext::get_or_create(jvmti_env, env, tc->clinit_top(), nullptr);
 
         if(auto* cc = dynamic_cast<ClassContext*>(oc))
         {
@@ -876,20 +890,15 @@ static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject va
 
         AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-        if(!tc->reason(true))
+        auto cause = tc->reason(true);
+        if(!cause)
             return;
 
         if(val)
         {
-            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val);
-            // TODO: Uncomment
-            if(!val_oc->allocReason)
-                val_oc->allocReason = tc->reason(true);
-            ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr);
-            // TODO: Uncomment
-            if(!arr_oc->allocReason)
-                arr_oc->allocReason = tc->reason(true);
-            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->reason(true));
+            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val, cause);
+            ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr, cause);
+            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, cause);
             increase_log_cnt();
         }
 
@@ -1065,28 +1074,23 @@ static void onFieldModification(
     acquire_jvmti_and_wrap_exceptions([&](){
         AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-        assert(tc->reason(true));
+        auto cause = tc->reason(true);
+        assert(cause);
 
-        if(tc->reason(true))
+        if(cause)
         {
-            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l);
-            // TODO: Uncomment
-            if(!val_oc->allocReason)
-                val_oc->allocReason = tc->reason(true);
+            ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l, cause);
 
             if(object)
             {
-                auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object);
-                // TODO: Uncomment
-                if(!object_oc->allocReason)
-                    object_oc->allocReason = tc->reason(true);
-                object_oc->registerWrite(field, val_oc, tc->reason(true));
+                auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object, cause);
+                object_oc->registerWrite(field, val_oc, cause);
                 increase_log_cnt();
             }
             else
             {
                 ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
-                cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->reason(true));
+                cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, cause);
                 increase_log_cnt();
             }
         }
@@ -1284,10 +1288,10 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onThreadStart(
         char outer_clinit_name[1024];
         get_class_name(jvmti_env, tc->clinit_top(), outer_clinit_name);
 
-        jvmtiThreadInfo info;
-        check(jvmti_env->GetThreadInfo(newThread, &info));
+        jvmtiThreadInfo _info;
+        check(jvmti_env->GetThreadInfo(newThread, &_info));
 
-        cerr << outer_clinit_name << ": " << "Thread.start(): \"" << info.name << "\"\n";
+        cerr << outer_clinit_name << ": " << "Thread.start(): \"" << _info.name << "\"\n";
     });
 #endif
 }
@@ -1317,8 +1321,12 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 {
     return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env) -> jobject
     {
-        auto declaring_cc = ClassContext::get_or_create(jvmti_env, env, declaring);
+        auto declaring_cc = dynamic_cast<ClassContext*>(ObjectContext::get(jvmti_env, declaring));
+        if(!declaring_cc)
+            return nullptr;
         auto val_oc = (NonArrayObjectContext*) ObjectContext::get(jvmti_env, val);
+        if(!val_oc)
+            return nullptr;
 
         jint class_status;
         check(jvmti_env->GetClassStatus(declaring, &class_status));
@@ -1331,10 +1339,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
             return nullptr;
         }
 
-        jobject res = nullptr;
-        if(val_oc)
-            res = declaring_cc->getStaticFieldReason(jvmti_env, env, env->FromReflectedField(field), val_oc);
-        return res;
+        return declaring_cc->getStaticFieldReason(jvmti_env, env, env->FromReflectedField(field), val_oc);
     });
 }
 
@@ -1355,8 +1360,8 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 {
     return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        ClassContext* cc = ClassContext::get_or_create(jvmti_env, env, clazz);
-        return cc->made_reachable_by;
+        auto cc = dynamic_cast<ClassContext*>(ObjectContext::get(jvmti_env, clazz));
+        return cc ? cc->made_reachable_by : nullptr;
     });
 }
 
