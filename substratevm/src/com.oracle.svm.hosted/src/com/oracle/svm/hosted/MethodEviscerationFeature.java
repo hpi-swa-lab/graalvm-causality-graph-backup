@@ -10,6 +10,7 @@ import com.oracle.svm.hosted.phases.HostedGraphKit;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
+import org.graalvm.compiler.bytecode.Bytecodes;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.nodes.ConstantNode;
@@ -89,16 +90,27 @@ public class MethodEviscerationFeature implements InternalFeature {
         }
 
         @Override
-        public int getModifiers() {
-            return original.getModifiers() & ~(Modifier.SYNCHRONIZED | Modifier.NATIVE);
+        public StructuredGraph buildGraph(DebugContext debug, ResolvedJavaMethod method, HostedProviders providers, Purpose purpose) {
+            return null;
         }
 
         @Override
-        public StructuredGraph buildGraph(DebugContext debug, ResolvedJavaMethod method, HostedProviders providers, Purpose purpose) {
-            HostedGraphKit kit = new HostedGraphKit(debug, providers, method, purpose);
-            JavaKind returnKind = original.getSignature().getReturnKind();
-            kit.createReturn(returnKind == JavaKind.Void ? null : new ConstantNode(JavaConstant.defaultForKind(returnKind), StampFactory.forKind(returnKind)), returnKind);
-            return kit.finalizeGraph();
+        public byte[] getCode() {
+            return switch(original.getSignature().getReturnKind()) {
+                case Boolean, Byte, Short, Char, Int -> new byte[] { Bytecodes.ICONST_0, (byte)Bytecodes.IRETURN };
+                case Long -> new byte[] { Bytecodes.LCONST_0, (byte)Bytecodes.LRETURN };
+                case Float -> new byte[] { Bytecodes.FCONST_0, (byte)Bytecodes.FRETURN };
+                case Double -> new byte[] { Bytecodes.DCONST_0, (byte)Bytecodes.DRETURN };
+                case Object -> new byte[] { Bytecodes.ACONST_NULL, (byte)Bytecodes.ARETURN };
+                case Void -> new byte[] { (byte)Bytecodes.RETURN };
+                case Illegal -> null;
+            };
+        }
+
+        @Override
+        public int getCodeSize() {
+            byte[] code = getCode();
+            return code == null ? 0 : code.length;
         }
     }
 }
