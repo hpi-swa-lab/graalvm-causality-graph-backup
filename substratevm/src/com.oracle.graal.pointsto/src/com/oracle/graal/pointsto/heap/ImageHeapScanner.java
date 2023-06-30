@@ -269,10 +269,26 @@ public abstract class ImageHeapScanner {
             newImageHeapConstant = createImageHeapInstance(constant, type, reason);
             AnalysisType typeFromClassConstant = (AnalysisType) constantReflection.asJavaType(constant);
             if (typeFromClassConstant != null) {
-                CausalityExport.Event cause = CausalityExport.get().getHeapObjectCreator(bb, constant, null /* Avoid getting Jdk Reflection methods as reason for every type */);
-                if (cause instanceof CausalityExport.UnknownHeapObject) {
+                CausalityExport.Event cause = null;
+                if (reason instanceof FieldScan fs) {
+                    cause = CausalityExport.get().getHeapFieldAssigner(bb, fs.constant, fs.getField(), constant);
+                } else if (reason instanceof ArrayScan as) {
+                    cause = CausalityExport.get().getHeapArrayAssigner(bb, as.constant, 0 /* Best-effort */, constant);
+                }
+
+                if (cause == null || cause instanceof CausalityExport.UnknownHeapObject) {
                     // Objects created by the analysis itself would add too many types as roots...
                     cause = CausalityExport.Ignored.Instance; // Causality-TODO!
+                } else {
+                    CausalityExport.Event typeObjectInHeap;
+                    Object unwrapped = asObject(constant);
+                    if(unwrapped instanceof Class<?>) {
+                        typeObjectInHeap = new CausalityExport.HeapObjectClass(typeFromClassConstant.getJavaClass());
+                    } else {
+                        typeObjectInHeap = new CausalityExport.HeapObjectDynamicHub(typeFromClassConstant.getJavaClass());
+                    }
+                    CausalityExport.get().registerEdge(cause, typeObjectInHeap);
+                    cause = typeObjectInHeap;
                 }
                 try(var ignored = CausalityExport.get().setCause(cause)) {
                     typeFromClassConstant.registerAsReachable(reason);
@@ -299,7 +315,9 @@ public abstract class ImageHeapScanner {
 
     private ImageHeapInstance createImageHeapInstance(JavaConstant constant, AnalysisType type, ScanReason reason) {
         /* We are about to query the type's fields, the type must be marked as reachable. */
-        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, constant, reason))) {
+        var inHeap = new CausalityExport.TypeInHeap(type);
+        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(bb, constant, reason), inHeap);
+        try(var ignored = CausalityExport.get().setCause(inHeap)) {
             type.registerAsReachable(reason);
         }
         ResolvedJavaField[] instanceFields = type.getInstanceFields(true);

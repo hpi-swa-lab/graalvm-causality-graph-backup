@@ -767,7 +767,7 @@ public class NativeImageGenerator {
                 BeforeAnalysisAccessImpl config = new BeforeAnalysisAccessImpl(featureHandler, loader, bb, nativeLibraries, debug);
                 ServiceCatalogSupport.singleton().enableServiceCatalogMapTransformer(config);
                 featureHandler.forEachFeature(feature -> {
-                    try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature))) {
+                    try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
                         feature.beforeAnalysis(config);
                     }
                 });
@@ -784,7 +784,7 @@ public class NativeImageGenerator {
                         try (StopTimer t2 = TimerCollection.createTimerAndStart(TimerCollection.Registry.FEATURES)) {
                             bb.getHostVM().notifyClassReachabilityListener(universe, config);
                             featureHandler.forEachFeature(feature -> {
-                                try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature))) {
+                                try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
                                     feature.duringAnalysis(config);
                                 }
                             });

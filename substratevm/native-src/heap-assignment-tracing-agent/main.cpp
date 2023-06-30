@@ -82,12 +82,22 @@ static void JNICALL onThreadEnd(
 
 static void JNICALL onObjectFree(
         jvmtiEnv *jvmti_env,
-        jlong tag);
+        jlong tagInt);
+
+static void JNICALL onVMObjectAlloc(
+        jvmtiEnv *jvmti_env,
+        JNIEnv* jni_env,
+        jthread thread,
+        jobject object,
+        jclass object_klass,
+        jlong size);
 
 
 class AgentThreadContext
 {
     vector<jobject> runningClassInitializations;
+    jobject current_cause = nullptr;
+    bool current_cause_record_heap_assignments = false;
 
 public:
     static AgentThreadContext* from_thread(jvmtiEnv* jvmti_env, jthread t)
@@ -124,9 +134,16 @@ public:
         return runningClassInitializations.back();
     }
 
-    [[nodiscard]] bool clinit_empty() const
+    [[nodiscard]] jobject reason(bool heap_assignment) const
     {
-        return runningClassInitializations.empty();
+        return !runningClassInitializations.empty() ? runningClassInitializations.back() : ((heap_assignment && !current_cause_record_heap_assignments) ? nullptr : current_cause);
+    }
+
+    void set_current_cause(JNIEnv* env, jobject cause, bool record_heap_assignments)
+    {
+        assert(runningClassInitializations.empty());
+        current_cause = cause ? env->NewGlobalRef(cause) : nullptr;
+        current_cause_record_heap_assignments = record_heap_assignments;
     }
 };
 
@@ -147,23 +164,67 @@ protected:
 public:
     virtual ~ObjectContext() = default;
 
-    static ObjectContext* get(jvmtiEnv* jvmti_env, jobject o)
+    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o);
+
+    static ObjectContext* get(jvmtiEnv* jvmti_env, jobject o);
+};
+
+class ObjectTag
+{
+    static_assert(sizeof(uintptr_t) == 8);
+
+    bool complexData : 1;
+    uintptr_t ptr : 63;
+
+    ObjectTag() = default;
+
+public:
+    explicit ObjectTag(jobject allocReason) : complexData(false), ptr(reinterpret_cast<uintptr_t>(allocReason)) {}
+
+    explicit ObjectTag(ObjectContext* oc) : complexData(true), ptr(reinterpret_cast<uintptr_t>(oc)) {}
+
+    [[nodiscard]] ObjectContext* getComplexData() const
     {
-        ObjectContext* oc;
-        check(jvmti_env->GetTag(o, (jlong*)&oc));
-        return oc;
+        return complexData ? reinterpret_cast<ObjectContext*>(ptr) : nullptr;
     }
 
-    static ObjectContext* get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o)
+    [[nodiscard]] jobject getAllocReason() const
     {
-        ObjectContext* oc = get(jvmti_env, o);
+        if (complexData) {
+            return getComplexData()->allocReason;
+        } else {
+            return reinterpret_cast<jobject>(ptr);
+        }
+    }
 
-        if(!oc)
-            oc = create(jvmti_env, env, o);
+    static void set(jvmtiEnv* jvmti_env, jobject o, ObjectTag tag)
+    {
+        check(jvmti_env->SetTag(o, *reinterpret_cast<jlong*>(&tag)));
+    }
 
-        return oc;
+    static ObjectTag get(jvmtiEnv* jvmti_env, jobject o)
+    {
+        ObjectTag tag;
+        check(jvmti_env->GetTag(o, reinterpret_cast<jlong*>(&tag)));
+        return tag;
     }
 };
+static_assert(sizeof(ObjectTag) == sizeof(jlong));
+
+ObjectContext* ObjectContext::get(jvmtiEnv* jvmti_env, jobject o)
+{
+    return ObjectTag::get(jvmti_env, o).getComplexData();
+}
+
+ObjectContext* ObjectContext::get_or_create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o)
+{
+    ObjectContext* oc = ObjectContext::get(jvmti_env, o);
+
+    if(oc)
+        return oc;
+
+    return create(jvmti_env, env, o);
+}
 
 struct Write
 {
@@ -511,21 +572,21 @@ ObjectContext* ObjectContext::create(jvmtiEnv* jvmti_env, JNIEnv* env, jobject o
 
     {
         lock_guard<mutex> l(ObjectContext::creation_mutex);
-        jlong oldTag;
-        check(jvmti_env->GetTag(o, &oldTag));
+        ObjectTag oldTag = ObjectTag::get(jvmti_env, o);
 
-        if(oldTag)
+        if(auto alreadyExistingOc = oldTag.getComplexData())
         {
 #if LOG
             cerr << "Concurrent ObjectContext creation!\n";
 #endif
             delete oc;
-            oc = (ObjectContext*)oldTag;
+            oc = alreadyExistingOc;
         }
         else
         {
             oc->id = next_id++;
-            check(jvmti_env->SetTag(o, (jlong)oc));
+            oc->allocReason = oldTag.getAllocReason();
+            ObjectTag::set(jvmti_env, o, ObjectTag(oc));
         }
     }
 
@@ -542,7 +603,7 @@ static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, 
     AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
 #if BREAKPOINTS_ENABLE
-    if(tc->clinit_empty())
+    if(!tc->reason(true))
     {
         check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
     }
@@ -566,7 +627,7 @@ static void addToTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thread, 
     }
 #endif
 
-    jobject made_reachable_by = tc->clinit_empty() ? nullptr : tc->clinit_top();
+    jobject made_reachable_by = tc->reason(false);
     tc->clinit_push(env, reason);
 
     if(made_reachable_by && reason)
@@ -591,7 +652,7 @@ static void removeFromTracingStack(jvmtiEnv* jvmti_env, JNIEnv* env, jthread thr
     tc->clinit_pop(env);
 
 #if BREAKPOINTS_ENABLE
-    if(tc->clinit_empty())
+    if(!tc->reason(true))
     {
         check(jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
     }
@@ -615,8 +676,8 @@ class Environment
 
     static jvmtiIterationControl JNICALL heapObjectCallback(jlong class_tag, jlong size, jlong* tag_ptr, void* user_data)
     {
-        ObjectContext* oc = *(ObjectContext**)tag_ptr;
-        delete oc;
+        ObjectTag tag = *reinterpret_cast<ObjectTag*>(tag_ptr);
+        delete tag.getComplexData();
         return JVMTI_ITERATION_CONTINUE;
     }
 
@@ -752,6 +813,7 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved)
     callbacks.ThreadStart = onThreadStart;
     callbacks.ThreadEnd = onThreadEnd;
     callbacks.ObjectFree = onObjectFree;
+    callbacks.VMObjectAlloc = onVMObjectAlloc;
 
     check_code(1, env->SetEventCallbacks(&callbacks, sizeof(callbacks)));
     check_code(1, env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, nullptr));
@@ -814,18 +876,20 @@ static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject va
 
         AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-        if(tc->clinit_empty())
+        if(!tc->reason(true))
             return;
 
         if(val)
         {
             ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val);
+            // TODO: Uncomment
             if(!val_oc->allocReason)
-                val_oc->allocReason = tc->clinit_top();
+                val_oc->allocReason = tc->reason(true);
             ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr);
+            // TODO: Uncomment
             if(!arr_oc->allocReason)
-                arr_oc->allocReason = tc->clinit_top();
-            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->clinit_top());
+                arr_oc->allocReason = tc->reason(true);
+            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, tc->reason(true));
             increase_log_cnt();
         }
 
@@ -1001,26 +1065,28 @@ static void onFieldModification(
     acquire_jvmti_and_wrap_exceptions([&](){
         AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
 
-        assert(!tc->clinit_empty());
+        assert(tc->reason(true));
 
-        if(!tc->clinit_empty())
+        if(tc->reason(true))
         {
             ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, jni_env, new_value.l);
+            // TODO: Uncomment
             if(!val_oc->allocReason)
-                val_oc->allocReason = tc->clinit_top();
+                val_oc->allocReason = tc->reason(true);
 
             if(object)
             {
                 auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object);
+                // TODO: Uncomment
                 if(!object_oc->allocReason)
-                    object_oc->allocReason = tc->clinit_top();
-                object_oc->registerWrite(field, val_oc, tc->clinit_top());
+                    object_oc->allocReason = tc->reason(true);
+                object_oc->registerWrite(field, val_oc, tc->reason(true));
                 increase_log_cnt();
             }
             else
             {
                 ClassContext* cc = ClassContext::get_or_create(jvmti_env, jni_env, field_klass);
-                cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->clinit_top());
+                cc->registerStaticWrite(jvmti_env, jni_env, field, val_oc, tc->reason(true));
                 increase_log_cnt();
             }
         }
@@ -1110,6 +1176,13 @@ static void JNICALL onClassFileLoad(
     });
 }
 
+static void record_allocation(jvmtiEnv* jvmti_env, jthread thread, jobject newInstance)
+{
+    AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+    if(auto cause = tc->reason(false))
+        ObjectTag::set(jvmti_env, newInstance, ObjectTag(cause));
+}
+
 extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onInitStart(JNIEnv* env, jobject self, jobject instance)
 {
     if (!instance) // Happens during our first invocation that ensures linkage
@@ -1118,15 +1191,7 @@ extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onInitStart(JN
     acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env) {
         jthread thread;
         check(jvmti_env->GetCurrentThread(&thread));
-
-        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
-
-        if(tc->clinit_empty())
-            return;
-
-        ObjectContext* instance_oc = ObjectContext::get_or_create(jvmti_env, env, instance);
-        if(!instance_oc->allocReason)
-            instance_oc->allocReason = tc->clinit_top();
+        record_allocation(jvmti_env, thread, instance);
     });
 }
 
@@ -1171,16 +1236,24 @@ static void JNICALL onThreadEnd(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread th
     });
 }
 
-void onObjectFree(jvmtiEnv *jvmti_env, jlong tag)
+void onObjectFree(jvmtiEnv *jvmti_env, jlong tagInt)
 {
-    // TODO!
     acquire_jvmti_and_wrap_exceptions([&]() {
-#if LOG
-        cerr << "Object freed!\n";
-#endif
+        ObjectTag tag = *reinterpret_cast<ObjectTag*>(&tagInt);
+        delete tag.getComplexData();
+    });
+}
 
-        auto* oc = (ObjectContext*)tag;
-        delete oc;
+static void JNICALL onVMObjectAlloc(
+        jvmtiEnv *jvmti_env,
+        JNIEnv* jni_env,
+        jthread thread,
+        jobject object,
+        jclass object_klass,
+        jlong size)
+{
+    acquire_jvmti_and_wrap_exceptions([&]() {
+        record_allocation(jvmti_env, thread, object);
     });
 }
 
@@ -1223,11 +1296,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 {
     return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        ObjectContext* oc = ObjectContext::get(jvmti_env, imageHeapObject);
-        jobject res = nullptr;
-        if(oc)
-            res = oc->allocReason;
-        return res;
+        return ObjectTag::get(jvmti_env, imageHeapObject).getAllocReason();
     });
 }
 
@@ -1291,23 +1360,14 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
     });
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_beginTracing(JNIEnv* env, jobject thisClass, jobject customReason)
+extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_setCause(JNIEnv* env, jobject thisClass, jobject cause, jboolean recordHeapAssignments)
 {
     acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env)
     {
         jthread thread;
         check(jvmti_env->GetCurrentThread(&thread));
-        addToTracingStack(jvmti_env, env, thread, customReason);
-    });
-}
-
-extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAssignmentTracing_00024NativeImpl_endTracing(JNIEnv* env, jobject thisClass, jobject customReason)
-{
-    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env)
-    {
-        jthread thread;
-        check(jvmti_env->GetCurrentThread(&thread));
-        removeFromTracingStack(jvmti_env, env, thread, customReason);
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+        tc->set_current_cause(env, cause, recordHeapAssignments);
     });
 }
 

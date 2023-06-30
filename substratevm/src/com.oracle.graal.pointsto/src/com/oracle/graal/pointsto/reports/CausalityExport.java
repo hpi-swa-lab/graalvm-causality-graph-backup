@@ -122,26 +122,39 @@ public class CausalityExport {
 
     public void registerTypesEntering(PointsToAnalysis bb, Event cause, TypeFlow<?> destination, TypeState types) {}
 
-    public final CauseToken setCause(Event event) {
-        beginCauseRegion(event);
-        return new CauseToken(event);
+    public enum HeapTracing {
+        None,
+        Allocations,
+        Full
     }
 
-    protected void beginCauseRegion(Event event) {}
+    public final CauseToken setCause(Event event, HeapTracing level) {
+        var token = new CauseToken(event, level);
+        beginCauseRegion(token);
+        return token;
+    }
 
-    protected void endCauseRegion(Event event) {}
+    public final CauseToken setCause(Event event) {
+        return setCause(event, HeapTracing.None);
+    }
+
+    protected void beginCauseRegion(CauseToken token) {}
+
+    protected void endCauseRegion(CauseToken token) {}
 
     // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
     public class CauseToken implements AutoCloseable {
-        private final Event event;
+        public final Event event;
+        public final HeapTracing level;
 
-        CauseToken(Event event) {
+        CauseToken(Event event, HeapTracing level) {
             this.event = event;
+            this.level = level;
         }
 
         @Override
         public void close() {
-            endCauseRegion(event);
+            endCauseRegion(this);
         }
     }
 
@@ -488,7 +501,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return clazz.getTypeName() + " [Class in Heap]";
+            return clazz.getTypeName() + " [Class-Object in Heap]";
         }
 
         @Override
@@ -515,7 +528,7 @@ public class CausalityExport {
 
         @Override
         public String toString() {
-            return forClass.getTypeName() + " [DynamicHub in Heap]";
+            return forClass.getTypeName() + " [DynamicHub-Object in Heap]";
         }
 
         @Override
@@ -565,6 +578,51 @@ public class CausalityExport {
         @Override
         public String toString(AnalysisMetaAccess metaAccess) {
             return stableTypeName(metaAccess.lookupJavaType(heapObjectType)) + " [Unknown Heap Object]";
+        }
+    }
+
+    public static class TypeInHeap extends Event {
+        public final AnalysisType type;
+
+        public TypeInHeap(AnalysisType type) {
+            this.type = type;
+        }
+
+        @Override
+        public String toString() {
+            return stableTypeName(type) + " [Type In Heap]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            TypeInHeap that = (TypeInHeap) o;
+            return type.equals(that.type);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ type.hashCode();
+        }
+    }
+
+    public static final class ReflectionObjectInHeap extends ReflectionObjectRegistration {
+        public ReflectionObjectInHeap(Executable method) {
+            super(method);
+        }
+
+        public ReflectionObjectInHeap(Field field) {
+            super(field);
+        }
+
+        public ReflectionObjectInHeap(Class<?> clazz) {
+            super(clazz);
+        }
+
+        @Override
+        protected String getSuffix() {
+            return " [Reflection Object In Heap]";
         }
     }
 

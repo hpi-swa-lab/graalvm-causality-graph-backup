@@ -409,7 +409,10 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, entry.constant, entry.reason))) {
+
+            var inHeap = new CausalityExport.TypeInHeap(type);
+            CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(bb, entry.constant, entry.reason), inHeap);
+            try(var ignored = CausalityExport.get().setCause(inHeap)) {
                 type.registerAsReachable(entry.reason);
             }
 
@@ -479,7 +482,7 @@ public class ObjectScanner {
 
     public abstract static class ScanReason {
         final ScanReason previous;
-        final JavaConstant constant;
+        public final JavaConstant constant;
 
         protected ScanReason(ScanReason previous, JavaConstant constant) {
             this.previous = previous;

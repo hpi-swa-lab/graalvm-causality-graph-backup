@@ -68,7 +68,7 @@ public class Impl extends CausalityExport {
     @Override
     public void registerEdge(Event cause, Event consequence) {
         if((cause == null || cause.root()) && !causes.empty())
-            cause = causes.peek();
+            cause = causes.peek().event;
 
         direct_edges.add(Pair.create(cause, consequence));
     }
@@ -146,24 +146,32 @@ public class Impl extends CausalityExport {
 
     @Override
     public Event getCause() {
-        return causes.empty() ? null : causes.peek();
+        return causes.empty() ? null : causes.peek().event;
     }
 
-    private final Stack<Event> causes = new Stack<>();
+    private final Stack<CauseToken> causes = new Stack<>();
+
+    private void updateHeapTracing() {
+        CauseToken token = causes.empty() ? null : causes.peek();
+        Event cause = token == null || token.level == HeapTracing.None ? null : token.event;
+        boolean recordHeapAssignments = token != null && token.level == HeapTracing.Full;
+        HeapAssignmentTracing.getInstance().setCause(cause, recordHeapAssignments);
+    }
 
     @Override
-    protected void beginCauseRegion(Event event) {
-        if(!causes.empty() && event != null && causes.peek() != null && !causes.peek().equals(event) && event != Ignored.Instance && causes.peek() != Ignored.Instance && !(causes.peek() instanceof Feature) && !causes.peek().root())
+    protected void beginCauseRegion(CauseToken token) {
+        if(!causes.empty() && token.event != null && causes.peek().event != null && !causes.peek().event.equals(token.event) && token.event != Ignored.Instance && causes.peek().event != Ignored.Instance && !(causes.peek().event instanceof Feature) && !causes.peek().event.root())
             throw new RuntimeException("Stacking Rerooting requests!");
-
-        causes.push(event);
+        causes.push(token);
+        updateHeapTracing();
     }
 
     @Override
-    protected void endCauseRegion(Event event) {
-        if(causes.empty() || causes.pop() != event) {
+    protected void endCauseRegion(CauseToken token) {
+        if(causes.empty() || causes.pop() != token) {
             throw new RuntimeException("Invalid Call to endAccountingRootRegistrationsTo()");
         }
+        updateHeapTracing();
     }
 
     protected void forEachEvent(Consumer<Event> callback) {

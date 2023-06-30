@@ -33,30 +33,7 @@ public class HeapAssignmentTracing {
         return null;
     }
 
-
-    protected void beginTracing(Object customReason) {
-    }
-
-    protected void endTracing(Object customReason) {
-    }
-
-    public final CustomTracingToken trace(Object customReason) {
-        beginTracing(customReason);
-        return new CustomTracingToken(customReason);
-    }
-
-    // Allows the simple usage of accountRootRegistrationsTo() in a try-with-resources statement
-    public class CustomTracingToken implements AutoCloseable {
-        private final Object reason;
-
-        CustomTracingToken(Object reason) {
-            this.reason = reason;
-        }
-
-        @Override
-        public void close() {
-            endTracing(reason);
-        }
+    public void setCause(Object cause, boolean recordHeapAssignments) {
     }
 
     public void dispose() {}
@@ -78,10 +55,7 @@ public class HeapAssignmentTracing {
         public native Object getBuildTimeClinitResponsibleForBuildTimeClinit(Class<?> clazz);
 
         @Override
-        protected native void beginTracing(Object customReason);
-
-        @Override
-        protected native void endTracing(Object customReason);
+        public native void setCause(Object cause, boolean recordHeapAssignments);
 
         @Override
         public native void dispose();

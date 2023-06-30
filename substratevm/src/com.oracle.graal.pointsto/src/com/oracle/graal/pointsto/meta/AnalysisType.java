@@ -479,9 +479,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     public boolean registerAsInHeap(Object reason) {
         assert isValidReason(reason) : "Registering a type as in-heap needs to provide a valid reason.";
-        CausalityExport.get().registerEvent(new CausalityExport.TypeInstantiated(this));
+        var inHeap = new CausalityExport.TypeInHeap(this);
+        var instantiated = new CausalityExport.TypeInstantiated(this);
+        CausalityExport.get().registerEvent(inHeap);
+        CausalityExport.get().registerEdge(inHeap, instantiated);
         try(var ignored0 = CausalityExport.get().setCause(null)) { // Causality-TODO: Get rid of this ugliness...
-            try (var ignored = CausalityExport.get().setCause(new CausalityExport.TypeInstantiated(this))) {
+            try (var ignored = CausalityExport.get().setCause(instantiated)) {
                 registerAsReachable(reason);
             }
         }

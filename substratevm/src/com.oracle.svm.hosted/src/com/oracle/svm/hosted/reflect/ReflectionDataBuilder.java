@@ -994,8 +994,11 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void registerHeapReflectionField(Field reflectField, ScanReason reason) {
         assert !sealed;
-        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectField, reason), new CausalityExport.ReflectionRegistration(reflectField));
-        try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(reflectField))) {
+        var inHeap = new CausalityExport.ReflectionObjectInHeap(reflectField);
+        var reflRegistration = new CausalityExport.ReflectionRegistration(reflectField);
+        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectField, reason), inHeap);
+        CausalityExport.get().registerEdge(inHeap, reflRegistration);
+        try (var ignored = CausalityExport.get().setCause(reflRegistration)) {
             AnalysisField analysisField = metaAccess.lookupJavaField(reflectField);
             if (heapFields.put(analysisField, reflectField) == null && !SubstitutionReflectivityFilter.shouldExclude(reflectField, metaAccess, universe)) {
                 registerTypesForField(analysisField, reflectField);
@@ -1009,8 +1012,11 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     @Override
     public void registerHeapReflectionExecutable(Executable reflectExecutable, ScanReason reason) {
         assert !sealed;
-        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectExecutable, reason), new CausalityExport.ReflectionRegistration(reflectExecutable));
-        try (var ignored = CausalityExport.get().setCause(new CausalityExport.ReflectionRegistration(reflectExecutable))) {
+        var inHeap = new CausalityExport.ReflectionObjectInHeap(reflectExecutable);
+        var reflRegistration = new CausalityExport.ReflectionRegistration(reflectExecutable);
+        CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(reflectExecutable, reason), inHeap);
+        CausalityExport.get().registerEdge(inHeap, reflRegistration);
+        try (var ignored = CausalityExport.get().setCause(reflRegistration)) {
             AnalysisMethod analysisMethod = metaAccess.lookupJavaMethod(reflectExecutable);
             if (heapMethods.put(analysisMethod, reflectExecutable) == null && !SubstitutionReflectivityFilter.shouldExclude(reflectExecutable, metaAccess, universe)) {
                 registerTypesForMethod(analysisMethod, reflectExecutable);
