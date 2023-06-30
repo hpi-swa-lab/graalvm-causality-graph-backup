@@ -1646,6 +1646,7 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
     auto instrumentation_class_name = cpa.append<Utf8_info>(HOOK_CLASS_NAME);
     auto instrumentation_class = cpa.append<Class_info>(instrumentation_class_name);
 
+    auto onInitStart = create_method_ref(cpa, instrumentation_class, "onInitStart", "(Ljava/lang/Object;)V");
     auto onClinitStart = create_method_ref(cpa, instrumentation_class, "onClinitStart", "()V");
     auto onArrayWrite = create_method_ref(cpa, instrumentation_class, "onArrayWrite", "([Ljava/lang/Object;ILjava/lang/Object;)V");
     auto onThreadStart = create_method_ref(cpa, instrumentation_class, "onThreadStart", "(Ljava/lang/Thread;)V");
@@ -1659,6 +1660,11 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
 
     // Insert NOPS behind aastore and then replace it using the newly gained space
     uint8_t call_onArrayWrite_code[4] = { 0 };
+
+    uint8_t call_onInitStart_code[4];
+    call_onInitStart_code[0] = static_cast<uint8_t>(OpCode::aload_0);
+    call_onInitStart_code[1] = static_cast<uint8_t>(OpCode::invokestatic);
+    *(u2*)&call_onInitStart_code[2] = onInitStart.index;
 
     uint8_t call_onClinitStart_code[4];
     call_onClinitStart_code[0] = static_cast<uint8_t>(OpCode::invokestatic);
@@ -1689,6 +1695,7 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
         const auto* code1 = reinterpret_cast<const Code_attribute_1*>(&*code1it);
 
         bool insert_clinit_callback = name == "<clinit>";
+        bool insert_init_callback = name == "<init>" && cp[cp[file2->this_class]->name_index]->str() == "java/lang/Object";
 
 #if LOG
         if(insert_clinit_callback)
@@ -1704,6 +1711,9 @@ bool add_clinit_hook(jvmtiEnv* jvmti_env, const unsigned char* src_start, jint s
 
 
         vector<Insertion> insertions;
+
+        if(insert_init_callback)
+            insertions.push_back({ .data = call_onInitStart_code, .pos = 0 });
 
         if(insert_clinit_callback)
             insertions.push_back({ .data = call_onClinitStart_code, .pos = 0 });

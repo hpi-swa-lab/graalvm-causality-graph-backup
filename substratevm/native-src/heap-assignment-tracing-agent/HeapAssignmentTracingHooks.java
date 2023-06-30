@@ -1,5 +1,7 @@
 public final class HeapAssignmentTracingHooks
 {
+    public static native void onInitStart(Object instance);
+
     public static native void onClinitStart();
 
     private static native void notifyArrayWrite(Object[] arr, int index, Object val);

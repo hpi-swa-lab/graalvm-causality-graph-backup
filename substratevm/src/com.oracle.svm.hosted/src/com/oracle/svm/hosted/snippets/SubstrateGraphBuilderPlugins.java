@@ -224,6 +224,13 @@ public class SubstrateGraphBuilderPlugins {
     public static void registerHeapAssignmentTracingHooksIgnorationPlugin(InvocationPlugins plugins) {
         Registration r = new Registration(plugins, "HeapAssignmentTracingHooks");
 
+        r.register(new RequiredInvocationPlugin("onInitStart", Object.class) {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode instance) {
+                return true;
+            }
+        });
+
         r.register(new RequiredInvocationPlugin("onClinitStart") {
             @Override
             public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {

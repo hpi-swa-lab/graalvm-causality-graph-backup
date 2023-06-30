@@ -867,10 +867,23 @@ static void JNICALL setObjectArrayElement(JNIEnv *env, jobjectArray array, jsize
 
 static void JNICALL onVMInit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread)
 {
+    {
+        /*
+         * Ensure onInitStart is linked:
+         * If it was not linked prior to being installed as a hook, the VM crashes in an endless recursion,
+         * trying to resolve the method, which causes the construction of new objects...
+         */
+        jclass hookClass = jni_env->FindClass(HOOK_CLASS_NAME);
+        jmethodID onInitStart = jni_env->GetStaticMethodID(hookClass, "onInitStart", "(Ljava/lang/Object;)V");
+        jni_env->CallStaticVoidMethod(hookClass, onInitStart, nullptr);
+    }
+
     acquire_jvmti_and_wrap_exceptions([&](){
 #if BREAKPOINTS_ENABLE
         check(jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, nullptr));
+#endif
 
+#if REWRITE_ENABLE || BREAKPOINTS_ENABLE
         jint num_classes;
         jclass* classes_ptr;
 
@@ -878,17 +891,21 @@ static void JNICALL onVMInit(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread threa
 
         for(jclass clazz : classes)
         {
+#if REWRITE_ENABLE
             jboolean is_modifiable;
             check(jvmti_env->IsModifiableClass(clazz, &is_modifiable));
             if(is_modifiable)
                 check(jvmti_env->RetransformClasses(1, &clazz));
+#endif // REWRITE_ENABLE
 
+#if BREAKPOINTS_ENABLE
             jint status;
             check(jvmti_env->GetClassStatus(clazz, &status));
             if(status & JVMTI_CLASS_STATUS_PREPARED)
                 processClass(jvmti_env, clazz);
-        }
 #endif // BREAKPOINTS_ENABLE
+        }
+#endif // REWRITE_ENABLE || BREAKPOINTS_ENABLE
 
         jniNativeInterface* redirected_jni;
         check(jvmti_env->GetJNIFunctionTable(&original_jni));
@@ -1090,6 +1107,26 @@ static void JNICALL onClassFileLoad(
             return;
 
         add_clinit_hook(jvmti_env, class_data, class_data_len, new_class_data, new_class_data_len);
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL Java_HeapAssignmentTracingHooks_onInitStart(JNIEnv* env, jobject self, jobject instance)
+{
+    if (!instance) // Happens during our first invocation that ensures linkage
+        return;
+
+    acquire_jvmti_and_wrap_exceptions([&](jvmtiEnv* jvmti_env) {
+        jthread thread;
+        check(jvmti_env->GetCurrentThread(&thread));
+
+        AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+
+        if(tc->clinit_empty())
+            return;
+
+        ObjectContext* instance_oc = ObjectContext::get_or_create(jvmti_env, env, instance);
+        if(!instance_oc->allocReason)
+            instance_oc->allocReason = tc->clinit_top();
     });
 }
 
