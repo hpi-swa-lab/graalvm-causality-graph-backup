@@ -238,15 +238,26 @@ public class Impl extends CausalityExport {
 
                 for (;;) {
                     buildTimeClinits.add(init);
-                    Object outerInitClazz = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(init.clazz);
-                    if (!(outerInitClazz instanceof Class<?>))
+                    Object outerInitReason = HeapAssignmentTracing.getInstance().getBuildTimeClinitResponsibleForBuildTimeClinit(init.clazz);
+                    if (outerInitReason == null)
                         break;
                     buildTimeClinitsWithReason.add(init);
-                    BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization((Class<?>) outerInitClazz);
-                    g.directEdges.add(new Graph.DirectEdge(outerInit, init));
-                    init = outerInit;
+                    if (outerInitReason instanceof Class<?> outerInitClass) {
+                        BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization(outerInitClass);
+                        g.directEdges.add(new Graph.DirectEdge(outerInit, init));
+                        init = outerInit;
+                    } else {
+                        g.directEdges.add(new Graph.DirectEdge((Event) outerInitReason, init));
+                        break;
+                    }
                 }
             });
+
+            direct_edges.stream()
+                    .map(Pair::getRight)
+                    .filter(e -> e instanceof BuildTimeClassInitialization)
+                    .map(e -> (BuildTimeClassInitialization) e)
+                    .forEach(buildTimeClinitsWithReason::add);
 
             buildTimeClinits.stream().sorted(Comparator.comparing(init -> init.clazz.getTypeName())).forEach(init -> {
                 AnalysisType t;

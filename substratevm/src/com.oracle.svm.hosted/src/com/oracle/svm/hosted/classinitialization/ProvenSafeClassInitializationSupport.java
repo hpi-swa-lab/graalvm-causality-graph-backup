@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.impl.clinit.ClassInitializationTracking;
 
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
@@ -161,6 +162,8 @@ class ProvenSafeClassInitializationSupport extends ClassInitializationSupport {
         UserError.guarantee(!configurationSealed, "The class initialization configuration can be changed only before the phase analysis.");
         classInitializationConfiguration.insert(clazz.getTypeName(), InitKind.RERUN, reason, true);
         checkEagerInitialization(clazz);
+
+        CausalityExport.get().registerEvent(new CausalityExport.BuildTimeClassInitialization(clazz));
 
         try {
             Unsafe.getUnsafe().ensureClassInitialized(clazz);
