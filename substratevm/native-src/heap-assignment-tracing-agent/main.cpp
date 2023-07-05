@@ -897,8 +897,9 @@ static void logArrayWrite(JNIEnv* env, jobjectArray arr, jsize index, jobject va
         if(val)
         {
             ObjectContext* val_oc = ObjectContext::get_or_create(jvmti_env, env, val, cause);
-            ObjectContext* arr_oc = ObjectContext::get_or_create(jvmti_env, env, arr, cause);
-            ((ArrayObjectContext*)arr_oc)->registerWrite(index, val_oc, cause);
+            auto* arr_oc = dynamic_cast<ArrayObjectContext*>(ObjectContext::get_or_create(jvmti_env, env, arr, cause));
+            assert(arr_oc);
+            arr_oc->registerWrite(index, val_oc, cause);
             increase_log_cnt();
         }
 
@@ -1083,7 +1084,8 @@ static void onFieldModification(
 
             if(object)
             {
-                auto object_oc = (NonArrayObjectContext*)ObjectContext::get_or_create(jvmti_env, jni_env, object, cause);
+                auto object_oc = dynamic_cast<NonArrayObjectContext*>(ObjectContext::get_or_create(jvmti_env, jni_env, object, cause));
+                assert(object_oc);
                 object_oc->registerWrite(field, val_oc, cause);
                 increase_log_cnt();
             }
@@ -1308,8 +1310,8 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 {
     return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        auto receiver_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, receiver);
-        auto val_oc = (NonArrayObjectContext*)ObjectContext::get(jvmti_env, val);
+        auto receiver_oc = dynamic_cast<NonArrayObjectContext*>(ObjectContext::get(jvmti_env, receiver));
+        auto val_oc = ObjectContext::get(jvmti_env, val);
         jobject res = nullptr;
         if(receiver_oc && val_oc)
             res = receiver_oc->getWriteReason(env->FromReflectedField(field), val_oc);
@@ -1324,7 +1326,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
         auto declaring_cc = dynamic_cast<ClassContext*>(ObjectContext::get(jvmti_env, declaring));
         if(!declaring_cc)
             return nullptr;
-        auto val_oc = (NonArrayObjectContext*) ObjectContext::get(jvmti_env, val);
+        auto val_oc = ObjectContext::get(jvmti_env, val);
         if(!val_oc)
             return nullptr;
 
@@ -1347,8 +1349,8 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_oracle_graal_pointsto_reports_Heap
 {
     return acquire_jvmti_and_wrap_exceptions<jobject>([&](jvmtiEnv* jvmti_env)
     {
-        auto array_oc = (ArrayObjectContext*) ObjectContext::get(jvmti_env, array);
-        auto val_oc = (NonArrayObjectContext*) ObjectContext::get(jvmti_env, val);
+        auto array_oc = dynamic_cast<ArrayObjectContext*>(ObjectContext::get(jvmti_env, array));
+        auto val_oc = ObjectContext::get(jvmti_env, val);
         jobject res = nullptr;
         if(array_oc && val_oc)
             res = array_oc->getWriteReason(index, val_oc);
