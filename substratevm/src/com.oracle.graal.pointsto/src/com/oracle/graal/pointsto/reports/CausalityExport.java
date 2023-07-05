@@ -908,6 +908,60 @@ public class CausalityExport {
         }
     }
 
+    public static class SubtypeReachableNotificationCallback extends Event {
+        public final BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Class<?>> callback;
+
+        public SubtypeReachableNotificationCallback(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Class<?>> callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public String toString() {
+            return callback + " [Subtype Reachable Callback]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            var that = (SubtypeReachableNotificationCallback) o;
+            return callback.equals(that.callback);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ callback.hashCode();
+        }
+    }
+
+    public static class SubtypeReachableNotificationCallbackInvocation extends Event {
+        public final BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Class<?>> callback;
+        public final AnalysisType subtype;
+
+        public SubtypeReachableNotificationCallbackInvocation(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Class<?>> callback, AnalysisType subtype) {
+            this.callback = callback;
+            this.subtype = subtype;
+        }
+
+        @Override
+        public String toString() {
+            return callback + " + " + stableTypeName(subtype) + " [Subtype Reachable Callback Invocation]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            var that = (SubtypeReachableNotificationCallbackInvocation) o;
+            return callback.equals(that.callback) && subtype.equals(that.subtype);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ callback.hashCode() ^ subtype.hashCode();
+        }
+    }
+
     private static String reflectionObjectToString(Object reflectionObject)
     {
         if(reflectionObject instanceof Class<?>) {

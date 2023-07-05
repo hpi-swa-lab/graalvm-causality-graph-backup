@@ -185,8 +185,15 @@ public abstract class AnalysisElement implements AnnotatedElement {
         public AnalysisFuture<Void> notifyCallback(AnalysisUniverse universe, AnalysisType reachableSubtype) {
             assert reachableSubtype.isReachable();
             return seenSubtypes.computeIfAbsent(reachableSubtype, k -> {
+                CausalityExport.get().registerConjunctiveEdge(
+                        new CausalityExport.SubtypeReachableNotificationCallback(callback),
+                        new CausalityExport.TypeReachable(reachableSubtype),
+                        new CausalityExport.SubtypeReachableNotificationCallbackInvocation(callback, reachableSubtype)
+                );
                 AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                    callback.accept(universe.getConcurrentAnalysisAccess(), reachableSubtype.getJavaClass());
+                    try (var ignored = CausalityExport.get().setCause(new CausalityExport.SubtypeReachableNotificationCallbackInvocation(callback, reachableSubtype))) {
+                        callback.accept(universe.getConcurrentAnalysisAccess(), reachableSubtype.getJavaClass());
+                    }
                     return null;
                 });
                 execute(universe, newValue);

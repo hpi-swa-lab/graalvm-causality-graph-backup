@@ -85,6 +85,7 @@ public class ConcurrentReachabilityHandler extends ReachabilityHandler implement
         AnalysisType baseType = metaAccess.lookupJavaType(baseClass);
 
         SubtypeReachableNotification notification = new SubtypeReachableNotification(callback);
+        CausalityExport.get().registerEvent(new CausalityExport.SubtypeReachableNotificationCallback(callback));
         baseType.registerSubtypeReachabilityNotification(notification);
 
         /*
