@@ -19,6 +19,7 @@ import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaField;
 import jdk.vm.ci.meta.JavaMethod;
 import jdk.vm.ci.meta.JavaType;
+import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.MetaUtil;
 import jdk.vm.ci.meta.Signature;
 
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.zip.ZipOutputStream;
@@ -852,7 +854,59 @@ public class CausalityExport {
         }
     }
 
+    public static class OverrideReachableNotificationCallback extends Event {
+        public final BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Executable> callback;
 
+        public OverrideReachableNotificationCallback(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Executable> callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public String toString() {
+            return callback + " [Method Override Reachable Callback]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            OverrideReachableNotificationCallback that = (OverrideReachableNotificationCallback) o;
+            return callback.equals(that.callback);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ callback.hashCode();
+        }
+    }
+
+    public static class OverrideReachableNotificationCallbackInvocation extends Event {
+        public final BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Executable> callback;
+        public final AnalysisMethod override;
+
+        public OverrideReachableNotificationCallbackInvocation(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Executable> callback, AnalysisMethod override) {
+            this.callback = callback;
+            this.override = override;
+        }
+
+        @Override
+        public String toString() {
+            return callback + " + " + stableMethodName(override) + " [Method Override Reachable Callback Invocation]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            OverrideReachableNotificationCallbackInvocation that = (OverrideReachableNotificationCallbackInvocation) o;
+            return callback.equals(that.callback) && override.equals(that.override);
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ callback.hashCode() ^ override.hashCode();
+        }
+    }
 
     private static String reflectionObjectToString(Object reflectionObject)
     {

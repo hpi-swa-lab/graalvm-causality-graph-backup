@@ -209,8 +209,14 @@ public abstract class AnalysisElement implements AnnotatedElement {
             if (seenOverride.add(reachableOverride)) {
                 Executable javaMethod = reachableOverride.getJavaMethod();
                 if (javaMethod != null) {
+                    CausalityExport.get().registerConjunctiveEdge(
+                            new CausalityExport.OverrideReachableNotificationCallback(callback),
+                            new CausalityExport.MethodReachable(reachableOverride),
+                            new CausalityExport.OverrideReachableNotificationCallbackInvocation(callback, reachableOverride));
                     execute(universe, () -> {
-                        callback.accept(universe.getConcurrentAnalysisAccess(), javaMethod);
+                        try (var ignored = CausalityExport.get().setCause(new CausalityExport.OverrideReachableNotificationCallbackInvocation(callback, reachableOverride))) {
+                            callback.accept(universe.getConcurrentAnalysisAccess(), javaMethod);
+                        }
                     });
                 }
             }
