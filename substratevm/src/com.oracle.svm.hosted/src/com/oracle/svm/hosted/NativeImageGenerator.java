@@ -902,7 +902,11 @@ public class NativeImageGenerator {
 
                 featureHandler.registerFeatures(loader, debug);
                 AfterRegistrationAccessImpl access = new AfterRegistrationAccessImpl(featureHandler, loader, originalMetaAccess, mainEntryPoint, debug);
-                featureHandler.forEachFeature(feature -> feature.afterRegistration(access));
+                featureHandler.forEachFeature(feature -> {
+                    try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                        feature.afterRegistration(access);
+                    }
+                });
                 setDefaultLibCIfMissing();
                 if (!Pair.<Method, CEntryPointData> empty().equals(access.getMainEntryPoint())) {
                     setAndVerifyMainEntryPoint(access, entryPoints);
@@ -966,7 +970,11 @@ public class NativeImageGenerator {
                                 debug);
                 try (Indent ignored2 = debug.logAndIndent("process startup initializers")) {
                     FeatureImpl.DuringSetupAccessImpl config = new FeatureImpl.DuringSetupAccessImpl(featureHandler, loader, bb, debug);
-                    featureHandler.forEachFeature(feature -> feature.duringSetup(config));
+                    featureHandler.forEachFeature(feature -> {
+                        try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                            feature.duringSetup(config);
+                        }
+                    });
                 }
 
                 initializeBigBang(bb, options, featureHandler, nativeLibraries, debug, aMetaAccess, aUniverse.getSubstitutions(), loader, true,
