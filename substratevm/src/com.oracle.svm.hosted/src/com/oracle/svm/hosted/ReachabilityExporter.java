@@ -40,10 +40,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.svm.core.ClassLoaderSupport;
 import com.oracle.svm.core.JavaMainWrapper;
 import com.oracle.svm.core.hub.ClassForNameSupport;
 import com.oracle.svm.hosted.jni.JNIAccessFeature;
+import jdk.vm.ci.meta.MetaUtil;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.Pair;
 import org.graalvm.nativeimage.ImageSingletons;
@@ -320,7 +322,15 @@ public class ReachabilityExporter implements InternalFeature {
                     continue;
 
                 Type t = getType(m.getDeclaringClass(), classInitKinds, reflectionTypes, jniTypes);
-                t.methods.add(Pair.create(m.format("%n(%P):%R"), new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
+
+                // TODO: Remove once name fix has been merged from main
+                String stableName = CausalityExport.stableMethodName(m);
+                String declaringClassPrefix = CausalityExport.stableTypeName(m.getDeclaringClass()) + '.';
+                if (!stableName.startsWith(declaringClassPrefix))
+                    throw new RuntimeException();
+                String stableNameWithoutDeclaringClass = stableName.substring(declaringClassPrefix.length());
+
+                t.methods.add(Pair.create(stableNameWithoutDeclaringClass, new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
             }
             for (HostedField f : universe.getFields()) {
                 if(!f.getWrapped().isReachable())
@@ -342,8 +352,11 @@ public class ReachabilityExporter implements InternalFeature {
             TopLevelOrigin tlo = topLevelOrigins.computeIfAbsent(Pair.create(topLevelOriginName, moduleName), pair -> new TopLevelOrigin(pair.getLeft(), pair.getRight(), isSystemCode));
             assert tlo.isSystem == isSystemCode : "Class loader is expected to be the same for all classes of the module.";
             Package p = tlo.packages.computeIfAbsent(type.getJavaClass().getPackageName(), name -> new Package());
-            Type t = p.types.computeIfAbsent(type.toJavaName(false), name -> new Type(type, classInitKinds, reflectionTypes, jniTypes));
-            return t;
+
+            // TODO: Remove once name fix has been merged from main
+            String stableNameUnqualified = MetaUtil.internalNameToJava(type.getName(), false, false);
+
+            return p.types.computeIfAbsent(stableNameUnqualified, name -> new Type(type, classInitKinds, reflectionTypes, jniTypes));
         }
     }
 
