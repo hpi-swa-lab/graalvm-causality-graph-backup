@@ -1042,6 +1042,34 @@ public class CausalityExport {
         }
     }
 
+    public static class EmbeddedRoot extends Event {
+        public final AnalysisMethod method;
+        public final Object constant;
+
+        public EmbeddedRoot(AnalysisMethod method, Object constant) {
+            this.method = method;
+            this.constant = constant;
+        }
+
+        @Override
+        public String toString() {
+            return stableMethodName(method) + " + " + constant.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(constant)) + " [Embedded Root]";
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            var that = (EmbeddedRoot) o;
+            return method.equals(that.method) && constant == that.constant;
+        }
+
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() ^ method.hashCode() ^ System.identityHashCode(constant);
+        }
+    }
+
     private static String reflectionObjectToString(Object reflectionObject)
     {
         if(reflectionObject instanceof Class<?>) {

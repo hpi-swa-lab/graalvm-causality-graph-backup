@@ -107,10 +107,16 @@ public class Impl extends CausalityExport {
     @Override
     public Event getHeapObjectCreator(Object heapObject, ObjectScanner.ScanReason reason) {
         Object responsible = HeapAssignmentTracing.getInstance().getResponsibleClass(heapObject);
-        if(responsible == null && reason instanceof ObjectScanner.EmbeddedRootScan ers) {
-            return new MethodCode(ers.getMethod());
+        Event e = getEventForHeapReason(responsible, heapObject);
+
+        if (reason instanceof ObjectScanner.EmbeddedRootScan ers) {
+            EmbeddedRoot er = new EmbeddedRoot(ers.getMethod(), heapObject);
+            registerConjunctiveEdge(new MethodCode(ers.getMethod()), e, er);
+            return er;
         }
-        return getEventForHeapReason(responsible, heapObject);
+
+        // TODO: Think about how field reachability impacts heap scanning
+        return e;
     }
 
     @Override
