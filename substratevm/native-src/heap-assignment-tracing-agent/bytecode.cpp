@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <numeric>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
