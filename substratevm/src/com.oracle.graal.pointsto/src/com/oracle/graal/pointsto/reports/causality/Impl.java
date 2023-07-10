@@ -124,9 +124,18 @@ public class Impl extends CausalityExport {
         Object o = asObject(bb, Object.class, value);
 
         if(field.isStatic()) {
-            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(field.getDeclaringClass().getJavaClass(), field.getJavaField(), o);
+            java.lang.reflect.Field f = field.getJavaField();
+            Class<?> declaringClass = f.getDeclaringClass();
+            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(declaringClass, f, o);
         } else {
-            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(asObject(bb, Object.class, receiver), field.getJavaField(), o);
+            Object receiverO = asObject(bb, Object.class, receiver);
+            java.lang.reflect.Field f = field.getJavaField();
+            if (f.getDeclaringClass().isAssignableFrom(receiverO.getClass())) {
+                responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(receiverO, f, o);
+            } else {
+                // Field must be substituted or recomputed
+                responsible = null;
+            }
         }
 
         return getEventForHeapReason(responsible, o);
