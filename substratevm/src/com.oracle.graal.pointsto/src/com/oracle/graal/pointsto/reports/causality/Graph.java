@@ -33,9 +33,11 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.Stack;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -267,120 +269,116 @@ public class Graph {
         }
     }
 
-    private static HashSet<FlowNode> filterRedundant(HashSet<FlowNode> nodes, Map<FlowNode, ArrayList<FlowNode>> backwardAdj) {
-        HashSet<FlowNode> stillNeeded = new HashSet<>(nodes.size());
+    private static void collectNodesLeadingSomewhere(
+            Set<Object> neededNodes,
+            Map<Object, ArrayList<Object>> backwardAdj) {
 
-        Queue<FlowNode> worklist = new ArrayDeque<>();
-
-        for (FlowNode f : nodes) {
-            if (f.makesContainingReachable() && f.containing != null) {
-                stillNeeded.add(f);
-                worklist.add(f);
-            }
-        }
-
-        while(!worklist.isEmpty()) {
-            FlowNode u = worklist.poll();
-            for(FlowNode v : backwardAdj.get(u)) {
-                if (v != null && stillNeeded.add(v)) {
-                    worklist.add(v);
-                }
-            }
-        }
-
-        return stillNeeded;
-    }
-
-    private static void filterRedundant(HashSet<CausalityExport.Event> stillNeeded, HashSet<CausalityExport.Event> nodes, Map<CausalityExport.Event, ArrayList<CausalityExport.Event>> backwardAdj) {
-        Queue<CausalityExport.Event> worklist = new ArrayDeque<>(stillNeeded);
+        Queue<Object> worklist = new ArrayDeque<>(neededNodes);
 
         while(!worklist.isEmpty()) {
             var u = worklist.poll();
             for(var v : backwardAdj.get(u)) {
-                if (v != null && stillNeeded.add(v)) {
+                if (v != null && neededNodes.add(v)) {
                     worklist.add(v);
                 }
             }
         }
     }
 
-    private static Map<FlowNode, ArrayList<FlowNode>> calculateReverseAdjacency(HashSet<FlowNode> nodes, HashSet<FlowEdge> edges) {
-        Map<FlowNode, ArrayList<FlowNode>> adj = nodes.stream().collect(Collectors.toMap(f -> f, f -> new ArrayList<>(), (a, b) -> a));
+    private Set<CausalityExport.Event> collectNodes() {
+        HashSet<CausalityExport.Event> nodes = new HashSet<>();
 
-        for(FlowEdge e : edges) {
-            adj.get(e.to).add(e.from);
+        for (DirectEdge e : directEdges) {
+            if (e.from != null)
+                nodes.add(e.from);
+            nodes.add(e.to);
         }
 
-        return adj;
+        for (HyperEdge e : hyperEdges) {
+            nodes.add(e.from1);
+            nodes.add(e.from2);
+            nodes.add(e.to);
+        }
+
+        for (FlowEdge e : interflows) {
+            if (e.from != null && e.from.containing != null)
+                nodes.add(e.from.containing);
+            if (e.to.containing != null)
+                nodes.add(e.to.containing);
+        }
+        return nodes;
     }
 
-    private static Map<CausalityExport.Event, ArrayList<CausalityExport.Event>> calculateReverseAdjacency(HashSet<CausalityExport.Event> nodes, HashSet<DirectEdge> edges, HashSet<HyperEdge> hyper_edges) {
-        var adj = nodes.stream().collect(Collectors.toMap(f -> f, f -> new ArrayList<CausalityExport.Event>(), (a, b) -> a));
-        for (var e : edges) {
-            adj.get(e.to).add(e.from);
+    private Set<FlowNode> collectFlowNodes() {
+        HashSet<FlowNode> flowsNodes = new HashSet<>();
+        for (FlowEdge e : interflows) {
+            if (e.from != null) {
+                flowsNodes.add(e.from);
+            }
+            flowsNodes.add(e.to);
         }
-        for (var he : hyper_edges) {
-            adj.get(he.to).add(he.from1);
-            adj.get(he.to).add(he.from2);
+        return flowsNodes;
+    }
+
+    private Set<Object> collectNeededAbstractNodes() {
+        Set<CausalityExport.Event> methods = collectNodes();
+        Set<FlowNode> typeflows = collectFlowNodes();
+
+        Set<Object> needed = methods.stream().filter(CausalityExport.Event::essential).collect(Collectors.toSet());
+
+        {
+            Map<Object, ArrayList<Object>> adjReverse = new HashMap<>(methods.size() + typeflows.size());
+            for (var n : methods)
+                adjReverse.put(n, new ArrayList<>());
+            for (var f : typeflows)
+                adjReverse.put(f, new ArrayList<>());
+            for (FlowEdge e : interflows)
+                adjReverse.get(e.to).add(e.from);
+            for (var e : directEdges)
+                adjReverse.get(e.to).add(e.from);
+            for (var he : hyperEdges) {
+                adjReverse.get(he.to).add(he.from1);
+                adjReverse.get(he.to).add(he.from2);
+            }
+            for (var f : typeflows) {
+                if (f.containing != null) {
+                    if (f.makesContainingReachable()) {
+                        adjReverse.get(f.containing).add(f);
+                    } else {
+                        adjReverse.get(f).add(f.containing);
+                    }
+                }
+            }
+
+            collectNodesLeadingSomewhere(needed, adjReverse);
         }
-        return adj;
+
+        return needed;
+    }
+
+    private static <T> Stream<T> filterType(Class<T> type, Stream<?> s) {
+        return (Stream<T>) s.filter(o -> type.isAssignableFrom(o.getClass()));
     }
 
     public void export(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
         Map<AnalysisType, Integer> typeIdMap = makeDenseTypeIdMap(bb, bb.getAllInstantiatedTypeFlow().getState()::containsType);
         AnalysisType[] typesSorted = getRelevantTypes(bb, typeIdMap);
-
-        HashSet<CausalityExport.Event> methods = new HashSet<>();
-        HashSet<FlowNode> typeflows = new HashSet<>();
-
-        for (DirectEdge e : directEdges) {
-            if (e.from != null)
-                methods.add(e.from);
-            methods.add(e.to);
-        }
-
-        for (HyperEdge e : hyperEdges) {
-            methods.add(e.from1);
-            methods.add(e.from2);
-            methods.add(e.to);
-        }
-
-        for (FlowEdge e : interflows) {
-            if (e.from != null) {
-                typeflows.add(e.from);
-                if (e.from.containing != null)
-                    methods.add(e.from.containing);
-            }
-            typeflows.add(e.to);
-            if (e.to.containing != null)
-                methods.add(e.to.containing);
-        }
-
-        typeflows = filterRedundant(typeflows, calculateReverseAdjacency(typeflows, interflows));
+        CausalityExport.Event[] methodsSorted;
+        FlowNode[] flowsSorted;
 
         {
-            HashSet<CausalityExport.Event> stillNeeded = new HashSet<>();
-            for (var f : typeflows) {
-                if (f.containing != null)
-                    stillNeeded.add(f.containing);
-            }
-            for (var v : methods) {
-                if (v.essential())
-                    stillNeeded.add(v);
-            }
-
-            filterRedundant(stillNeeded, methods, calculateReverseAdjacency(methods, directEdges, hyperEdges));
-            //System.err.println("Filtered " + (methods.size() - stillNeeded.size()) + " of " + (methods.size()) + " methods!");
-            methods = stillNeeded;
-        }
-
-        CausalityExport.Event[] methodsSorted = methods.stream()
+            var neededAbstractNodes = collectNeededAbstractNodes();
+            methodsSorted = filterType(CausalityExport.Event.class, neededAbstractNodes.stream())
                 .map(reason -> Pair.create(reason.toString(bb.getMetaAccess()), reason))
                 .sorted(Comparator.comparing(Pair::getLeft))
                 .map(Pair::getRight)
                 .toArray(CausalityExport.Event[]::new);
+            flowsSorted = filterType(FlowNode.class, neededAbstractNodes.stream())
+                    .sorted()
+                    .toArray(FlowNode[]::new);
+        }
+
         HashMap<CausalityExport.Event, Integer> methodIdMap = inverse(methodsSorted, 1);
-        FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
 
         if(typesSorted.length > 0xFFFF) {
