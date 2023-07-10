@@ -168,11 +168,26 @@ public class CausalityExport {
 
 
     public static abstract class Event {
+        /**
+         * Indicates whether this Event has never occured and thus can be removed from the CausalityGraph
+         */
         public boolean unused() {
             return false;
         }
 
+        /**
+         * Indicates whether this Event is always reachable.
+         * Such events are still useful for providing more details
+         */
         public boolean root() { return false; }
+
+        /**
+         * Used to distinguish nodes that are part of the CausalityGraph-API vs. implementation detail nodes.
+         * Non-essential events may be removed from the Graph, if the change doesn't affect the reachability of essential events.
+         */
+        public boolean essential() {
+            return true;
+        }
 
         public String toString(AnalysisMetaAccess metaAccess) {
             return this.toString();
@@ -441,6 +456,11 @@ public class CausalityExport {
         }
 
         @Override
+        public boolean essential() {
+            return false;
+        }
+
+        @Override
         public String toString() {
             return callback + " [Reachability Callback]";
         }
@@ -464,6 +484,11 @@ public class CausalityExport {
 
         public BuildTimeClassInitialization(Class<?> clazz) {
             this.clazz = clazz;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -502,6 +527,11 @@ public class CausalityExport {
         }
 
         @Override
+        public boolean essential() {
+            return false;
+        }
+
+        @Override
         public String toString() {
             return clazz.getTypeName() + " [Class-Object in Heap]";
         }
@@ -526,6 +556,11 @@ public class CausalityExport {
 
         public HeapObjectDynamicHub(Class<?> forClass) {
             this.forClass = forClass;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -562,6 +597,11 @@ public class CausalityExport {
         @Override
         public String toString() {
             return heapObjectType.getTypeName() + " [Unknown Heap Object]";
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -620,6 +660,11 @@ public class CausalityExport {
 
         public ReflectionObjectInHeap(Class<?> clazz) {
             super(clazz);
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -777,6 +822,11 @@ public class CausalityExport {
         }
 
         @Override
+        public boolean essential() {
+            return false;
+        }
+
+        @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
@@ -800,6 +850,11 @@ public class CausalityExport {
 
         public ConfigurationCondition(String typeName) {
             this.typeName = typeName;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -828,6 +883,11 @@ public class CausalityExport {
         public JniCallVariantWrapper(Signature signature, boolean virtual) {
             this.signature = signature;
             this.virtual = virtual;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -862,6 +922,11 @@ public class CausalityExport {
         }
 
         @Override
+        public boolean essential() {
+            return false;
+        }
+
+        @Override
         public String toString() {
             return callback + " [Method Override Reachable Callback]";
         }
@@ -887,6 +952,11 @@ public class CausalityExport {
         public OverrideReachableNotificationCallbackInvocation(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Executable> callback, AnalysisMethod override) {
             this.callback = callback;
             this.override = override;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override
@@ -916,6 +986,11 @@ public class CausalityExport {
         }
 
         @Override
+        public boolean essential() {
+            return false;
+        }
+
+        @Override
         public String toString() {
             return callback + " [Subtype Reachable Callback]";
         }
@@ -941,6 +1016,11 @@ public class CausalityExport {
         public SubtypeReachableNotificationCallbackInvocation(BiConsumer<org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess, Class<?>> callback, AnalysisType subtype) {
             this.callback = callback;
             this.subtype = subtype;
+        }
+
+        @Override
+        public boolean essential() {
+            return false;
         }
 
         @Override

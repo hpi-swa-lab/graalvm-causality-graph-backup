@@ -291,6 +291,19 @@ public class Graph {
         return stillNeeded;
     }
 
+    private static void filterRedundant(HashSet<CausalityExport.Event> stillNeeded, HashSet<CausalityExport.Event> nodes, Map<CausalityExport.Event, ArrayList<CausalityExport.Event>> backwardAdj) {
+        Queue<CausalityExport.Event> worklist = new ArrayDeque<>(stillNeeded);
+
+        while(!worklist.isEmpty()) {
+            var u = worklist.poll();
+            for(var v : backwardAdj.get(u)) {
+                if (v != null && stillNeeded.add(v)) {
+                    worklist.add(v);
+                }
+            }
+        }
+    }
+
     private static Map<FlowNode, ArrayList<FlowNode>> calculateReverseAdjacency(HashSet<FlowNode> nodes, HashSet<FlowEdge> edges) {
         Map<FlowNode, ArrayList<FlowNode>> adj = nodes.stream().collect(Collectors.toMap(f -> f, f -> new ArrayList<>(), (a, b) -> a));
 
@@ -298,6 +311,18 @@ public class Graph {
             adj.get(e.to).add(e.from);
         }
 
+        return adj;
+    }
+
+    private static Map<CausalityExport.Event, ArrayList<CausalityExport.Event>> calculateReverseAdjacency(HashSet<CausalityExport.Event> nodes, HashSet<DirectEdge> edges, HashSet<HyperEdge> hyper_edges) {
+        var adj = nodes.stream().collect(Collectors.toMap(f -> f, f -> new ArrayList<CausalityExport.Event>(), (a, b) -> a));
+        for (var e : edges) {
+            adj.get(e.to).add(e.from);
+        }
+        for (var he : hyper_edges) {
+            adj.get(he.to).add(he.from1);
+            adj.get(he.to).add(he.from2);
+        }
         return adj;
     }
 
@@ -333,10 +358,27 @@ public class Graph {
 
         typeflows = filterRedundant(typeflows, calculateReverseAdjacency(typeflows, interflows));
 
+        {
+            HashSet<CausalityExport.Event> stillNeeded = new HashSet<>();
+            for (var f : typeflows) {
+                if (f.containing != null)
+                    stillNeeded.add(f.containing);
+            }
+            for (var v : methods) {
+                if (v.essential())
+                    stillNeeded.add(v);
+            }
+
+            filterRedundant(stillNeeded, methods, calculateReverseAdjacency(methods, directEdges, hyperEdges));
+            //System.err.println("Filtered " + (methods.size() - stillNeeded.size()) + " of " + (methods.size()) + " methods!");
+            methods = stillNeeded;
+        }
+
         CausalityExport.Event[] methodsSorted = methods.stream()
-                .filter(m -> !m.unused())
                 .map(reason -> Pair.create(reason.toString(bb.getMetaAccess()), reason))
-                .sorted(Comparator.comparing(Pair::getLeft)).map(Pair::getRight).toArray(CausalityExport.Event[]::new);
+                .sorted(Comparator.comparing(Pair::getLeft))
+                .map(Pair::getRight)
+                .toArray(CausalityExport.Event[]::new);
         HashMap<CausalityExport.Event, Integer> methodIdMap = inverse(methodsSorted, 1);
         FlowNode[] flowsSorted = typeflows.stream().sorted().toArray(FlowNode[]::new);
         HashMap<FlowNode, Integer> flowIdMap = inverse(flowsSorted, 1);
@@ -368,8 +410,11 @@ public class Graph {
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (DirectEdge e : directEdges) {
-                int src = e.from == null ? 0 : methodIdMap.get(e.from);
-                int dst = methodIdMap.get(e.to);
+                Integer src = e.from == null ? Integer.valueOf(0) : methodIdMap.get(e.from);
+                Integer dst = methodIdMap.get(e.to);
+
+                if (src == null || dst == null)
+                    continue;
 
                 b.putInt(src);
                 b.putInt(dst);
@@ -386,9 +431,12 @@ public class Graph {
             b.order(ByteOrder.LITTLE_ENDIAN);
 
             for (HyperEdge e : hyperEdges) {
-                int src1 = methodIdMap.get(e.from1);
-                int src2 = methodIdMap.get(e.from2);
-                int dst = methodIdMap.get(e.to);
+                Integer src1 = methodIdMap.get(e.from1);
+                Integer src2 = methodIdMap.get(e.from2);
+                Integer dst = methodIdMap.get(e.to);
+
+                if (src1 == null || src2 == null || dst == null)
+                    continue;
 
                 b.putInt(src1);
                 b.putInt(src2);
