@@ -358,7 +358,6 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
                 } else {
                     pointsToMethod.registerAsVirtualRootMethod();
                 }
-                // Causality-TODO: Connect the event of calling addRootMethod and the Reachability of the overridden methods
                 InvokeTypeFlow invoke = pointsToMethod.initAndGetContextInsensitiveInvoke(PointsToAnalysis.this, null, invokeSpecial, pointsToMethod.getMultiMethodKey());
                 /*
                  * Initialize the type flow of the invoke's actual parameters with the corresponding

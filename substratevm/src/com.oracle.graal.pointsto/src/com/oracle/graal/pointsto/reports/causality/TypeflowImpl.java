@@ -1,16 +1,21 @@
 package com.oracle.graal.pointsto.reports.causality;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualParameterTypeFlow;
 import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.AllInstantiatedTypeFlow;
+import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import org.graalvm.collections.Pair;
 
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -20,7 +25,6 @@ import java.util.function.Function;
 
 public class TypeflowImpl extends Impl {
     private final HashSet<Pair<TypeFlow<?>, TypeFlow<?>>> interflows = new HashSet<>();
-    private final HashMap<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
 
     /**
      * Saves for each virtual invocation the receiver typeflow before it may have been replaced during saturation.
@@ -36,10 +40,6 @@ public class TypeflowImpl extends Impl {
         super(instances, bb);
         for (TypeflowImpl i : instances) {
             interflows.addAll(i.interflows);
-            mergeMap(virtual_invokes, i.virtual_invokes, (p1, p2) -> {
-                p1.getLeft().addAll(p2.getLeft());
-                return Pair.create(p1.getLeft(), TypeState.forUnion(bb, p1.getRight(), p2.getRight()));
-            });
             originalInvokeReceivers.putAll(i.originalInvokeReceivers);
             mergeTypeFlowMap(flowingFromHeap, i.flowingFromHeap, bb);
         }
@@ -83,16 +83,6 @@ public class TypeflowImpl extends Impl {
 
     @Override
     public void registerVirtualInvocation(PointsToAnalysis bb, AbstractVirtualInvokeTypeFlow invocation, AnalysisMethod concreteTargetMethod, AnalysisType concreteTargetType) {
-        virtual_invokes.compute(concreteTargetMethod, (m, p) -> {
-            if (p == null) {
-                HashSet<AbstractVirtualInvokeTypeFlow> invocations = new HashSet<>(1);
-                invocations.add(invocation);
-                return Pair.create(invocations, TypeState.forExactType(bb, concreteTargetType, false));
-            } else {
-                p.getLeft().add(invocation);
-                return Pair.create(p.getLeft(), TypeState.forUnion(bb, p.getRight(), TypeState.forExactType(bb, concreteTargetType, false)));
-            }
-        });
     }
 
     @Override
@@ -112,7 +102,9 @@ public class TypeflowImpl extends Impl {
         super.forEachEvent(callback);
 
         flowingFromHeap.keySet().stream().map(Pair::getLeft).forEach(callback);
-        virtual_invokes.keySet().stream().map(MethodReachable::new).forEach(callback);
+
+        // TODO: Unsure about this - whether it is necessary and whether it is correct/complete
+        originalInvokeReceivers.keySet().stream().map(InvokeTypeFlow::getTargetMethod).flatMap(targetMethod -> Arrays.stream(targetMethod.getImplementations())).map(MethodReachable::new).forEach(callback);
 
         forEachTypeflow(tf -> {
             if(tf != null && tf.method() != null) {
@@ -145,8 +137,56 @@ public class TypeflowImpl extends Impl {
             });
         };
 
-        for (Map.Entry<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> e : virtual_invokes.entrySet()) {
+        Map<AnalysisMethod, Pair<Set<AbstractVirtualInvokeTypeFlow>, TypeState>> virtual_invokes = new HashMap<>();
 
+        for (var e : originalInvokeReceivers.entrySet()) {
+            PointsToAnalysisMethod targetMethod = e.getKey().getTargetMethod();
+            TypeState receiverState = bb.getAllInstantiatedTypeFlow().getState();
+            if (e.getValue() != null)
+                receiverState = e.getValue().filter(bb, receiverState);
+
+            for (AnalysisType type : receiverState.types(bb)) {
+                AnalysisMethod method = null;
+                try {
+                    method = type.resolveConcreteMethod(targetMethod);
+                } catch (UnsupportedFeatureException ignored) {
+                }
+
+                if (method == null || Modifier.isAbstract(method.getModifiers())) {
+                    continue;
+                }
+
+                var calleeList = bb.getHostVM().getMultiMethodAnalysisPolicy().determineCallees(bb, PointsToAnalysis.assertPointsToAnalysisMethod(method), targetMethod, e.getKey().getCallerMultiMethodKey(), e.getKey());
+                for (PointsToAnalysisMethod callee : calleeList) {
+                    assert callee.getTypeFlow().getMethod().equals(callee);
+
+                    /*
+                     * Different receiver type can yield the same target method; although it is correct
+                     * in a context insensitive analysis to link the callee only if it was not linked
+                     * before, in a context sensitive analysis the callee should be linked for each
+                     * different context.
+                     */
+
+                    virtual_invokes.compute(callee, (m, pair) -> {
+                        Set<AbstractVirtualInvokeTypeFlow> invokes;
+                        TypeState targetReachingTypes;
+
+                        if (pair == null) {
+                            invokes = new HashSet<>();
+                            targetReachingTypes = TypeState.forEmpty();
+                        } else {
+                            invokes = pair.getLeft();
+                            targetReachingTypes = pair.getRight();
+                        }
+
+                        invokes.add(e.getKey());
+                        return Pair.create(invokes, TypeState.forUnion(bb, targetReachingTypes, TypeState.forExactType(bb, type, false)));
+                    });
+                }
+            }
+        }
+
+        for (var e : virtual_invokes.entrySet()) {
             Event reason = new MethodReachable(e.getKey());
 
             if(reason.unused())
@@ -157,7 +197,7 @@ public class TypeflowImpl extends Impl {
             for (var invokeFlow : e.getValue().getLeft()) {
                 TypeFlow<?> receiver = originalInvokeReceivers.get(invokeFlow);
 
-                if (receiver == null) {
+                if (invokeFlow.isContextInsensitive()) {
                     // Root invocation
                     Graph.FlowNode rootCallFlow = new Graph.FlowNode(
                             "Root call to " + invokeFlow.getTargetMethod(),
@@ -173,6 +213,7 @@ public class TypeflowImpl extends Impl {
                             invocationFlowNode
                     ));
                 } else  {
+                    assert receiver != null;
                     Graph.FlowNode receiverNode = flowMapper.apply(receiver);
                     if(receiverNode != null) {
                         g.interflows.add(new Graph.FlowEdge(
