@@ -1374,7 +1374,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_oracle_graal_pointsto_reports_HeapAss
         jthread thread;
         check(jvmti_env->GetCurrentThread(&thread));
         AgentThreadContext* tc = AgentThreadContext::from_thread(jvmti_env, thread);
+
+        bool fieldModificationWasTracked = tc->reason(true) != nullptr;
         tc->set_current_cause(env, cause, recordHeapAssignments);
+#if BREAKPOINTS_ENABLE
+        bool fieldModificationIsTracked = tc->reason(true) != nullptr;
+        if(fieldModificationIsTracked != fieldModificationWasTracked)
+        {
+            check(jvmti_env->SetEventNotificationMode(fieldModificationIsTracked ? JVMTI_ENABLE : JVMTI_DISABLE, JVMTI_EVENT_FIELD_MODIFICATION, thread));
+        }
+#endif
     });
 }
 

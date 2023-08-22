@@ -767,7 +767,7 @@ public class NativeImageGenerator {
                 BeforeAnalysisAccessImpl config = new BeforeAnalysisAccessImpl(featureHandler, loader, bb, nativeLibraries, debug);
                 ServiceCatalogSupport.singleton().enableServiceCatalogMapTransformer(config);
                 featureHandler.forEachFeature(feature -> {
-                    try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                    try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Allocations)) {
                         feature.beforeAnalysis(config);
                     }
                 });
@@ -784,7 +784,7 @@ public class NativeImageGenerator {
                         try (StopTimer t2 = TimerCollection.createTimerAndStart(TimerCollection.Registry.FEATURES)) {
                             bb.getHostVM().notifyClassReachabilityListener(universe, config);
                             featureHandler.forEachFeature(feature -> {
-                                try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                                try(var ignored2 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Allocations)) {
                                     feature.duringAnalysis(config);
                                 }
                             });
@@ -903,7 +903,7 @@ public class NativeImageGenerator {
                 featureHandler.registerFeatures(loader, debug);
                 AfterRegistrationAccessImpl access = new AfterRegistrationAccessImpl(featureHandler, loader, originalMetaAccess, mainEntryPoint, debug);
                 featureHandler.forEachFeature(feature -> {
-                    try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                    try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Allocations)) {
                         feature.afterRegistration(access);
                     }
                 });
@@ -971,7 +971,7 @@ public class NativeImageGenerator {
                 try (Indent ignored2 = debug.logAndIndent("process startup initializers")) {
                     FeatureImpl.DuringSetupAccessImpl config = new FeatureImpl.DuringSetupAccessImpl(featureHandler, loader, bb, debug);
                     featureHandler.forEachFeature(feature -> {
-                        try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Full)) {
+                        try (var ignored0 = CausalityExport.get().setCause(new CausalityExport.Feature(feature), CausalityExport.HeapTracing.Allocations)) {
                             feature.duringSetup(config);
                         }
                     });
