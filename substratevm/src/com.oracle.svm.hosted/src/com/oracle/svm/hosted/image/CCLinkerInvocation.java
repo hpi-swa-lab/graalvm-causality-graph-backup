@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.graalvm.compiler.options.Option;
+import org.graalvm.compiler.options.OptionStability;
 import org.graalvm.compiler.serviceprovider.JavaVersionUtil;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
@@ -68,7 +69,8 @@ public abstract class CCLinkerInvocation implements LinkerInvocation {
     }
 
     public static class Options {
-        @Option(help = "Pass the provided raw option that will be appended to the linker command to produce the final binary. The possible options are platform specific and passed through without any validation.")//
+        @Option(help = "Pass the provided raw option that will be appended to the linker command to produce the final binary. The possible options are platform specific and passed through without any validation.", //
+                        stability = OptionStability.STABLE)//
         public static final HostedOptionKey<LocatableMultiOptionValue.Strings> NativeLinkerOption = new HostedOptionKey<>(LocatableMultiOptionValue.Strings.build());
     }
 
@@ -242,7 +244,8 @@ public abstract class CCLinkerInvocation implements LinkerInvocation {
 
     protected List<String> getNativeLinkerOptions() {
         return Stream.of(nativeLinkerOptions, Options.NativeLinkerOption.getValue().values())
-                        .flatMap(Collection::stream).collect(Collectors.toList());
+                        .flatMap(Collection::stream)
+                        .collect(Collectors.toList());
     }
 
     private static class BinutilsCCLinkerInvocation extends CCLinkerInvocation {
@@ -484,7 +487,7 @@ public abstract class CCLinkerInvocation implements LinkerInvocation {
             /* Put .lib and .exp files in a temp dir as we don't usually need them. */
             cmd.add("/IMPLIB:" + getTempDirectory().resolve(imageName + ".lib"));
 
-            if (SubstrateOptions.GenerateDebugInfo.getValue() > 0) {
+            if (SubstrateOptions.useDebugInfoGeneration()) {
                 cmd.add("/DEBUG");
 
                 if (SubstrateOptions.DeleteLocalSymbols.getValue()) {

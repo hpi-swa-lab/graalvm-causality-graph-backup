@@ -39,8 +39,8 @@ import static jdk.vm.ci.amd64.AMD64.xmm4;
 import static jdk.vm.ci.amd64.AMD64.xmm5;
 import static jdk.vm.ci.amd64.AMD64.xmm6;
 import static jdk.vm.ci.amd64.AMD64.xmm7;
-import static org.graalvm.compiler.lir.amd64.AMD64HotSpotHelper.pointerConstant;
-import static org.graalvm.compiler.lir.amd64.AMD64HotSpotHelper.recordExternalAddress;
+import static org.graalvm.compiler.lir.amd64.AMD64LIRHelper.pointerConstant;
+import static org.graalvm.compiler.lir.amd64.AMD64LIRHelper.recordExternalAddress;
 
 import org.graalvm.compiler.asm.Label;
 import org.graalvm.compiler.asm.amd64.AMD64Address;
@@ -48,7 +48,7 @@ import org.graalvm.compiler.asm.amd64.AMD64Assembler.ConditionFlag;
 import org.graalvm.compiler.asm.amd64.AMD64MacroAssembler;
 import org.graalvm.compiler.core.common.Stride;
 import org.graalvm.compiler.lir.LIRInstructionClass;
-import org.graalvm.compiler.lir.StubPort;
+import org.graalvm.compiler.lir.SyncPort;
 import org.graalvm.compiler.lir.asm.ArrayDataPointerConstant;
 import org.graalvm.compiler.lir.asm.CompilationResultBuilder;
 
@@ -87,11 +87,8 @@ import org.graalvm.compiler.lir.asm.CompilationResultBuilder;
  * </pre>
  */
 // @formatter:off
-@StubPort(path      = "src/hotspot/cpu/x86/stubGenerator_x86_64_exp.cpp",
-          lineStart = 32,
-          lineEnd   = 385,
-          commit    = "12358e6c94bc96e618efc3ec5299a2cfe1b4669d",
-          sha1      = "219106b137bac6345b31ef2e2d45eb6b15bfc2f3")
+@SyncPort(from = "https://github.com/openjdk/jdk/blob/12358e6c94bc96e618efc3ec5299a2cfe1b4669d/src/hotspot/cpu/x86/stubGenerator_x86_64_exp.cpp#L32-L385",
+          sha1 = "219106b137bac6345b31ef2e2d45eb6b15bfc2f3")
 // @formatter:on
 public final class AMD64MathExpOp extends AMD64MathIntrinsicUnaryOp {
 

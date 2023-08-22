@@ -31,8 +31,10 @@ import static com.oracle.svm.core.snippets.KnownIntrinsics.readHub;
 import java.io.File;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -70,7 +72,6 @@ import com.oracle.svm.core.annotate.RecomputeFieldValue.Kind;
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
 import com.oracle.svm.core.annotate.TargetElement;
-import com.oracle.svm.core.deopt.DeoptimizationSupport;
 import com.oracle.svm.core.hub.ClassForNameSupport;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.jdk.JavaLangSubstitutions.ClassValueSupport;
@@ -356,16 +357,6 @@ final class Target_java_lang_Throwable {
          */
         backtrace = null;
 
-        if (DeoptimizationSupport.enabled()) {
-            /*
-             * Runtime compilation and deoptimized frames are not yet optimized (GR-45765). Eagerly
-             * construct a stack trace and store it in backtrace. We cannot directly use
-             * `stackTrace` because it is overwritten by the caller.
-             */
-            backtrace = JavaThreads.getStackTrace(true, Thread.currentThread());
-            return this;
-        }
-
         BacktraceVisitor visitor = new BacktraceVisitor();
         JavaThreads.visitCurrentStackFrames(visitor);
         backtrace = visitor.getArray();
@@ -398,11 +389,7 @@ final class Target_java_lang_StackTraceElement {
     @Substitute
     @TargetElement(onlyWith = JDK19OrLater.class)
     static StackTraceElement[] of(Object x, int depth) {
-        if (x instanceof StackTraceElement[] stackTrace) {
-            /* Stack trace eagerly created. */
-            return stackTrace;
-        }
-        return StackTraceBuilder.build(x);
+        return StackTraceBuilder.build((long[]) x);
     }
 
     /**
@@ -415,11 +402,7 @@ final class Target_java_lang_StackTraceElement {
     @TargetElement(onlyWith = JDK17OrEarlier.class)
     static StackTraceElement[] of(Target_java_lang_Throwable t, int depth) {
         Object x = t.backtrace;
-        if (x instanceof StackTraceElement[] stackTrace) {
-            /* Stack trace eagerly created. */
-            return stackTrace;
-        }
-        return StackTraceBuilder.build(x);
+        return StackTraceBuilder.build((long[]) x);
     }
 }
 
@@ -898,6 +881,16 @@ final class Target_jdk_internal_loader_BootLoader {
     @Substitute
     private static boolean hasClassPath() {
         return true;
+    }
+
+    @Substitute
+    public static URL findResource(String name) {
+        return ResourcesHelper.nameToResourceURL(name);
+    }
+
+    @Substitute
+    public static Enumeration<URL> findResources(String name) {
+        return ResourcesHelper.nameToResourceEnumerationURLs(name);
     }
 
     /**

@@ -105,6 +105,8 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
         return selected;
     }
 
+    public final boolean ropProtection = access.getFieldValue("VM_Version::_rop_protection", Boolean.class, "bool", false);
+
     public final boolean cAssertions = getConstant("ASSERT", Boolean.class);
 
     public final int codeEntryAlignment = getFlag("CodeEntryAlignment", Integer.class);
@@ -129,6 +131,7 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final boolean useCRC32Intrinsics = getFlag("UseCRC32Intrinsics", Boolean.class);
     public final boolean useCRC32CIntrinsics = getFlag("UseCRC32CIntrinsics", Boolean.class); // JDK-8073583
     private final boolean useSHA1Intrinsics = getFlag("UseSHA1Intrinsics", Boolean.class);
+    private final boolean useSHA3Intrinsics = getFlag("UseSHA3Intrinsics", Boolean.class);
     private final boolean useSHA256Intrinsics = getFlag("UseSHA256Intrinsics", Boolean.class);
     private final boolean useSHA512Intrinsics = getFlag("UseSHA512Intrinsics", Boolean.class);
     private final boolean useMontgomeryMultiplyIntrinsic = getFlag("UseMontgomeryMultiplyIntrinsic", Boolean.class);
@@ -136,7 +139,10 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final boolean useFMAIntrinsics = getFlag("UseFMA", Boolean.class);
     public final int useAVX3Threshold = getFlag("AVX3Threshold", Integer.class, 4096, osArch.equals("amd64"));
 
-    public final boolean preserveFramePointer = getFlag("PreserveFramePointer", Boolean.class);
+    public final String onSpinWaitInst = getFlag("OnSpinWaitInst", String.class, "none", osArch.equals("aarch64"));
+    public final int onSpinWaitInstCount = getFlag("OnSpinWaitInstCount", Integer.class, 0, osArch.equals("aarch64"));
+
+    public final boolean preserveFramePointer = getFlag("PreserveFramePointer", Boolean.class) || ropProtection;
 
     public final int diagnoseSyncOnValueBasedClasses = getFlag("DiagnoseSyncOnValueBasedClasses", Integer.class);
 
@@ -154,6 +160,10 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
 
     public boolean useSHA512Intrinsics() {
         return useSHA512Intrinsics && sha512ImplCompress != 0 && sha512ImplCompressMultiBlock != 0;
+    }
+
+    public boolean useSHA3Intrinsics() {
+        return useSHA3Intrinsics && sha3ImplCompress != 0 && sha3ImplCompressMultiBlock != 0;
     }
 
     public boolean useMontgomeryMultiplyIntrinsic() {
@@ -216,10 +226,12 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final int stackShadowPages = getFlag("StackShadowPages", Integer.class);
     public final int vmPageSize = getFieldValue("CompilerToVM::Data::vm_page_size", Integer.class, JDK >= 21 ? "size_t" : "int");
 
+    public final int softwarePrefetchHintDistance = getFlag("SoftwarePrefetchHintDistance", Integer.class, -1, "aarch64".equals(osArch));
+
     public final int markOffset = getFieldOffset("oopDesc::_mark", Integer.class, markWord);
     public final int hubOffset = getFieldOffset("oopDesc::_metadata._klass", Integer.class, "Klass*");
 
-    public final int prototypeMarkWordOffset = getFieldOffset("Klass::_prototype_header", Integer.class, markWord, -1, JDK < 18);
+    public final Integer prototypeMarkWordOffset = getFieldOffset("Klass::_prototype_header", Integer.class, markWord, null, JDK < 18);
     public final int superCheckOffsetOffset = getFieldOffset("Klass::_super_check_offset", Integer.class, "juint");
     public final int secondarySuperCacheOffset = getFieldOffset("Klass::_secondary_super_cache", Integer.class, "Klass*");
     public final int secondarySupersOffset = getFieldOffset("Klass::_secondary_supers", Integer.class, "Array<Klass*>*");
@@ -303,11 +315,20 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
             threadCurrentThreadObjectOffset = getFieldOffset("JavaThread::_vthread", Integer.class, "OopHandle");
         }
     }
+
+    public final boolean doJVMTIVirtualThreadTransitions = getFlag("DoJVMTIVirtualThreadTransitions", Boolean.class, false, JDK >= 20);
+
     public final int threadCarrierThreadObjectOffset = getFieldOffset("JavaThread::_threadObj", Integer.class, "OopHandle");
     public final int threadScopedValueCacheOffset = getFieldOffset("JavaThread::_scopedValueCache", Integer.class, "OopHandle", -1, JDK >= 20 && (!JVMCI || jvmciGE(JVMCI_23_0_b06)));
 
+    public final int threadIsInVTMSTransitionOffset = getFieldOffset("JavaThread::_is_in_VTMS_transition", Integer.class, "bool", -1, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+    public final int threadIsInTmpVTMSTransitionOffset = getFieldOffset("JavaThread::_is_in_tmp_VTMS_transition", Integer.class, "bool", -1, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+
     public final int javaLangThreadJFREpochOffset = getFieldValue("java_lang_Thread::_jfr_epoch_offset", Integer.class, "int", -1, JDK >= 21 || (JDK >= 20 && jvmciGE(JVMCI_23_0_b10)));
     public final int javaLangThreadTIDOffset = getFieldValue("java_lang_Thread::_tid_offset", Integer.class, "int", -1, JDK >= 21 || (JDK >= 20 && jvmciGE(JVMCI_23_0_b10)));
+
+    public final int javaLangThreadIsInVTMSTransitonOffset = getFieldValue("java_lang_Thread::_jvmti_is_in_VTMS_transition_offset", Integer.class, "int", -1, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+    public final long virtualThreadVTMSNotifyJvmtiEvents = getFieldAddress("JvmtiVTMSTransitionDisabler::_VTMS_notify_jvmti_events", "bool", -1L, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
 
     public final int threadJFRThreadLocalOffset = getFieldOffset("Thread::_jfr_thread_local", Integer.class, "JfrThreadLocal", -1, JDK >= 21 || (JDK >= 20 && jvmciGE(JVMCI_23_0_b10)));
 
@@ -400,13 +421,29 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final int frameInterpreterFrameSenderSpOffset = getConstant("frame::interpreter_frame_sender_sp_offset", Integer.class, 0, osArch.equals("amd64"));
     public final int frameInterpreterFrameLastSpOffset = getConstant("frame::interpreter_frame_last_sp_offset", Integer.class, 0, osArch.equals("amd64"));
 
-    public final int biasedLockMaskInPlace = getConstant(markWordField("biased_lock_mask_in_place"), Integer.class, -1, JDK < 18);
+    private final Integer biasedLockMaskInPlace = getConstant(markWordField("biased_lock_mask_in_place"), Integer.class, null, JDK < 18);
+    private final Integer lockMaskInPlace = getConstant(markWordField("lock_mask_in_place"), Integer.class, null,
+                    JVMCI ? (JDK == 20 && jvmciGE(JVMCI_23_1_b02)) || (JDK >= 21 && jvmciGE(JVMCI_23_1_b04)) : (JDK == 21 && JDK_BUILD >= 23) || JDK >= 22);
+
+    public int getLockMaskInPlace() {
+        if (JDK >= 18) {
+            if (lockMaskInPlace != null) {
+                return lockMaskInPlace;
+            } else {
+                // This presumes markWord::unlocked_value is non-zero.
+                return 0;
+            }
+        } else {
+            return biasedLockMaskInPlace;
+        }
+    }
+
     public final int ageMaskInPlace = getConstant(markWordField("age_mask_in_place"), Integer.class);
-    public final int epochMaskInPlace = getConstant(markWordField("epoch_mask_in_place"), Integer.class, -1, JDK < 18);
+    public final Integer epochMaskInPlace = getConstant(markWordField("epoch_mask_in_place"), Integer.class, null, JDK < 18);
 
     public final int unlockedMask = getConstant(markWordField("unlocked_value"), Integer.class);
     public final int monitorMask = getConstant(markWordField("monitor_value"), Integer.class);
-    public final int biasedLockPattern = getConstant(markWordField("biased_lock_pattern"), Integer.class, -1, JDK < 18);
+    public final Integer biasedLockPattern = getConstant(markWordField("biased_lock_pattern"), Integer.class, null, JDK < 18);
 
     // This field has no type in vmStructs.cpp
     public final int objectMonitorOwner = getFieldOffset("ObjectMonitor::_owner", Integer.class, null);
@@ -774,6 +811,15 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
 
     public final long fremAddress = getAddress("SharedRuntime::frem");
     public final long dremAddress = getAddress("SharedRuntime::drem");
+
+    public final long jvmtiVThreadStart = getAddress("SharedRuntime::notify_jvmti_vthread_start", 0L, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+    public final long jvmtiVThreadEnd = getAddress("SharedRuntime::notify_jvmti_vthread_end", 0L, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+    public final long jvmtiVThreadMount = getAddress("SharedRuntime::notify_jvmti_vthread_mount", 0L, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+    public final long jvmtiVThreadUnmount = getAddress("SharedRuntime::notify_jvmti_vthread_unmount", 0L, JDK >= 21 && jvmciGE(JVMCI_23_1_b07));
+
+    public boolean supportJVMTIVThreadNotification() {
+        return jvmtiVThreadStart != 0L && jvmtiVThreadEnd != 0L && jvmtiVThreadMount != 0L && jvmtiVThreadUnmount != 0L;
+    }
 
     public final int jvmciCountersSize = getFlag("JVMCICounterSize", Integer.class);
 

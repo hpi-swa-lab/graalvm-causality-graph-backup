@@ -46,9 +46,9 @@ import org.graalvm.options.OptionCategory;
 import org.graalvm.options.OptionKey;
 import org.graalvm.options.OptionStability;
 import org.graalvm.options.OptionType;
+import org.graalvm.polyglot.SandboxPolicy;
 
 import com.oracle.truffle.api.Option;
-import org.graalvm.polyglot.SandboxPolicy;
 
 @Option.Group(PolyglotEngineImpl.OPTION_GROUP_ENGINE)
 final class PolyglotEngineOptions {
@@ -71,6 +71,10 @@ final class PolyglotEngineOptions {
 
     @Option(category = OptionCategory.INTERNAL, stability = OptionStability.EXPERIMENTAL, help = "Show internal frames specific to the language implementation in stack traces.")//
     static final OptionKey<Boolean> ShowInternalStackFrames = new OptionKey<>(false);
+
+    @Option(category = OptionCategory.INTERNAL, stability = OptionStability.EXPERIMENTAL, help = "Printed PolyglotException stacktrace unconditionally contains the stacktrace of the original internal exception " +
+                    "as well as the stacktrace of the creation of the PolyglotException instance.")//
+    static final OptionKey<Boolean> PrintInternalStackTrace = new OptionKey<>(false);
 
     @Option(category = OptionCategory.INTERNAL, stability = OptionStability.EXPERIMENTAL, help = "Enables conservative context references. " +
                     "This allows invalid sharing between contexts. " +
@@ -100,6 +104,10 @@ final class PolyglotEngineOptions {
     @Option(category = OptionCategory.USER, stability = OptionStability.STABLE, help = "" +
                     "Print warning when the engine is using a default Truffle runtime (default: true).", usageSyntax = "true|false", sandbox = SandboxPolicy.UNTRUSTED)//
     static final OptionKey<Boolean> WarnInterpreterOnly = new OptionKey<>(true);
+
+    @Option(category = OptionCategory.USER, stability = OptionStability.STABLE, help = "" +
+                    "Print warning when a deprecated option is used (default: true).", usageSyntax = "true|false", sandbox = SandboxPolicy.UNTRUSTED)//
+    static final OptionKey<Boolean> WarnOptionDeprecation = new OptionKey<>(true);
 
     @Option(category = OptionCategory.INTERNAL, stability = OptionStability.EXPERIMENTAL, help = "" +
                     "Use pre-initialized context when it's available (default: true).", usageSyntax = "true|false")//

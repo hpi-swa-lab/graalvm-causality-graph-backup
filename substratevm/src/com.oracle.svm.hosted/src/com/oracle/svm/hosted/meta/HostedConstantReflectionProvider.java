@@ -70,12 +70,6 @@ public class HostedConstantReflectionProvider extends SharedConstantReflectionPr
     }
 
     @Override
-    public JavaConstant boxPrimitive(JavaConstant source) {
-        /* Delegate to the AnalysisConstantReflectionProvider. */
-        return aConstantReflection.boxPrimitive(source);
-    }
-
-    @Override
     public JavaConstant unboxPrimitive(JavaConstant source) {
         /* Delegate to the AnalysisConstantReflectionProvider. */
         return aConstantReflection.unboxPrimitive(source);
@@ -114,7 +108,7 @@ public class HostedConstantReflectionProvider extends SharedConstantReflectionPr
     public JavaConstant readFieldValue(ResolvedJavaField field, JavaConstant receiver) {
         var hField = (HostedField) field;
         assert checkHub(receiver) : "Receiver " + receiver + " of field " + hField + " read should not be java.lang.Class. Expecting to see DynamicHub here.";
-        return hUniverse.lookup(aConstantReflection.readValue(hMetaAccess, hField.getWrapped(), receiver));
+        return hUniverse.lookup(aConstantReflection.readValue(hMetaAccess, hField.getWrapped(), receiver, true));
     }
 
     private boolean checkHub(JavaConstant constant) {

@@ -511,18 +511,13 @@ public class HotSpotReplacementsUtil {
     }
 
     /**
-     * Mask for a biasable, locked or unlocked mark word.
-     *
-     * <pre>
-     * +----------------------------------+-+-+
-     * |                                 1|1|1|
-     * +----------------------------------+-+-+
-     * </pre>
-     *
+     * Mask for a biasable, locked or unlocked mark word. It is the least significant 3 bits prior
+     * to Java 18 (1 bit for biased locking and 2 bits for stack locking or heavy locking), and 2
+     * bits afterwards due to elimination of the biased locking.
      */
     @Fold
-    public static int biasedLockMaskInPlace(@InjectedParameter GraalHotSpotVMConfig config) {
-        return config.biasedLockMaskInPlace;
+    public static int lockMaskInPlace(@InjectedParameter GraalHotSpotVMConfig config) {
+        return config.getLockMaskInPlace();
     }
 
     @Fold
@@ -903,6 +898,11 @@ public class HotSpotReplacementsUtil {
                     : OopHandleLocationIdentity.mutable("_threadObj OopHandle contents");
 
     public static final LocationIdentity HOTSPOT_JAVA_THREAD_SCOPED_VALUE_CACHE_HANDLE_LOCATION = OopHandleLocationIdentity.mutable("_scopedValueCache OopHandle contents");
+
+    public static final LocationIdentity HOTSPOT_VTMS_NOTIFY_JVMTI_EVENTS = NamedLocationIdentity.mutable("JvmtiVTMSTransitionDisabler::_VTMS_notify_jvmti_events");
+    public static final LocationIdentity HOTSPOT_JAVA_THREAD_IS_IN_VTMS_TRANSITION = NamedLocationIdentity.mutable("JavaThread::_is_in_VTMS_transition");
+    public static final LocationIdentity HOTSPOT_JAVA_THREAD_IS_IN_TMP_VTMS_TRANSITION = NamedLocationIdentity.mutable("JavaThread::_is_in_tmp_VTMS_transition");
+    public static final LocationIdentity HOTSPOT_JAVA_LANG_THREAD_IS_IN_VTMS_TRANSITION = NamedLocationIdentity.mutable("Thread::_is_in_VTMS_transition");
 
     @Fold
     public static int layoutHelperHeaderSizeShift(@InjectedParameter GraalHotSpotVMConfig config) {

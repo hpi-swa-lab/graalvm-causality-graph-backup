@@ -61,6 +61,7 @@ import com.oracle.graal.pointsto.util.AnalysisFuture;
 import com.oracle.graal.pointsto.util.AtomicUtils;
 import com.oracle.graal.pointsto.util.ConcurrentLightHashMap;
 import com.oracle.graal.pointsto.util.ConcurrentLightHashSet;
+import com.oracle.svm.util.LogUtils;
 import com.oracle.svm.util.UnsafePartitionKind;
 
 import jdk.vm.ci.code.BytecodePosition;
@@ -183,6 +184,8 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     }
 
     private final AnalysisFuture<Void> onTypeReachableTask;
+    private final AnalysisFuture<Void> initializeMetaDataTask;
+
     /**
      * Additional information that is only available for types that are marked as reachable.
      */
@@ -209,6 +212,10 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
      */
     List<AnalysisFuture<Void>> scheduledTypeReachableNotifications;
 
+    /**
+     * Contains callbacks that are notified when this type is marked as instantiated. Each callback
+     * is called at least once, but there are no guarantees that it will be called exactly once.
+     */
     @SuppressWarnings("unused") private volatile Object typeInstantiatedNotifications;
 
     @SuppressWarnings("this-escape")
@@ -302,6 +309,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
         /* The registration task initializes the type. */
         this.onTypeReachableTask = new AnalysisFuture<>(() -> universe.onTypeReachable(this), null);
+        this.initializeMetaDataTask = new AnalysisFuture<>(() -> universe.initializeMetaData(this), null);
         this.typeData = new AnalysisFuture<>(() -> {
             AnalysisError.guarantee(universe.getHeapScanner() != null, "Heap scanner is not available.");
             return universe.getHeapScanner().computeTypeData(this);
@@ -717,6 +725,10 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
         onTypeReachableTask.ensureDone();
     }
 
+    public AnalysisFuture<Void> getInitializeMetaDataTask() {
+        return initializeMetaDataTask;
+    }
+
     public boolean getReachabilityListenerNotified() {
         return reachabilityListenerNotified;
     }
@@ -845,6 +857,10 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
     @Override
     public boolean isReachable() {
         return AtomicUtils.isSet(this, isReachableUpdater);
+    }
+
+    public Object getReachableReason() {
+        return isReachable;
     }
 
     /**
@@ -1222,7 +1238,7 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
         try {
             return wrapped.isLocal();
         } catch (InternalError e) {
-            System.err.println("warning: unknown locality of class " + wrapped.getName() + ", assuming class is not local. To remove the warning report an issue " +
+            LogUtils.warning("Unknown locality of class " + wrapped.getName() + ", assuming class is not local. To remove the warning report an issue " +
                             "to the library or language author. The issue is caused by " + wrapped.getName() + " which is not following the naming convention.");
             return false;
         }
@@ -1288,8 +1304,16 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
         return AtomicUtils.isSet(this, isInHeapUpdater);
     }
 
+    public Object getInHeapReason() {
+        return isInHeap;
+    }
+
     public boolean isAllocated() {
         return AtomicUtils.isSet(this, isAllocatedUpdater);
+    }
+
+    public Object getAllocatedReason() {
+        return isAllocated;
     }
 
     @Override

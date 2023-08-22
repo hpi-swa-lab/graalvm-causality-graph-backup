@@ -176,6 +176,10 @@ public interface LIRGeneratorTool extends DiagnosticLIRGeneratorTool, ValueKindF
 
     void emitUnwind(Value operand);
 
+    default void emitHalt() {
+        throw GraalError.unimplemented("Halt operation is not implemented on this architecture");  // ExcludeFromJacocoGeneratedReport
+    }
+
     /**
      * Emits a return instruction. Implementations need to insert a move if the input is not in the
      * correct location.
@@ -226,6 +230,11 @@ public interface LIRGeneratorTool extends DiagnosticLIRGeneratorTool, ValueKindF
     @SuppressWarnings("unused")
     default Variable emitVectorizedMismatch(EnumSet<?> runtimeCheckedCPUFeatures, Value arrayA, Value arrayB, Value length, Value stride) {
         throw GraalError.unimplemented("vectorizedMismatch substitution is not implemented on this architecture"); // ExcludeFromJacocoGeneratedReport
+    }
+
+    @SuppressWarnings("unused")
+    default Variable emitVectorizedHashCode(EnumSet<?> runtimeCheckedCPUFeatures, Value arrayStart, Value length, Value initialValue, JavaKind arrayKind) {
+        throw GraalError.unimplemented("vectorizedHashCode substitution is not implemented on this architecture"); // ExcludeFromJacocoGeneratedReport
     }
 
     @SuppressWarnings("unused")
@@ -454,7 +463,7 @@ public interface LIRGeneratorTool extends DiagnosticLIRGeneratorTool, ValueKindF
     }
 
     @SuppressWarnings("unused")
-    default Variable emitHasNegatives(EnumSet<?> runtimeCheckedCPUFeatures, Value array, Value length) {
+    default Variable emitCountPositives(EnumSet<?> runtimeCheckedCPUFeatures, Value array, Value length) {
         throw GraalError.unimplemented("No specialized implementation available"); // ExcludeFromJacocoGeneratedReport
     }
 
@@ -503,11 +512,42 @@ public interface LIRGeneratorTool extends DiagnosticLIRGeneratorTool, ValueKindF
         throw GraalError.unimplemented("No specialized implementation available");
     }
 
+    @SuppressWarnings("unused")
+    default void emitSha1ImplCompress(Value buf, Value state) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default void emitSha256ImplCompress(Value buf, Value state) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default void emitSha3ImplCompress(Value buf, Value state, Value blockSize) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default void emitSha512ImplCompress(Value buf, Value state) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default void emitMD5ImplCompress(Value buf, Value state) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
     void emitBlackhole(Value operand);
 
     LIRKind getLIRKind(Stamp stamp);
 
     void emitPause();
+
+    /**
+     * Perform no operation by default. See also {@link Thread#onSpinWait()}.
+     */
+    default void emitSpinWait() {
+    }
 
     void emitPrefetchAllocate(Value address);
 
@@ -545,8 +585,13 @@ public interface LIRGeneratorTool extends DiagnosticLIRGeneratorTool, ValueKindF
         return getResult().getFrameMapBuilder().allocateStackMemory(sizeInBytes, alignmentInBytes);
     }
 
-    default Value emitTimeStampWithProcid() {
-        throw new GraalError("Emitting code to return the current value of the timestamp counter with procid is not currently supported on %s", target().arch);
+    default Value emitTimeStamp() {
+        throw new GraalError("Emitting code to return the current value of the timestamp counter is not currently supported on %s", target().arch);
+    }
+
+    @SuppressWarnings("unused")
+    default void emitProcid(AllocatableValue dst) {
+        throw new GraalError("Emitting code to return the current value of the procid is not currently supported on %s", target().arch);
     }
 
     default Value emitReadCallerStackPointer(Stamp wordStamp) {

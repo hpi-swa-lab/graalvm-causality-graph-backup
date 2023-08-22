@@ -127,12 +127,17 @@ public class GraalHotSpotVMConfigAccess {
     protected static final Version JVMCI_23_0_b07 = new Version(23, 0, 7);
     protected static final Version JVMCI_23_0_b10 = new Version(23, 0, 10);
 
+    protected static final Version JVMCI_23_1_b02 = new Version(23, 1, 2);
+    protected static final Version JVMCI_23_1_b04 = new Version(23, 1, 4);
+    protected static final Version JVMCI_23_1_b07 = new Version(23, 1, 7);
+
     public static boolean jvmciGE(Version v) {
         return JVMCI && !JVMCI_VERSION.isLessThan(v);
     }
 
-    static final int JDK = Runtime.version().feature();
+    public static final int JDK = Runtime.version().feature();
     static final int JDK_UPDATE = Runtime.version().update();
+    static final int JDK_BUILD = Runtime.version().build().orElse(0);
     public static final boolean IS_OPENJDK = getProperty("java.vm.name", "").startsWith("OpenJDK");
     public static final Version JVMCI_VERSION;
     public static final boolean JVMCI;
@@ -345,6 +350,16 @@ public class GraalHotSpotVMConfigAccess {
             return access.getFieldAddress(name, cppType);
         }
         return 0L;
+    }
+
+    /**
+     * @see HotSpotVMConfigAccess#getFieldAddress(String, String)
+     */
+    public long getFieldAddress(String name, String cppType, long notPresent, boolean expectPresent) {
+        if (isPresent(name, vmFields, expectPresent)) {
+            return access.getFieldAddress(name, cppType);
+        }
+        return notPresent;
     }
 
     /**

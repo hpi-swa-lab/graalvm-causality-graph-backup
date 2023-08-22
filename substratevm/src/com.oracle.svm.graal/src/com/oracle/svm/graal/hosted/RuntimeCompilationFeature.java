@@ -51,7 +51,9 @@ import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration.BytecodeExceptionMode;
+import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
 import org.graalvm.compiler.options.Option;
+import org.graalvm.compiler.options.OptionStability;
 import org.graalvm.compiler.phases.OptimisticOptimizations;
 import org.graalvm.compiler.phases.tiers.Suites;
 import org.graalvm.compiler.phases.util.Providers;
@@ -98,6 +100,7 @@ import com.oracle.svm.graal.meta.SubstrateMethod;
 import com.oracle.svm.graal.meta.SubstrateType;
 import com.oracle.svm.graal.meta.SubstrateUniverseFactory;
 import com.oracle.svm.hosted.FeatureHandler;
+import com.oracle.svm.hosted.FeatureImpl;
 import com.oracle.svm.hosted.FeatureImpl.AfterHeapLayoutAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.BeforeAnalysisAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.CompilationAccessImpl;
@@ -137,7 +140,7 @@ public abstract class RuntimeCompilationFeature {
         @Option(help = "Print call tree of methods reachable for runtime compilation")//
         public static final HostedOptionKey<Boolean> PrintRuntimeCompilationCallTree = new HostedOptionKey<>(false);
 
-        @Option(help = "Maximum number of methods allowed for runtime compilation.")//
+        @Option(help = "Maximum number of methods allowed for runtime compilation.", stability = OptionStability.STABLE)//
         public static final HostedOptionKey<LocatableMultiOptionValue.Strings> MaxRuntimeCompileMethods = new HostedOptionKey<>(LocatableMultiOptionValue.Strings.build());
 
         @Option(help = "Enforce checking of maximum number of methods allowed for runtime compilation. Useful for checking in the gate that the number of methods does not go up without a good reason.")//
@@ -181,6 +184,16 @@ public abstract class RuntimeCompilationFeature {
 
     public interface RuntimeCompilationCandidatePredicate {
         boolean allowRuntimeCompilation(ResolvedJavaMethod method);
+    }
+
+    public interface AllowInliningPredicate {
+        enum InlineDecision {
+            INLINE,
+            INLINING_DISALLOWED,
+            NO_DECISION
+        }
+
+        InlineDecision allowInlining(GraphBuilderContext builder, ResolvedJavaMethod target);
     }
 
     public abstract static class AbstractCallTreeNode implements Comparable<AbstractCallTreeNode> {
@@ -339,6 +352,7 @@ public abstract class RuntimeCompilationFeature {
     protected GraphBuilderConfiguration graphBuilderConfig;
     protected OptimisticOptimizations optimisticOpts;
     protected RuntimeCompilationCandidatePredicate runtimeCompilationCandidatePredicate;
+    private boolean runtimeCompilationCandidatePredicateUpdated = false;
     protected Predicate<ResolvedJavaMethod> deoptimizeOnExceptionPredicate;
 
     private SubstrateUniverseFactory universeFactory = new SubstrateUniverseFactory();
@@ -443,6 +457,7 @@ public abstract class RuntimeCompilationFeature {
 
         SubstrateGraalRuntime graalRuntime = new SubstrateGraalRuntime();
         objectReplacer.setGraalRuntime(graalRuntime);
+        objectReplacer.setAnalysisAccess(config);
         ImageSingletons.add(GraalRuntime.class, graalRuntime);
         RuntimeSupport.getRuntimeSupport().addShutdownHook(new GraalSupport.GraalShutdownHook());
 
@@ -479,8 +494,13 @@ public abstract class RuntimeCompilationFeature {
         return false;
     }
 
-    public void initializeRuntimeCompilationConfiguration(RuntimeCompilationCandidatePredicate newRuntimeCompilationCandidatePredicate) {
+    public void initializeRuntimeCompilationForTesting(FeatureImpl.BeforeAnalysisAccessImpl config, RuntimeCompilationCandidatePredicate newRuntimeCompilationCandidatePredicate) {
         initializeRuntimeCompilationConfiguration(hostedProviders, graphBuilderConfig, newRuntimeCompilationCandidatePredicate, deoptimizeOnExceptionPredicate);
+        initializeRuntimeCompilationForTesting(config);
+    }
+
+    public void initializeRuntimeCompilationForTesting(BeforeAnalysisAccessImpl config) {
+        initializeAnalysisProviders(config.getBigBang(), provider -> provider);
     }
 
     public void initializeRuntimeCompilationConfiguration(HostedProviders newHostedProviders, GraphBuilderConfiguration newGraphBuilderConfig,
@@ -491,7 +511,9 @@ public abstract class RuntimeCompilationFeature {
 
         hostedProviders = newHostedProviders;
         graphBuilderConfig = newGraphBuilderConfig;
+        assert !runtimeCompilationCandidatePredicateUpdated : "Updated compilation predicate multiple times";
         runtimeCompilationCandidatePredicate = newRuntimeCompilationCandidatePredicate;
+        runtimeCompilationCandidatePredicateUpdated = true;
         deoptimizeOnExceptionPredicate = newDeoptimizeOnExceptionPredicate;
 
         if (SubstrateOptions.IncludeNodeSourcePositions.getValue()) {
@@ -515,6 +537,8 @@ public abstract class RuntimeCompilationFeature {
     }
 
     public abstract void initializeAnalysisProviders(BigBang bb, Function<ConstantFieldProvider, ConstantFieldProvider> generator);
+
+    public abstract void registerAllowInliningPredicate(AllowInliningPredicate predicate);
 
     public abstract SubstrateMethod prepareMethodForRuntimeCompilation(ResolvedJavaMethod method, BeforeAnalysisAccessImpl config);
 

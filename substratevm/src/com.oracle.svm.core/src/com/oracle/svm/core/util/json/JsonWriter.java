@@ -146,6 +146,8 @@ public class JsonWriter implements AutoCloseable {
             print((EconomicMap<String, Object>) value);
         } else if (value instanceof Object[]) {
             print((Object[]) value);
+        } else if (value instanceof List) {
+            print((List<String>) value);
         } else {
             quote(value);
         }

@@ -121,6 +121,12 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
     protected final AnalysisType declaringClass;
     protected final AnalysisType fieldType;
 
+    /**
+     * Marks a field whose value is computed during image building, in general derived from other
+     * values, and it cannot be constant-folded or otherwise optimized.
+     */
+    protected final FieldValueComputer fieldValueComputer;
+
     @SuppressWarnings("this-escape")
     public AnalysisField(AnalysisUniverse universe, ResolvedJavaField wrappedField) {
         assert !wrappedField.isInternal();
@@ -146,6 +152,8 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
             this.instanceFieldFlow = new ContextInsensitiveFieldTypeFlow(this, getType());
             this.initialInstanceFieldFlow = new FieldTypeFlow(this, getType());
         }
+
+        fieldValueComputer = universe.hostVM().createFieldValueComputer(this);
     }
 
     @Override
@@ -375,6 +383,10 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
         return isReadUpdater.get(this);
     }
 
+    public Object getAccessedReason() {
+        return isAccessed;
+    }
+
     /**
      * Returns true if the field is reachable. Fields that are read or manually registered as
      * reachable are always reachable. For fields that are write-only, more cases need to be
@@ -399,12 +411,24 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
         return AtomicUtils.isSet(this, isAccessedUpdater) || AtomicUtils.isSet(this, isReadUpdater);
     }
 
+    public Object getReadReason() {
+        return isRead;
+    }
+
     public boolean isWritten() {
         return AtomicUtils.isSet(this, isAccessedUpdater) || AtomicUtils.isSet(this, isWrittenUpdater);
     }
 
+    public Object getWrittenReason() {
+        return isWritten;
+    }
+
     public boolean isFolded() {
         return AtomicUtils.isSet(this, isFoldedUpdater);
+    }
+
+    public Object getFoldedReason() {
+        return isFolded;
     }
 
     @Override
@@ -416,6 +440,25 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
     @Override
     public void onReachable() {
         notifyReachabilityCallbacks(declaringClass.getUniverse(), new ArrayList<>());
+    }
+
+    public boolean isValueAvailable() {
+        if (fieldValueComputer != null) {
+            return fieldValueComputer.isAvailable();
+        }
+        return true;
+    }
+
+    public boolean isComputedValue() {
+        return fieldValueComputer != null;
+    }
+
+    public Class<?>[] computedValueTypes() {
+        return fieldValueComputer.types();
+    }
+
+    public boolean computedValueCanBeNull() {
+        return fieldValueComputer.canBeNull();
     }
 
     public void setCanBeNull(boolean canBeNull) {
@@ -484,7 +527,7 @@ public abstract class AnalysisField extends AnalysisElement implements WrappedJa
     @Override
     public String toString() {
         return "AnalysisField<" + format("%h.%n") + " -> " + wrapped.toString() + ", accessed: " + (isAccessed != null) +
-                        ", read: " + (isRead != null) + ", written: " + (isWritten != null) + ", folded: " + (isFolded != null) + ">";
+                        ", read: " + (isRead != null) + ", written: " + (isWritten != null) + ", folded: " + isFolded() + ">";
     }
 
     @Override

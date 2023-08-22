@@ -37,6 +37,7 @@ import com.oracle.svm.core.option.OptionOrigin;
 import com.oracle.svm.core.option.OptionUtils;
 import com.oracle.svm.core.util.ExitStatus;
 import com.oracle.svm.driver.NativeImage.ArgumentQueue;
+import com.oracle.svm.util.LogUtils;
 
 class CmdLineOptionHandler extends NativeImage.OptionHandler<NativeImage> {
 
@@ -62,10 +63,12 @@ class CmdLineOptionHandler extends NativeImage.OptionHandler<NativeImage> {
     boolean consume(ArgumentQueue args) {
         String headArg = args.peek();
         boolean consumed = consume(args, headArg);
-        OptionOrigin origin = OptionOrigin.from(args.argumentOrigin);
-        if (consumed && !origin.commandLineLike()) {
-            String msg = String.format("Using '%s' provided by %s is only allowed on command line.", headArg, origin);
-            throw NativeImage.showError(msg);
+        if (consumed) {
+            OptionOrigin origin = OptionOrigin.from(args.argumentOrigin);
+            if (!origin.commandLineLike()) {
+                String msg = String.format("Using '%s' provided by %s is only allowed on command line.", headArg, origin);
+                throw NativeImage.showError(msg);
+            }
         }
         return consumed;
     }
@@ -144,7 +147,7 @@ class CmdLineOptionHandler extends NativeImage.OptionHandler<NativeImage> {
                 return true;
             case VERBOSE_SERVER_OPTION:
                 args.poll();
-                NativeImage.showWarning("Ignoring server-mode native-image argument " + headArg + ".");
+                LogUtils.warning("Ignoring server-mode native-image argument " + headArg + ".");
                 return true;
         }
 
@@ -170,7 +173,7 @@ class CmdLineOptionHandler extends NativeImage.OptionHandler<NativeImage> {
 
         if (headArg.startsWith(SERVER_OPTION_PREFIX)) {
             args.poll();
-            NativeImage.showWarning("Ignoring server-mode native-image argument " + headArg + ".");
+            LogUtils.warning("Ignoring server-mode native-image argument " + headArg + ".");
             String serverOptionCommand = headArg.substring(SERVER_OPTION_PREFIX.length());
             if (!serverOptionCommand.startsWith("session=")) {
                 /*

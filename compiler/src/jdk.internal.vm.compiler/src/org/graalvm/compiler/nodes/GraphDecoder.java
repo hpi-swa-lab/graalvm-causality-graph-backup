@@ -40,8 +40,6 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-import jdk.vm.ci.meta.Assumptions;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -76,13 +74,16 @@ import org.graalvm.compiler.nodes.graphbuilderconf.LoopExplosionPlugin.LoopExplo
 import org.graalvm.compiler.nodes.spi.Canonicalizable;
 import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.options.OptionValues;
+import org.graalvm.compiler.replacements.nodes.MethodHandleWithExceptionNode;
 
 import jdk.vm.ci.code.Architecture;
+import jdk.vm.ci.meta.Assumptions;
 import jdk.vm.ci.meta.DeoptimizationAction;
 import jdk.vm.ci.meta.DeoptimizationReason;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.PrimitiveConstant;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 /**
@@ -161,8 +162,18 @@ public class GraphDecoder {
             if (encodedGraph != null) {
                 reader = UnsafeArrayTypeReader.create(encodedGraph.getEncoding(), encodedGraph.getStartOffset(), architecture.supportsUnalignedMemoryAccess());
                 maxFixedNodeOrderId = reader.getUVInt();
-                graph.getGraphState().setGuardsStage((GraphState.GuardsStage) readObject(this));
-                graph.getGraphState().getStageFlags().addAll((EnumSet<StageFlag>) readObject(this));
+                GraphState.GuardsStage guardsStage = (GraphState.GuardsStage) readObject(this);
+                EnumSet<StageFlag> stageFlags = (EnumSet<StageFlag>) readObject(this);
+                if (callerLoopScope == null) {
+                    /**
+                     * Only propagate stage flags in non-inlining scenarios. If the caller scope has
+                     * not been guard lowered yet (or is a runtime compilation) while we inline
+                     * something that has been guard lowered already (or is an encoded hosted graph
+                     * like a snippet) do not advance stage flags or guards stage.
+                     */
+                    graph.getGraphState().setGuardsStage(guardsStage);
+                    graph.getGraphState().getStageFlags().addAll(stageFlags);
+                }
 
                 var decoderPair = InliningLogCodec.maybeDecode(graph, readObject(this));
                 if (decoderPair != null) {
@@ -204,11 +215,11 @@ public class GraphDecoder {
             return false;
         }
 
-        public NodeSourcePosition getCallerBytecodePosition() {
-            return getCallerBytecodePosition(null);
+        public NodeSourcePosition getCallerNodeSourcePosition() {
+            return null;
         }
 
-        public NodeSourcePosition getCallerBytecodePosition(NodeSourcePosition position) {
+        public NodeSourcePosition getNodeSourcePosition(NodeSourcePosition position) {
             return position;
         }
 
@@ -436,36 +447,51 @@ public class GraphDecoder {
         }
     }
 
-    /**
-     * Additional information encoded for {@link Invoke} nodes to allow method inlining without
-     * decoding the frame state and successors beforehand.
-     */
-    protected static class InvokeData {
-        public final Invoke invoke;
+    protected static class InvokableData<T extends Invokable> {
+        public final T invoke;
         public final ResolvedJavaType contextType;
-        public final int invokeOrderId;
-        public final int callTargetOrderId;
+        public final int orderId;
         public final int stateAfterOrderId;
         public final int nextOrderId;
-
         public final int exceptionOrderId;
         public final int exceptionStateOrderId;
         public final int exceptionNextOrderId;
-        public JavaConstant constantReceiver;
-        public CallTargetNode callTarget;
-        public FixedWithNextNode invokePredecessor;
 
-        protected InvokeData(Invoke invoke, ResolvedJavaType contextType, int invokeOrderId, int callTargetOrderId, int stateAfterOrderId, int nextOrderId,
+        protected InvokableData(T invoke, ResolvedJavaType contextType, int orderId, int stateAfterOrderId, int nextOrderId,
                         int exceptionOrderId, int exceptionStateOrderId, int exceptionNextOrderId) {
             this.invoke = invoke;
             this.contextType = contextType;
-            this.invokeOrderId = invokeOrderId;
-            this.callTargetOrderId = callTargetOrderId;
+            this.orderId = orderId;
             this.stateAfterOrderId = stateAfterOrderId;
             this.nextOrderId = nextOrderId;
             this.exceptionOrderId = exceptionOrderId;
             this.exceptionStateOrderId = exceptionStateOrderId;
             this.exceptionNextOrderId = exceptionNextOrderId;
+        }
+    }
+
+    /**
+     * Additional information encoded for {@link Invoke} nodes to allow method inlining without
+     * decoding the frame state and successors beforehand.
+     */
+    protected static class InvokeData extends InvokableData<Invoke> {
+        static InvokeData createFrom(InvokableData<? extends Invoke> from, int callTargetOrderId, boolean intrinsifiedMethodHandle) {
+            return new InvokeData(from.invoke, from.contextType, from.orderId, callTargetOrderId, intrinsifiedMethodHandle,
+                            from.stateAfterOrderId, from.nextOrderId, from.exceptionOrderId, from.exceptionStateOrderId, from.exceptionNextOrderId);
+        }
+
+        public final int callTargetOrderId;
+        public final boolean intrinsifiedMethodHandle;
+
+        public JavaConstant constantReceiver;
+        public CallTargetNode callTarget;
+        public FixedWithNextNode invokePredecessor;
+
+        public InvokeData(Invoke invoke, ResolvedJavaType contextType, int invokeOrderId, int callTargetOrderId, boolean intrinsifiedMethodHandle,
+                        int stateAfterOrderId, int nextOrderId, int exceptionOrderId, int exceptionStateOrderId, int exceptionNextOrderId) {
+            super(invoke, contextType, invokeOrderId, stateAfterOrderId, nextOrderId, exceptionOrderId, exceptionStateOrderId, exceptionNextOrderId);
+            this.callTargetOrderId = callTargetOrderId;
+            this.intrinsifiedMethodHandle = intrinsifiedMethodHandle;
         }
     }
 
@@ -893,6 +919,9 @@ public class GraphDecoder {
             } else if (node instanceof Invoke) {
                 InvokeData invokeData = readInvokeData(methodScope, nodeOrderId, (Invoke) node);
                 resultScope = handleInvoke(methodScope, loopScope, invokeData);
+            } else if (node instanceof MethodHandleWithExceptionNode methodHandle) {
+                InvokableData<MethodHandleWithExceptionNode> invokableData = readInvokableData(methodScope, nodeOrderId, methodHandle);
+                resultScope = handleMethodHandle(methodScope, loopScope, invokableData);
             } else if (node instanceof ReturnNode || node instanceof UnwindNode) {
                 methodScope.returnAndUnwindNodes.add((ControlSinkNode) node);
             } else {
@@ -913,21 +942,30 @@ public class GraphDecoder {
         }
     }
 
-    protected InvokeData readInvokeData(MethodScope methodScope, int invokeOrderId, Invoke invoke) {
+    protected LoopScope handleMethodHandle(MethodScope methodScope, LoopScope loopScope, InvokableData<MethodHandleWithExceptionNode> invokableData) {
+        appendInvokable(methodScope, loopScope, invokableData);
+        return loopScope;
+    }
+
+    protected <T extends Invokable> InvokableData<T> readInvokableData(MethodScope methodScope, int orderId, T node) {
         ResolvedJavaType contextType = (ResolvedJavaType) readObject(methodScope);
-        int callTargetOrderId = readOrderId(methodScope);
         int stateAfterOrderId = readOrderId(methodScope);
         int nextOrderId = readOrderId(methodScope);
 
-        if (invoke instanceof InvokeWithExceptionNode) {
+        if (node instanceof WithExceptionNode) {
             int exceptionOrderId = readOrderId(methodScope);
             int exceptionStateOrderId = readOrderId(methodScope);
             int exceptionNextOrderId = readOrderId(methodScope);
-            return new InvokeData(invoke, contextType, invokeOrderId, callTargetOrderId, stateAfterOrderId, nextOrderId, exceptionOrderId, exceptionStateOrderId,
-                            exceptionNextOrderId);
+            return new InvokableData<>(node, contextType, orderId, stateAfterOrderId, nextOrderId, exceptionOrderId, exceptionStateOrderId, exceptionNextOrderId);
         } else {
-            return new InvokeData(invoke, contextType, invokeOrderId, callTargetOrderId, stateAfterOrderId, nextOrderId, -1, -1, -1);
+            return new InvokableData<>(node, contextType, orderId, stateAfterOrderId, nextOrderId, -1, -1, -1);
         }
+    }
+
+    protected InvokeData readInvokeData(MethodScope methodScope, int invokeOrderId, Invoke invoke) {
+        int callTargetOrderId = readOrderId(methodScope);
+        InvokableData<Invoke> invokableData = readInvokableData(methodScope, invokeOrderId, invoke);
+        return InvokeData.createFrom(invokableData, callTargetOrderId, false);
     }
 
     /**
@@ -953,15 +991,21 @@ public class GraphDecoder {
         } else {
             ((InvokeNode) invokeData.invoke).setCallTarget(callTarget);
         }
+        appendInvokable(methodScope, loopScope, invokeData);
+    }
 
+    private <T extends Invokable & StateSplit> void appendInvokable(MethodScope methodScope, LoopScope loopScope, InvokableData<T> invokeData) {
         if (invokeData.invoke.stateAfter() == null) {
             invokeData.invoke.setStateAfter((FrameState) ensureNodeCreated(methodScope, loopScope, invokeData.stateAfterOrderId));
         }
-        assert invokeData.invoke.stateDuring() == null : "stateDuring is not used in high tier graphs";
+        assert !(invokeData.invoke instanceof Invoke inv && inv.stateDuring() != null) : "stateDuring is not used in high tier graphs";
 
-        invokeData.invoke.setNext(makeStubNode(methodScope, loopScope, invokeData.nextOrderId));
-        if (invokeData.invoke instanceof InvokeWithExceptionNode) {
-            ((InvokeWithExceptionNode) invokeData.invoke).setExceptionEdge((AbstractBeginNode) makeStubNode(methodScope, loopScope, invokeData.exceptionOrderId));
+        FixedNode next = makeStubNode(methodScope, loopScope, invokeData.nextOrderId);
+        if (invokeData.invoke instanceof WithExceptionNode withException) {
+            withException.setNext((AbstractBeginNode) next);
+            withException.setExceptionEdge((AbstractBeginNode) makeStubNode(methodScope, loopScope, invokeData.exceptionOrderId));
+        } else {
+            ((FixedWithNextNode) invokeData.invoke).setNext(next);
         }
     }
 
@@ -1415,10 +1459,10 @@ public class GraphDecoder {
                 }
             }
             if (graph.trackNodeSourcePosition() && position != null) {
-                NodeSourcePosition callerBytecodePosition = methodScope.getCallerBytecodePosition(position);
-                node.setNodeSourcePosition(callerBytecodePosition);
-                if (node instanceof DeoptimizingGuard) {
-                    ((DeoptimizingGuard) node).addCallerToNoDeoptSuccessorPosition(callerBytecodePosition.getCaller());
+                NodeSourcePosition newPosition = methodScope.getNodeSourcePosition(position);
+                node.setNodeSourcePosition(newPosition);
+                if (node instanceof DeoptimizingGuard deoptGuard && !newPosition.equals(position)) {
+                    deoptGuard.addCallerToNoDeoptSuccessorPosition(newPosition.getCaller());
                 }
             }
         }
@@ -1695,18 +1739,17 @@ public class GraphDecoder {
     }
 
     protected static boolean skipDirectEdge(Node node, Edges edges, int index) {
-        if (node instanceof Invoke) {
-            assert node instanceof InvokeNode || node instanceof InvokeWithExceptionNode : "The only two Invoke node classes. Got " + node.getClass();
+        if (node instanceof Invoke || node instanceof MethodHandleWithExceptionNode) {
+            assert node instanceof InvokeNode || node instanceof InvokeWithExceptionNode || node instanceof MethodHandleWithExceptionNode : "The only supported node classes. Got " + node.getClass();
             if (edges.type() == Edges.Type.Successors) {
-                assert edges.getCount() == (node instanceof InvokeWithExceptionNode ? 2
-                                : 1) : "InvokeNode has one successor (next); InvokeWithExceptionNode has two successors (next, exceptionEdge)";
+                assert edges.getCount() == (node instanceof WithExceptionNode ? 2 : 1) : "Base Invokable has one successor (next); WithExceptionNode has two successors (next, exceptionEdge)";
                 return true;
             } else {
                 assert edges.type() == Edges.Type.Inputs;
                 if (edges.getType(index) == CallTargetNode.class) {
                     return true;
                 } else if (edges.getType(index) == FrameState.class) {
-                    assert edges.get(node, index) == null || edges.get(node, index) == ((Invoke) node).stateAfter() : "Only stateAfter can be a FrameState during encoding";
+                    assert edges.get(node, index) == null || edges.get(node, index) == ((StateSplit) node).stateAfter() : "Only stateAfter can be a FrameState during encoding";
                     return true;
                 }
             }

@@ -284,7 +284,7 @@ public class ReachabilityExporter implements InternalFeature {
             if(!ImageSingletons.contains(JavaMainWrapper.JavaMainSupport.class))
                 return null;
             JavaMainWrapper.JavaMainSupport jms = ImageSingletons.lookup(JavaMainWrapper.JavaMainSupport.class);
-            java.lang.reflect.Method m = MethodHandles.reflectAs(java.lang.reflect.Method.class, jms.javaMainHandle);
+            java.lang.reflect.Method m = jms.getMainMethod();
             return universe.getBigbang().getMetaAccess().lookupJavaMethod(m);
         }
 

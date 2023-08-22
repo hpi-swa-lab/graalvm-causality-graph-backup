@@ -65,15 +65,14 @@ public class InlineBeforeAnalysis {
 
         StructuredGraph result = new StructuredGraph.Builder(bb.getOptions(), debug, bb.getHostVM().allowAssumptions(method))
                         .method(method)
-                        .recordInlinedMethods(false)
+                        .recordInlinedMethods(bb.getHostVM().recordInlinedMethods(method))
                         .trackNodeSourcePosition(analysisParsedGraph.getEncodedGraph().trackNodeSourcePosition())
                         .build();
 
         try (DebugContext.Scope s = debug.scope("InlineBeforeAnalysis", result)) {
 
             if (bb.strengthenGraalGraphs() && Options.InlineBeforeAnalysis.getValue(bb.getOptions())) {
-                InlineBeforeAnalysisGraphDecoder<?> decoder = new InlineBeforeAnalysisGraphDecoder<>(bb, bb.getHostVM().inlineBeforeAnalysisPolicy(method.getMultiMethodKey()), result,
-                                bb.getProviders(method));
+                InlineBeforeAnalysisGraphDecoder decoder = bb.getHostVM().createInlineBeforeAnalysisGraphDecoder(bb, method, result);
                 decoder.decode(method);
             } else {
                 /*

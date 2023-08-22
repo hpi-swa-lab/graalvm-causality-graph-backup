@@ -81,7 +81,7 @@ import com.oracle.svm.core.util.VMError;
 import com.oracle.svm.graal.GraalSupport;
 import com.oracle.svm.graal.meta.SubstrateMethod;
 import com.oracle.svm.hosted.FeatureImpl;
-import com.oracle.svm.hosted.ProgressReporter;
+import com.oracle.svm.hosted.HeapBreakdownProvider;
 import com.oracle.svm.hosted.code.DeoptimizationUtils;
 import com.oracle.svm.hosted.code.SubstrateCompilationDirectives;
 import com.oracle.svm.hosted.meta.HostedMethod;
@@ -178,7 +178,14 @@ public class LegacyRuntimeCompilationFeature extends RuntimeCompilationFeature i
 
         @Override
         protected boolean shouldVerifyFrameStates() {
-            return true;
+            /*
+             * (GR-46115) Ideally we should verify frame states in methods registered for runtime
+             * compilations, as well as any other methods that can deoptimize. Because runtime
+             * compiled methods can pull in almost arbitrary code, this means most frame states
+             * should be verified. We currently use illegal states as placeholders in many places,
+             * so this cannot be enabled at the moment.
+             */
+            return false;
         }
     }
 
@@ -234,10 +241,6 @@ public class LegacyRuntimeCompilationFeature extends RuntimeCompilationFeature i
             metaAccess.lookupJavaType(nodeClass.getClazz()).registerAsAllocated("All " + NodeClass.class.getName() + " classes are marked as instantiated eagerly.");
         }
         if (GraalSupport.setGraphEncoding(config, graphEncoder.getEncoding(), graphEncoder.getObjects(), nodeClasses)) {
-            config.requireAnalysisIteration();
-        }
-
-        if (objectReplacer.updateDataDuringAnalysis()) {
             config.requireAnalysisIteration();
         }
     }
@@ -486,10 +489,10 @@ public class LegacyRuntimeCompilationFeature extends RuntimeCompilationFeature i
             }
         }
 
-        ProgressReporter.singleton().setGraphEncodingByteLength(graphEncoder.getEncoding().length);
+        HeapBreakdownProvider.singleton().setGraphEncodingByteLength(graphEncoder.getEncoding().length);
         GraalSupport.setGraphEncoding(config, graphEncoder.getEncoding(), graphEncoder.getObjects(), graphEncoder.getNodeClasses());
 
-        objectReplacer.updateDataDuringAnalysis();
+        objectReplacer.setMethodsImplementations();
 
         /* All the temporary data structures used during encoding are no longer necessary. */
         graphEncoder = null;
@@ -526,7 +529,7 @@ public class LegacyRuntimeCompilationFeature extends RuntimeCompilationFeature i
 
         if (!runtimeCompiledMethodMap.containsKey(aMethod)) {
             runtimeCompiledMethodMap.put(aMethod, new CallTreeNode(aMethod, aMethod, null, ""));
-            config.registerAsRoot(aMethod, true);
+            config.registerAsRoot(aMethod, true, "Runtime compilation, registered in " + LegacyRuntimeCompilationFeature.class);
         }
 
         return sMethod;
@@ -539,6 +542,13 @@ public class LegacyRuntimeCompilationFeature extends RuntimeCompilationFeature i
 
     @Override
     public void initializeAnalysisProviders(BigBang bb, Function<ConstantFieldProvider, ConstantFieldProvider> generator) {
+        /*
+         * No action is needed for the legacy implementation.
+         */
+    }
+
+    @Override
+    public void registerAllowInliningPredicate(AllowInliningPredicate predicate) {
         /*
          * No action is needed for the legacy implementation.
          */

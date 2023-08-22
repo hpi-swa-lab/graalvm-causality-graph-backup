@@ -195,6 +195,16 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
+    public InvokeTypeFlow createDeoptInvokeTypeFlow(BytecodePosition invokeLocation, AnalysisType receiverType, PointsToAnalysisMethod targetMethod,
+                    TypeFlow<?>[] actualParameters, ActualReturnTypeFlow actualReturn, MultiMethod.MultiMethodKey callerMultiMethodKey) {
+        if (targetMethod.isStatic()) {
+            return new DefaultStaticInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, callerMultiMethodKey, true);
+        } else {
+            return new DefaultSpecialInvokeTypeFlow(invokeLocation, receiverType, targetMethod, actualParameters, actualReturn, callerMultiMethodKey, true);
+        }
+    }
+
+    @Override
     public MethodFlowsGraphInfo staticRootMethodGraph(PointsToAnalysis bb, PointsToAnalysisMethod method) {
         return method.getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, null);
     }
@@ -223,9 +233,14 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
 
     @Override
     public void linkActualReturn(PointsToAnalysis bb, boolean isStatic, InvokeTypeFlow invoke) {
-        /* Link the actual return with the formal return of already linked callees. */
-        for (AnalysisMethod callee : invoke.getAllCallees()) {
-            invoke.linkReturn(bb, isStatic, ((PointsToAnalysisMethod) callee).getTypeFlow().getMethodFlowsGraphInfo());
+        /*
+         * Link the actual return with the formal return of already linked callees. Note the callees
+         * may not be fully linked if they have been {@code DirectInvokeTypeFlow#initializeCallees}
+         * but not yet processed.
+         */
+        for (AnalysisMethod callee : invoke.getAllComputedCallees()) {
+            MethodFlowsGraphInfo calleeFlows = ((PointsToAnalysisMethod) callee).getTypeFlow().getOrCreateMethodFlowsGraphInfo(bb, invoke);
+            invoke.linkReturn(bb, isStatic, calleeFlows);
         }
         if (invoke.isSaturated()) {
             InvokeTypeFlow contextInsensitiveInvoke = invoke.getTargetMethod().getContextInsensitiveVirtualInvoke(invoke.getCallerMultiMethodKey());
