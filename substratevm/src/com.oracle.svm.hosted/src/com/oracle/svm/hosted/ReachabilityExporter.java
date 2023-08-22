@@ -37,9 +37,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.svm.core.ClassLoaderSupport;
 import com.oracle.svm.core.JavaMainWrapper;
@@ -64,11 +66,6 @@ import com.oracle.svm.core.util.json.JsonWriter;
 import com.oracle.svm.hosted.FeatureImpl.AfterCompilationAccessImpl;
 import com.oracle.svm.hosted.classinitialization.ClassInitializationSupport;
 import com.oracle.svm.hosted.classinitialization.InitKind;
-import com.oracle.svm.hosted.code.CompileQueue.CompileTask;
-import com.oracle.svm.hosted.meta.HostedField;
-import com.oracle.svm.hosted.meta.HostedMethod;
-import com.oracle.svm.hosted.meta.HostedType;
-import com.oracle.svm.hosted.meta.HostedUniverse;
 import com.oracle.svm.hosted.reflect.ReflectionHostedSupport;
 
 @AutomaticallyRegisteredFeature
@@ -86,17 +83,16 @@ public class ReachabilityExporter implements InternalFeature {
             public final boolean jni;
             public final boolean synthetic;
             public final boolean isMain;
-            public final int codeSize;
+            public final Integer codeSize;
 
-            public Method(HostedMethod m, Map<HostedMethod, CompileTask> compilations,
+            public Method(AnalysisMethod m, Function<AnalysisMethod, Integer> compilations,
                           Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods,
                           AnalysisMethod mainMethod) {
-                CompileTask compilation = compilations.get(m);
-                codeSize = compilation != null ? compilation.result.getTargetCodeSize() : 0;
-                reflection = reflectionExecutables.containsKey(m.wrapped);
-                jni = jniMethods.contains(m.wrapped);
+                codeSize = compilations.apply(m);
+                reflection = reflectionExecutables.containsKey(m);
+                jni = jniMethods.contains(m);
                 synthetic = m.isSynthetic();
-                isMain = m.wrapped == mainMethod;
+                isMain = m == mainMethod;
             }
 
             EconomicMap<String, Object> serialize() {
@@ -114,8 +110,8 @@ public class ReachabilityExporter implements InternalFeature {
 
                 if(!flagsList.isEmpty())
                     map.put("flags", flagsList.toArray());
-
-                map.put("size", codeSize);
+                if(codeSize != null)
+                    map.put("size", codeSize);
                 return map;
             }
         }
@@ -125,9 +121,9 @@ public class ReachabilityExporter implements InternalFeature {
             public final boolean jni;
             public final boolean synthetic;
 
-            public Field(HostedField f, Map<AnalysisField, java.lang.reflect.Field> reflectionFields) {
-                reflection = reflectionFields.containsKey(f.wrapped);
-                jni = f.wrapped.isJNIAccessed();
+            public Field(AnalysisField f, Map<AnalysisField, java.lang.reflect.Field> reflectionFields) {
+                reflection = reflectionFields.containsKey(f);
+                jni = f.isJNIAccessed();
                 synthetic = f.isSynthetic();
             }
 
@@ -158,12 +154,12 @@ public class ReachabilityExporter implements InternalFeature {
             public final boolean jni;
             public final boolean reflection;
 
-            public Type(HostedType type, Map<Class<?>, InitKind> classInitKinds, Set<AnalysisType> reflectionTypes, Set<AnalysisType> jniTypes) {
+            public Type(AnalysisType type, Map<Class<?>, InitKind> classInitKinds, Set<AnalysisType> reflectionTypes, Set<AnalysisType> jniTypes) {
                 synthetic = type.getJavaClass().isSynthetic();
-                jni = jniTypes.contains(type.getWrapped());
-                reflection = reflectionTypes.contains(type.getWrapped());
+                jni = jniTypes.contains(type);
+                reflection = reflectionTypes.contains(type);
 
-                if(type.getWrapped().getWrapped().getClassInitializer() != null) {
+                if(type.getWrapped().getClassInitializer() != null) {
                     InitKind initKind = classInitKinds.get(type.getJavaClass());
 
                     if (initKind != null) {
@@ -283,33 +279,31 @@ public class ReachabilityExporter implements InternalFeature {
 
         private final HashMap<Pair<String, String>, TopLevelOrigin> topLevelOrigins = new HashMap<>();
 
-        private static AnalysisMethod getMainMethod(HostedUniverse universe)
+        private static AnalysisMethod getMainMethod(AnalysisUniverse universe)
         {
             if(!ImageSingletons.contains(JavaMainWrapper.JavaMainSupport.class))
                 return null;
             JavaMainWrapper.JavaMainSupport jms = ImageSingletons.lookup(JavaMainWrapper.JavaMainSupport.class);
             java.lang.reflect.Method m = MethodHandles.reflectAs(java.lang.reflect.Method.class, jms.javaMainHandle);
-            return universe.getBigBang().getMetaAccess().lookupJavaMethod(m);
+            return universe.getBigbang().getMetaAccess().lookupJavaMethod(m);
         }
 
-        public Export(AfterCompilationAccessImpl accessImpl) {
-            HostedUniverse universe = accessImpl.getUniverse();
+        public Export(AnalysisUniverse universe, Function<AnalysisMethod, Integer> compilations) {
             Map<Class<?>, InitKind> classInitKinds = ((ClassInitializationSupport) ImageSingletons.lookup(RuntimeClassInitializationSupport.class)).getClassInitKinds();
-            Map<HostedMethod, CompileTask> compilations = accessImpl.getCompilations();
             ReflectionHostedSupport reflectionHostedSupport = ImageSingletons.lookup(ReflectionHostedSupport.class);
             Map<AnalysisMethod, Executable> reflectionExecutables = reflectionHostedSupport.getReflectionExecutables();
             Map<AnalysisField, java.lang.reflect.Field> reflectionFields = reflectionHostedSupport.getReflectionFields();
             JNIAccessFeature jniAccessFeature = JNIAccessFeature.singleton();
-            Set<AnalysisMethod> jniMethods = Arrays.stream(jniAccessFeature.getRegisteredMethods()).map(universe.getBigBang().getUniverse()::lookup).collect(Collectors.toSet());
+            Set<AnalysisMethod> jniMethods = Arrays.stream(jniAccessFeature.getRegisteredMethods()).map(universe::lookup).collect(Collectors.toSet());
             AnalysisMethod mainMethod = getMainMethod(universe);
-            Set<AnalysisType> jniTypes = Arrays.stream(jniAccessFeature.getRegisteredClasses()).map(universe.getBigBang().getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get).collect(Collectors.toSet());
-            Set<AnalysisType> reflectionTypes = Arrays.stream(ClassForNameSupport.getSuccessfullyRegisteredClasses()).map(universe.getBigBang().getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get).collect(Collectors.toSet());
+            Set<AnalysisType> jniTypes = Arrays.stream(jniAccessFeature.getRegisteredClasses()).map(universe.getBigbang().getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get).collect(Collectors.toSet());
+            Set<AnalysisType> reflectionTypes = Arrays.stream(ClassForNameSupport.getSuccessfullyRegisteredClasses()).map(universe.getBigbang().getMetaAccess()::optionalLookupJavaType).filter(Optional::isPresent).map(Optional::get).collect(Collectors.toSet());
 
             Path buildPath = NativeImageGenerator.generatedFiles(HostedOptionValues.singleton());
             Path targetPath = buildPath.resolve(SubstrateOptions.REACHABILITY_FILE_NAME);
 
-            for (HostedType t : universe.getTypes()) {
-                if(!t.getWrapped().isReachable())
+            for (AnalysisType t : universe.getTypes()) {
+                if(!t.isReachable())
                     continue;
 
                 if(t.isArray())
@@ -317,8 +311,8 @@ public class ReachabilityExporter implements InternalFeature {
 
                 getType(t, classInitKinds, reflectionTypes, jniTypes);
             }
-            for (HostedMethod m : universe.getMethods()) {
-                if(!m.getWrapped().isReachable())
+            for (AnalysisMethod m : universe.getMethods()) {
+                if(!m.isReachable())
                     continue;
 
                 Type t = getType(m.getDeclaringClass(), classInitKinds, reflectionTypes, jniTypes);
@@ -332,8 +326,8 @@ public class ReachabilityExporter implements InternalFeature {
 
                 t.methods.add(Pair.create(stableNameWithoutDeclaringClass, new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
             }
-            for (HostedField f : universe.getFields()) {
-                if(!f.getWrapped().isReachable())
+            for (AnalysisField f : universe.getFields()) {
+                if(!f.isReachable())
                     continue;
 
                 Type t = getType(f.getDeclaringClass(), classInitKinds, reflectionTypes, jniTypes);
@@ -345,7 +339,7 @@ public class ReachabilityExporter implements InternalFeature {
             writer.print(topLevelOrigins.values().stream().sorted(Comparator.comparing((TopLevelOrigin tlo) -> tlo.path != null ? tlo.path : "").thenComparing(tlo -> tlo.module != null ? tlo.module : "")).map(TopLevelOrigin::serialize).toArray());
         }
 
-        private Type getType(HostedType type, Map<Class<?>, InitKind> classInitKinds, Set<AnalysisType> reflectionTypes, Set<AnalysisType> jniTypes) {
+        private Type getType(AnalysisType type, Map<Class<?>, InitKind> classInitKinds, Set<AnalysisType> reflectionTypes, Set<AnalysisType> jniTypes) {
             String topLevelOriginName = findTopLevelOriginName(type.getJavaClass());
             String moduleName = findModuleName(type.getJavaClass());
             boolean isSystemCode = !ImageSingletons.lookup(ClassLoaderSupport.class).isNativeImageClassLoader(type.getJavaClass().getClassLoader());
@@ -366,10 +360,31 @@ public class ReachabilityExporter implements InternalFeature {
     }
 
     @Override
+    public void afterAnalysis(AfterAnalysisAccess access) {
+        if (NativeImageOptions.ExitAfterAnalysis.getValue()) {
+            FeatureImpl.AfterAnalysisAccessImpl impl = (FeatureImpl.AfterAnalysisAccessImpl) access;
+            write(new Export(impl.getUniverse(), m -> 0));
+        }
+    }
+
+    @Override
     public void afterCompilation(AfterCompilationAccess access) {
         AfterCompilationAccessImpl accessImpl = (AfterCompilationAccessImpl) access;
-        Export e = new Export(accessImpl);
 
+        Map<AnalysisMethod, Integer> compilations = new HashMap<>();
+        for (var pair : accessImpl.getCompilations().entrySet()) {
+            compilations.compute(pair.getKey().getWrapped(), (m, size) -> {
+                if (size == null)
+                    size = 0;
+                size += pair.getValue().result.getTargetCodeSize();
+                return size;
+            });
+        }
+
+        write(new Export(accessImpl.aUniverse, compilations::get));
+    }
+
+    private void write(Export e) {
         try (JsonWriter writer = new JsonWriter(reachabilityJsonPath)) {
             e.write(writer);
             BuildArtifacts.singleton().add(ArtifactType.BUILD_INFO, reachabilityJsonPath);

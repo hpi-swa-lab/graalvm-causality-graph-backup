@@ -47,7 +47,7 @@ public class CausalityExporter implements InternalFeature {
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
         if(NativeImageOptions.ExitAfterAnalysis.getValue()) {
-            System.err.println("Causality Export should be run until the compiling phase in order to get fully functional data!");
+            System.err.println("Causality Export should be run until the compiling phase in order to get code size information!");
         }
 
         // The activation had to be done outside of this feature in order to be able to log feature registrations themselves.
@@ -74,17 +74,16 @@ public class CausalityExporter implements InternalFeature {
                 if(zip != null) {
                     zip.close();
                     zip = null;
+                    Files.deleteIfExists(targetPath);
                 }
                 throw ex;
             }
-
-            if(NativeImageOptions.ExitAfterAnalysis.getValue()) {
-                // Produce report without reachability.json
-                zip.close();
-                zip = null;
-            }
         } catch (IOException ex) {
             throw VMError.shouldNotReachHere("Failed to create Causality Export", ex);
+        }
+
+        if(NativeImageOptions.ExitAfterAnalysis.getValue()) {
+            addReachabilityFileAndFinalize();
         }
     }
 
@@ -92,7 +91,10 @@ public class CausalityExporter implements InternalFeature {
     public void afterCompilation(AfterCompilationAccess access) {
         if(zip == null)
             return;
+        addReachabilityFileAndFinalize();
+    }
 
+    private void addReachabilityFileAndFinalize() {
         ReachabilityExporter reachabilityExporter = ImageSingletons.lookup(ReachabilityExporter.class);
 
         try {
