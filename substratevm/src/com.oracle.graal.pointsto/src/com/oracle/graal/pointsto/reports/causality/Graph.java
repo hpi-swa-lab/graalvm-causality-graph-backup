@@ -233,9 +233,22 @@ public class Graph {
         }
     }
 
-    public HashSet<DirectEdge> directEdges = new HashSet<>();
-    public HashSet<HyperEdge> hyperEdges = new HashSet<>();
-    public HashSet<FlowEdge> interflows = new HashSet<>();
+    private HashSet<DirectEdge> directEdges = new HashSet<>();
+    private HashSet<HyperEdge> hyperEdges = new HashSet<>();
+    private HashSet<FlowEdge> interflows = new HashSet<>();
+
+    public void add(DirectEdge e) {
+        directEdges.add(e);
+    }
+
+    public void add(HyperEdge e) {
+        hyperEdges.add(e);
+    }
+
+    public void add(FlowEdge e) {
+        interflows.add(e);
+    }
+
 
     private static <T> HashMap<T, Integer> inverse(T[] arr, int startIndex) {
         HashMap<T, Integer> idMap = new HashMap<>();

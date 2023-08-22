@@ -204,11 +204,11 @@ public class TypeflowImpl extends Impl {
                             new RootMethodRegistration(invokeFlow.getTargetMethod()),
                             bb.getAllInstantiatedTypeFlow().getState());
 
-                    g.interflows.add(new Graph.FlowEdge(
+                    g.add(new Graph.FlowEdge(
                             flowMapper.apply(invokeFlow.getTargetMethod().getDeclaringClass().instantiatedTypes),
                             rootCallFlow
                     ));
-                    g.interflows.add(new Graph.FlowEdge(
+                    g.add(new Graph.FlowEdge(
                             rootCallFlow,
                             invocationFlowNode
                     ));
@@ -216,7 +216,7 @@ public class TypeflowImpl extends Impl {
                     assert receiver != null;
                     Graph.FlowNode receiverNode = flowMapper.apply(receiver);
                     if(receiverNode != null) {
-                        g.interflows.add(new Graph.FlowEdge(
+                        g.add(new Graph.FlowEdge(
                                 receiverNode,
                                 invocationFlowNode
                         ));
@@ -238,17 +238,17 @@ public class TypeflowImpl extends Impl {
             if(right == null)
                 continue;
 
-            g.interflows.add(new Graph.FlowEdge(left, right));
+            g.add(new Graph.FlowEdge(left, right));
         }
 
         for (AnalysisType t : bb.getAllInstantiatedTypes()) {
             TypeState state = TypeState.forExactType(bb, t, false);
             Graph.FlowNode vfn = new Graph.FlowNode("Virtual Flow Node for reaching " + t.toJavaName(), new TypeInstantiated(t), state);
-            g.interflows.add(new Graph.FlowEdge(null, vfn));
+            g.add(new Graph.FlowEdge(null, vfn));
 
             t.forAllSuperTypes(t1 -> {
-                g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
-                g.interflows.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
+                g.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypes)));
+                g.add(new Graph.FlowEdge(vfn, flowMapper.apply(t1.instantiatedTypesNonNull)));
             });
         }
 
@@ -266,8 +266,8 @@ public class TypeflowImpl extends Impl {
             // Therefore we simply employ this quick fix:
             if(e.getValue().typesCount() <= 20) {
                 Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), e.getValue());
-                g.interflows.add(new Graph.FlowEdge(null, intermediate));
-                g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+                g.add(new Graph.FlowEdge(null, intermediate));
+                g.add(new Graph.FlowEdge(intermediate, fieldNode));
             } else {
                 AnalysisType[] types = e.getValue().typesStream(bb).toArray(AnalysisType[]::new);
 
@@ -279,8 +279,8 @@ public class TypeflowImpl extends Impl {
                     }
 
                     Graph.FlowNode intermediate = new Graph.FlowNode("Virtual Flow from Heap", e.getKey().getLeft(), state);
-                    g.interflows.add(new Graph.FlowEdge(null, intermediate));
-                    g.interflows.add(new Graph.FlowEdge(intermediate, fieldNode));
+                    g.add(new Graph.FlowEdge(null, intermediate));
+                    g.add(new Graph.FlowEdge(intermediate, fieldNode));
                 }
             }
         }

@@ -210,13 +210,13 @@ public class Impl extends CausalityExport {
         forEachEvent(events::add);
         for (Event e : events) {
             if (e != null && !e.unused() && e.root()) {
-                g.directEdges.add(new Graph.DirectEdge(null, e));
+                g.add(new Graph.DirectEdge(null, e));
             }
         }
 
         for (AnalysisMethod m : bb.getUniverse().getMethods()) {
             if (m.isReachable()) {
-                g.directEdges.add(new Graph.DirectEdge(new MethodReachable(m), new MethodCode(m)));
+                g.add(new Graph.DirectEdge(new MethodReachable(m), new MethodCode(m)));
             }
         }
 
@@ -230,7 +230,7 @@ public class Impl extends CausalityExport {
             if(to.unused())
                 continue;
 
-            g.directEdges.add(new Graph.DirectEdge(from, to));
+            g.add(new Graph.DirectEdge(from, to));
         }
 
         for (AnalysisType t : bb.getUniverse().getTypes()) {
@@ -239,7 +239,7 @@ public class Impl extends CausalityExport {
 
             AnalysisMethod classInitializer = t.getClassInitializer();
             if(classInitializer != null && classInitializer.isImplementationInvoked()) {
-                g.directEdges.add(new Graph.DirectEdge(new TypeReachable(t), new MethodReachable(classInitializer)));
+                g.add(new Graph.DirectEdge(new TypeReachable(t), new MethodReachable(classInitializer)));
             }
         }
 
@@ -259,10 +259,10 @@ public class Impl extends CausalityExport {
                     buildTimeClinitsWithReason.add(init);
                     if (outerInitReason instanceof Class<?> outerInitClass) {
                         BuildTimeClassInitialization outerInit = new BuildTimeClassInitialization(outerInitClass);
-                        g.directEdges.add(new Graph.DirectEdge(outerInit, init));
+                        g.add(new Graph.DirectEdge(outerInit, init));
                         init = outerInit;
                     } else {
-                        g.directEdges.add(new Graph.DirectEdge((Event) outerInitReason, init));
+                        g.add(new Graph.DirectEdge((Event) outerInitReason, init));
                         break;
                     }
                 }
@@ -284,9 +284,9 @@ public class Impl extends CausalityExport {
 
                 if (t != null && t.isReachable()) {
                     TypeReachable tReachable = new TypeReachable(t);
-                    g.directEdges.add(new Graph.DirectEdge(tReachable, init));
+                    g.add(new Graph.DirectEdge(tReachable, init));
                 } else if(!buildTimeClinitsWithReason.contains(init)) {
-                    g.directEdges.add(new Graph.DirectEdge(null, init));
+                    g.add(new Graph.DirectEdge(null, init));
                 }
             });
         }
@@ -295,7 +295,7 @@ public class Impl extends CausalityExport {
             if(andEdge.from1.unused() || andEdge.from2.unused() || andEdge.to.unused())
                 continue;
 
-            g.hyperEdges.add(andEdge);
+            g.add(andEdge);
         }
 
         return g;
