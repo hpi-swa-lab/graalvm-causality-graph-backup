@@ -83,12 +83,13 @@ public class ReachabilityExporter implements InternalFeature {
             public final boolean jni;
             public final boolean synthetic;
             public final boolean isMain;
-            public final Integer codeSize;
+            public final int codeSize;
 
             public Method(AnalysisMethod m, Function<AnalysisMethod, Integer> compilations,
                           Map<AnalysisMethod, Executable> reflectionExecutables, Set<AnalysisMethod> jniMethods,
                           AnalysisMethod mainMethod) {
-                codeSize = compilations.apply(m);
+                Integer codeSize = compilations.apply(m);
+                this.codeSize = codeSize != null ? codeSize : 0;
                 reflection = reflectionExecutables.containsKey(m);
                 jni = jniMethods.contains(m);
                 synthetic = m.isSynthetic();
@@ -110,8 +111,7 @@ public class ReachabilityExporter implements InternalFeature {
 
                 if(!flagsList.isEmpty())
                     map.put("flags", flagsList.toArray());
-                if(codeSize != null)
-                    map.put("size", codeSize);
+                map.put("size", codeSize);
                 return map;
             }
         }
