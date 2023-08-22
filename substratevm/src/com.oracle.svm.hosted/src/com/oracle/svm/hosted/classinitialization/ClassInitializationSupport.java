@@ -35,7 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
-import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.impl.RuntimeClassInitializationSupport;
 import org.graalvm.nativeimage.impl.clinit.ClassInitializationTracking;
 
@@ -171,8 +170,6 @@ public abstract class ClassInitializationSupport implements RuntimeClassInitiali
      * class initialization fails.
      */
     InitKind ensureClassInitialized(Class<?> clazz, boolean allowErrors) {
-        CausalityExport.get().registerEvent(new CausalityExport.BuildTimeClassInitialization(clazz));
-
         try {
             loader.watchdog.recordActivity();
             /*
