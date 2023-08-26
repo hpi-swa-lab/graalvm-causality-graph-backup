@@ -10,6 +10,7 @@
 #include <numeric>
 #include <iostream>
 #include <vector>
+#include <memory>
 
 using namespace std;
 
@@ -1402,10 +1403,10 @@ public:
 class ConstantPoolOffsets
 {
     const void* start;
-    uint32_t offsets[1 << 16];
+    unique_ptr<uint32_t[]> offsets;
 
 public:
-    explicit ConstantPoolOffsets(ClassFile1* file1) : start(&file1->constant_pool)
+    explicit ConstantPoolOffsets(ClassFile1* file1) : start(&file1->constant_pool), offsets(new uint32_t[file1->constant_pool_count])
     {
         offsets[0] = std::numeric_limits<uint32_t>::max(); // should trigger a SIGSEGV
         size_t i = 1;
