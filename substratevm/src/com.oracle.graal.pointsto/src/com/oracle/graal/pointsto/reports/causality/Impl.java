@@ -6,11 +6,14 @@ import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.heap.ImageHeapConstant;
+import com.oracle.graal.pointsto.heap.ImageHeapInstance;
+import com.oracle.graal.pointsto.heap.ImageHeapObjectArray;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.reports.CausalityExport;
 import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
+import com.oracle.graal.pointsto.reports.SimulatedHeapTracing;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import com.oracle.graal.pointsto.util.AnalysisError;
 import jdk.vm.ci.meta.JavaConstant;
@@ -47,10 +50,6 @@ public class Impl extends CausalityExport {
     }
 
     private static <T> T asObject(BigBang bb, Class<T> tClass, JavaConstant constant) {
-        if(constant instanceof ImageHeapConstant)
-        {
-            constant = ((ImageHeapConstant)constant).getHostedObject();
-        }
         return bb.getSnippetReflectionProvider().asObject(tClass, constant);
     }
 
@@ -121,26 +120,39 @@ public class Impl extends CausalityExport {
 
     @Override
     public Event getHeapObjectCreator(BigBang bb, JavaConstant heapObject, ObjectScanner.ScanReason reason) {
+        if (heapObject instanceof ImageHeapConstant imageHeapConstant && !imageHeapConstant.isBackedByHostedObject()) {
+            return SimulatedHeapTracing.instance.getHeapObjectCreator(imageHeapConstant);
+        }
         return getHeapObjectCreator(asObject(bb, Object.class, heapObject), reason);
     }
 
     @Override
     public Event getHeapFieldAssigner(BigBang bb, JavaConstant receiver, AnalysisField field, JavaConstant value) {
         Object responsible;
-        Object o = asObject(bb, Object.class, value);
+        Object o;
 
-        if(field.isStatic()) {
-            java.lang.reflect.Field f = field.getJavaField();
-            Class<?> declaringClass = f.getDeclaringClass();
-            responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(declaringClass, f, o);
-        } else {
-            Object receiverO = asObject(bb, Object.class, receiver);
-            java.lang.reflect.Field f = field.getJavaField();
-            if (f.getDeclaringClass().isAssignableFrom(receiverO.getClass())) {
-                responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(receiverO, f, o);
+        if (field.isStatic()) {
+            if (value instanceof ImageHeapConstant imageHeapConstant && !imageHeapConstant.isBackedByHostedObject()) {
+                return SimulatedHeapTracing.instance.getHeapFieldAssigner(field, imageHeapConstant);
             } else {
-                // Field must be substituted or recomputed
-                responsible = null;
+                o = asObject(bb, Object.class, value);
+                java.lang.reflect.Field f = field.getJavaField();
+                Class<?> declaringClass = f.getDeclaringClass();
+                responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForStaticFieldWrite(declaringClass, f, o);
+            }
+        } else {
+            if (receiver instanceof ImageHeapInstance imageHeapConstant && !imageHeapConstant.isBackedByHostedObject()) {
+                return SimulatedHeapTracing.instance.getHeapFieldAssigner(imageHeapConstant, field, value);
+            } else {
+                Object receiverO = asObject(bb, Object.class, receiver);
+                o = asObject(bb, Object.class, value);
+                java.lang.reflect.Field f = field.getJavaField();
+                if (f.getDeclaringClass().isAssignableFrom(receiverO.getClass())) {
+                    responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForNonstaticFieldWrite(receiverO, f, o);
+                } else {
+                    // Field must be substituted or recomputed
+                    responsible = null;
+                }
             }
         }
 
@@ -149,6 +161,9 @@ public class Impl extends CausalityExport {
 
     @Override
     public Event getHeapArrayAssigner(BigBang bb, JavaConstant array, int elementIndex, JavaConstant value) {
+        if (array instanceof ImageHeapObjectArray imageHeapArray && !imageHeapArray.isBackedByHostedObject()) {
+            return SimulatedHeapTracing.instance.getHeapArrayAssigner(imageHeapArray, elementIndex, value);
+        }
         Object o = asObject(bb, Object.class, value);
         Object responsible = HeapAssignmentTracing.getInstance().getClassResponsibleForArrayWrite(asObject(bb, Object[].class, array), elementIndex, o);
         return getEventForHeapReason(responsible, o);

@@ -61,6 +61,10 @@ public class CausalityExport {
         }
     }
 
+    public static Level getActivationStatus() {
+        return InitializationOnDemandHolder.frozenLevel;
+    }
+
     private static final CausalityExport dummyInstance = new CausalityExport();
     private static ThreadLocal<Impl> instances = ThreadLocal.withInitial(CausalityExport::createInstance);
     private static List<Impl> instancesOfAllThreads = new ArrayList<>();

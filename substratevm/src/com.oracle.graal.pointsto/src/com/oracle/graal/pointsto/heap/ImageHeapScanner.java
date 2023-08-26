@@ -493,7 +493,7 @@ public abstract class ImageHeapScanner {
         AnalysisType objectType = metaAccess.lookupJavaType(imageHeapConstant);
         imageHeap.addReachableObject(objectType, imageHeapConstant);
 
-        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, imageHeapConstant.getHostedObject(), reason))) {
+        try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, imageHeapConstant, reason))) {
             markTypeInstantiated(objectType, reason);
         }
         if (imageHeapConstant instanceof ImageHeapObjectArray imageHeapArray) {
