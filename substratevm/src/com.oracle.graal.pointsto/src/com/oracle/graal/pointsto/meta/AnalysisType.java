@@ -571,13 +571,12 @@ public abstract class AnalysisType extends AnalysisElement implements WrappedJav
 
     public boolean registerAsReachable(Object reason) {
         assert isValidReason(reason) : "Registering a type as reachable needs to provide a valid reason.";
-        CausalityExport.Event thisReachable = new CausalityExport.TypeReachable(this);
-        CausalityExport.get().registerEvent(thisReachable);
+        CausalityExport.get().registerEvent(new CausalityExport.TypeReachable(this));
         if (!AtomicUtils.isSet(this, isReachableUpdater)) {
             /* Mark this type and all its super types as reachable. */
             forAllSuperTypes(type -> {
                 if(type != this) {
-                    CausalityExport.get().registerEdge(thisReachable, new CausalityExport.TypeReachable(type));
+                    CausalityExport.get().registerEdge(new CausalityExport.TypeReachable(this), new CausalityExport.TypeReachable(type));
                 }
                 AtomicUtils.atomicSetAndRun(type, reason, isReachableUpdater, type::onReachable);
             });

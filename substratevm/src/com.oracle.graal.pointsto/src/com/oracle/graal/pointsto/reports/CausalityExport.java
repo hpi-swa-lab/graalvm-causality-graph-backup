@@ -3,7 +3,6 @@ package com.oracle.graal.pointsto.reports;
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.ObjectScanner;
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisElement;
@@ -15,11 +14,11 @@ import com.oracle.graal.pointsto.reports.causality.Impl;
 import com.oracle.graal.pointsto.reports.causality.Graph;
 import com.oracle.graal.pointsto.reports.causality.TypeflowImpl;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import com.oracle.graal.pointsto.util.AnalysisError;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaField;
 import jdk.vm.ci.meta.JavaMethod;
 import jdk.vm.ci.meta.JavaType;
-import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.MetaUtil;
 import jdk.vm.ci.meta.Signature;
 
@@ -31,7 +30,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -41,30 +39,46 @@ public class CausalityExport {
     protected CausalityExport() {
     }
 
-    private static final CausalityExport dummyInstance = new CausalityExport();
-    private static ThreadLocal<Impl> instances;
-    private static List<Impl> instancesOfAllThreads;
-    private static boolean collectTypeflowInformation;
-
-    // Starts collection of Causality Data
-    public static synchronized void activate(boolean collectTypeflowInformation) {
-        CausalityExport.collectTypeflowInformation = collectTypeflowInformation;
-        instances = ThreadLocal.withInitial(CausalityExport::createInstance);
-        instancesOfAllThreads = new ArrayList<>();
+    public enum Level {
+        DISABLED,
+        ENABLED_WITHOUT_TYPEFLOW,
+        ENABLED;
     }
 
+    private static Level requestedLevel = Level.DISABLED;
+
+    public static final class InitializationOnDemandHolder {
+        private static final Level frozenLevel = CausalityExport.requestedLevel;
+    }
+
+    /**
+     * Must be called before any usage of {@link #get()}
+     */
+    public static void activate(Level level) {
+        requestedLevel = level;
+        if (level != InitializationOnDemandHolder.frozenLevel) {
+            throw AnalysisError.shouldNotReachHere("Causality Export must have been activated before the first usage of CausalityExport.get()");
+        }
+    }
+
+    private static final CausalityExport dummyInstance = new CausalityExport();
+    private static ThreadLocal<Impl> instances = ThreadLocal.withInitial(CausalityExport::createInstance);
+    private static List<Impl> instancesOfAllThreads = new ArrayList<>();
+
     private static synchronized Impl createInstance() {
-        Impl instance = collectTypeflowInformation ? new TypeflowImpl() : new Impl();
+        Impl instance = InitializationOnDemandHolder.frozenLevel == Level.ENABLED ? new TypeflowImpl() : new Impl();
         instancesOfAllThreads.add(instance);
         return instance;
     }
 
     public static CausalityExport get() {
-        return instances != null ? instances.get() : dummyInstance;
+        if (InitializationOnDemandHolder.frozenLevel == Level.DISABLED || instances == null)
+            return dummyInstance;
+        return instances.get();
     }
 
     public static synchronized void dump(PointsToAnalysis bb, ZipOutputStream zip, boolean exportTypeflowNames) throws java.io.IOException {
-        Impl data = collectTypeflowInformation ? new TypeflowImpl((Iterable<TypeflowImpl>)(Iterable<? extends Impl>) instancesOfAllThreads, bb) : new Impl(instancesOfAllThreads, bb);
+        Impl data = InitializationOnDemandHolder.frozenLevel == Level.ENABLED ? new TypeflowImpl((Iterable<TypeflowImpl>)(Iterable<? extends Impl>) instancesOfAllThreads, bb) : new Impl(instancesOfAllThreads, bb);
         // Let GC collect intermediate data structures
         instances = null;
         instancesOfAllThreads = null;
