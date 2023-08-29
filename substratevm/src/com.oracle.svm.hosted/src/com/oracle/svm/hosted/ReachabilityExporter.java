@@ -25,7 +25,6 @@
 package com.oracle.svm.hosted;
 
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Executable;
 import java.net.URL;
 import java.nio.file.Path;
@@ -318,14 +317,7 @@ public class ReachabilityExporter implements InternalFeature {
 
                 Type t = getType(m.getDeclaringClass(), classInitKinds, reflectionTypes, jniTypes);
 
-                // TODO: Remove once name fix has been merged from main
-                String stableName = CausalityExport.stableMethodName(m);
-                String declaringClassPrefix = CausalityExport.stableTypeName(m.getDeclaringClass()) + '.';
-                if (!stableName.startsWith(declaringClassPrefix))
-                    throw new RuntimeException();
-                String stableNameWithoutDeclaringClass = stableName.substring(declaringClassPrefix.length());
-
-                t.methods.add(Pair.create(stableNameWithoutDeclaringClass, new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
+                t.methods.add(Pair.create(m.format("%n(%P):%R"), new Method(m, compilations, reflectionExecutables, jniMethods, mainMethod)));
             }
             for (AnalysisField f : universe.getFields()) {
                 if(!f.isReachable())
