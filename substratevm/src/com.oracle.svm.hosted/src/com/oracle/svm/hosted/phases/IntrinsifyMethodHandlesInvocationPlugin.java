@@ -38,6 +38,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.StreamSupport;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.collections.Pair;
 import org.graalvm.collections.UnmodifiableEconomicMap;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
@@ -110,7 +112,6 @@ import org.graalvm.compiler.word.WordOperationPlugin;
 import org.graalvm.nativeimage.ImageSingletons;
 
 import com.oracle.graal.pointsto.infrastructure.UniverseMetaAccess;
-import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.HostedProviders;
@@ -800,7 +801,10 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == LoadFieldNode.class) {
                 LoadFieldNode oLoad = (LoadFieldNode) oNode;
-                ResolvedJavaField tTarget = lookup(oLoad.field());
+                ResolvedJavaField tTarget;
+                try(var ignored = CausalityExport.get().setCause(new CausalityExport.MethodCode((AnalysisMethod) b.getMethod()))) {
+                    tTarget = lookup(oLoad.field());
+                }
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 ValueNode tLoad = b.add(LoadFieldNode.create(null, node(oLoad.object()), tTarget));
                 transplanted.put(oLoad, tLoad);
@@ -808,7 +812,10 @@ public class IntrinsifyMethodHandlesInvocationPlugin implements NodePlugin {
 
             } else if (oNode.getClass() == StoreFieldNode.class) {
                 StoreFieldNode oStore = (StoreFieldNode) oNode;
-                ResolvedJavaField tTarget = lookup(oStore.field());
+                ResolvedJavaField tTarget;
+                try(var ignored = CausalityExport.get().setCause(new CausalityExport.MethodCode((AnalysisMethod) b.getMethod()))) {
+                    tTarget = lookup(oStore.field());
+                }
                 maybeEmitClassInitialization(b, tTarget.isStatic(), tTarget.getDeclaringClass());
                 b.add(new StoreFieldNode(node(oStore.object()), tTarget, node(oStore.value())));
                 return true;

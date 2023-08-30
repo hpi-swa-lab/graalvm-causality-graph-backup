@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.stream.StreamSupport;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
@@ -214,6 +215,7 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
     public void registerAsJNIAccessed(AnalysisField field, boolean writable) {
         // Same as addRootField() and addRootStaticField():
         // create type flows for any subtype of the field's declared type
+        // Causality-TODO: Account this flow edge to the ongoing JNI registration processing somehow
         TypeFlow<?> declaredTypeFlow = field.getType().getTypeFlow(this, true);
         if (field.isStatic()) {
             declaredTypeFlow.addUse(this, field.getStaticFieldFlow());
@@ -304,12 +306,15 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
         int paramCount = signature.getParameterCount(!isStatic);
         PointsToAnalysisMethod pointsToMethod = assertPointsToAnalysisMethod(aMethod);
 
+        CausalityExport.get().registerEvent(new CausalityExport.RootMethodRegistration(aMethod));
+
         if (isStatic) {
             /*
              * For static methods trigger analysis in the empty context. This will trigger parsing
              * and return the method flows graph. Then the method parameter type flows are
              * initialized with the corresponding parameter declared type.
              */
+            CausalityExport.get().registerEvent(new CausalityExport.MethodReachable(pointsToMethod));
             postTask(() -> {
                 pointsToMethod.registerAsDirectRootMethod();
                 pointsToMethod.registerAsImplementationInvoked("root method");
@@ -342,6 +347,11 @@ public abstract class PointsToAnalysis extends AbstractAnalysisEngine {
              * the actual parameter type state is propagated to the formal parameters. Then the
              * callee is linked and registered as implementation-invoked.
              */
+
+            if(invokeSpecial) {
+                CausalityExport.get().registerEvent(new CausalityExport.MethodReachable(pointsToMethod));
+            }
+
             postTask(() -> {
                 if (invokeSpecial) {
                     pointsToMethod.registerAsDirectRootMethod();

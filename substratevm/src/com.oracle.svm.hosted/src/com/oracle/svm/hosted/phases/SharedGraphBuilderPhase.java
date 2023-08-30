@@ -31,6 +31,8 @@ import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.List;
 
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.core.common.calc.Condition;
 import org.graalvm.compiler.core.common.type.StampPair;
@@ -112,7 +114,11 @@ public abstract class SharedGraphBuilderPhase extends GraphBuilderPhase.Instance
 
     @Override
     protected void run(StructuredGraph graph) {
-        super.run(graph);
+        try (var ignored0 = CausalityExport.get().setCause(null)) {
+            try (var ignored1 = CausalityExport.get().setCause(graph.method() instanceof AnalysisMethod ? new CausalityExport.MethodCode((AnalysisMethod) graph.method()) : null)) {
+                super.run(graph);
+            }
+        }
         assert wordTypes == null || wordTypes.ensureGraphContainsNoWordTypeReferences(graph);
     }
 

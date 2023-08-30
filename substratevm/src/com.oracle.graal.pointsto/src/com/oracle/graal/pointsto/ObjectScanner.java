@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.word.WordBase;
 
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -240,7 +241,10 @@ public class ObjectScanner {
             return;
         }
         if (!bb.scanningPolicy().scanConstant(bb, value)) {
-            bb.registerTypeAsInHeap(bb.getMetaAccess().lookupJavaType(value), reason);
+            AnalysisType type = bb.getMetaAccess().lookupJavaType(value);
+            try(var ignored = CausalityExport.get().setCause(CausalityExport.get().getHeapObjectCreator(bb, value, reason))) {
+                bb.registerTypeAsInHeap(type, reason);
+            }
             return;
         }
         Object valueObj = (value instanceof ImageHeapConstant) ? value : constantAsObject(bb, value);
@@ -405,7 +409,12 @@ public class ObjectScanner {
     private void doScan(WorklistEntry entry) {
         try {
             AnalysisType type = bb.getMetaAccess().lookupJavaType(entry.constant);
-            type.registerAsReachable(entry.reason);
+
+            var inHeap = new CausalityExport.TypeInHeap(type);
+            CausalityExport.get().registerEdge(CausalityExport.get().getHeapObjectCreator(bb, entry.constant, entry.reason), inHeap);
+            try(var ignored = CausalityExport.get().setCause(inHeap)) {
+                type.registerAsReachable(entry.reason);
+            }
 
             if (type.isInstanceClass()) {
                 /* Scan constant's instance fields. */
@@ -473,7 +482,7 @@ public class ObjectScanner {
 
     public abstract static class ScanReason {
         final ScanReason previous;
-        final JavaConstant constant;
+        public final JavaConstant constant;
 
         protected ScanReason(ScanReason previous, JavaConstant constant) {
             this.previous = previous;

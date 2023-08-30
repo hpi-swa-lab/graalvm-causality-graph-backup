@@ -37,6 +37,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.graalvm.compiler.debug.GraalError;
+import com.oracle.graal.pointsto.reports.CausalityExport;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 
 import com.oracle.graal.pointsto.ObjectScanner;
@@ -89,6 +90,8 @@ public abstract class AnalysisElement implements AnnotatedElement {
 
     public void registerReachabilityNotification(ElementNotification notification) {
         ConcurrentLightHashSet.addElement(this, reachableNotificationsUpdater, notification);
+        CausalityExport.Event eventForRegistration = CausalityExport.get().getCause();
+        CausalityExport.get().registerConjunctiveEdge(eventForRegistration, CausalityExport.ReachableEvent.create(this), new CausalityExport.ReachabilityNotificationCallback(notification.callback));
     }
 
     public void notifyReachabilityCallback(AnalysisUniverse universe, ElementNotification notification) {
@@ -152,7 +155,11 @@ public abstract class AnalysisElement implements AnnotatedElement {
             }
 
             AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                callback.accept(universe.getConcurrentAnalysisAccess());
+                try(var ignore0 = CausalityExport.get().setCause(null)) {
+                    try(var ignored = CausalityExport.get().setCause(new CausalityExport.ReachabilityNotificationCallback(callback))) {
+                        callback.accept(universe.getConcurrentAnalysisAccess());
+                    }
+                }
                 return null;
             });
 
@@ -178,8 +185,15 @@ public abstract class AnalysisElement implements AnnotatedElement {
         public AnalysisFuture<Void> notifyCallback(AnalysisUniverse universe, AnalysisType reachableSubtype) {
             assert reachableSubtype.isReachable();
             return seenSubtypes.computeIfAbsent(reachableSubtype, k -> {
+                CausalityExport.get().registerConjunctiveEdge(
+                        new CausalityExport.SubtypeReachableNotificationCallback(callback),
+                        new CausalityExport.TypeReachable(reachableSubtype),
+                        new CausalityExport.SubtypeReachableNotificationCallbackInvocation(callback, reachableSubtype)
+                );
                 AnalysisFuture<Void> newValue = new AnalysisFuture<>(() -> {
-                    callback.accept(universe.getConcurrentAnalysisAccess(), reachableSubtype.getJavaClass());
+                    try (var ignored = CausalityExport.get().setCause(new CausalityExport.SubtypeReachableNotificationCallbackInvocation(callback, reachableSubtype))) {
+                        callback.accept(universe.getConcurrentAnalysisAccess(), reachableSubtype.getJavaClass());
+                    }
                     return null;
                 });
                 execute(universe, newValue);
@@ -202,8 +216,14 @@ public abstract class AnalysisElement implements AnnotatedElement {
             if (seenOverride.add(reachableOverride)) {
                 Executable javaMethod = reachableOverride.getJavaMethod();
                 if (javaMethod != null) {
+                    CausalityExport.get().registerConjunctiveEdge(
+                            new CausalityExport.OverrideReachableNotificationCallback(callback),
+                            new CausalityExport.MethodReachable(reachableOverride),
+                            new CausalityExport.OverrideReachableNotificationCallbackInvocation(callback, reachableOverride));
                     execute(universe, () -> {
-                        callback.accept(universe.getConcurrentAnalysisAccess(), javaMethod);
+                        try (var ignored = CausalityExport.get().setCause(new CausalityExport.OverrideReachableNotificationCallbackInvocation(callback, reachableOverride))) {
+                            callback.accept(universe.getConcurrentAnalysisAccess(), javaMethod);
+                        }
                     });
                 }
             }

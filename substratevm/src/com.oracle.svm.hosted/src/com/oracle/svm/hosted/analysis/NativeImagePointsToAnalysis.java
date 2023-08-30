@@ -29,6 +29,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.concurrent.ForkJoinPool;
 
+import com.oracle.graal.pointsto.reports.CausalityExport;
+import com.oracle.graal.pointsto.reports.HeapAssignmentTracing;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.word.WordTypes;
@@ -121,7 +123,9 @@ public class NativeImagePointsToAnalysis extends PointsToAnalysis implements Inf
 
     @Override
     public void initializeMetaData(AnalysisType type) {
-        dynamicHubInitializer.initializeMetaData(universe.getHeapScanner(), type);
+        try (var ignored = CausalityExport.get().setCause(new CausalityExport.TypeReachable(type), CausalityExport.HeapTracing.Full)) {
+            dynamicHubInitializer.initializeMetaData(universe.getHeapScanner(), type);
+        }
     }
 
     public static ResolvedJavaType toWrappedType(ResolvedJavaType type) {
